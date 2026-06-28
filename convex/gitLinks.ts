@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { type MutationCtx, mutation, query } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { gitLinkType, prState } from "./schema";
 
 /**
@@ -7,6 +8,45 @@ import { gitLinkType, prState } from "./schema";
  * タスクと Git アーティファクト（branch/commit/pull_request）の関連を管理する。
  * Webhook からの繰り返し受信に備え、(repository, type, externalRef) で冪等化する。
  */
+
+/**
+ * GitLink の冪等 upsert。(repository, type, externalRef) で同定し、あれば更新する。
+ * MCP（link mutation）と Webhook 自動処理の両方から再利用する共有ヘルパー。
+ * 参照整合性の確認は呼び出し側の責務（Webhook 側は解決済みの id を渡す）。
+ */
+export async function upsertGitLink(
+  ctx: MutationCtx,
+  args: {
+    task: Id<"tasks">;
+    repository: Id<"repositories">;
+    type: Doc<"gitLinks">["type"];
+    externalRef: string;
+    url: string;
+    prState?: Doc<"gitLinks">["prState"];
+  },
+): Promise<Id<"gitLinks">> {
+  const existing = await ctx.db
+    .query("gitLinks")
+    .withIndex("by_ref", (q) =>
+      q
+        .eq("repository", args.repository)
+        .eq("type", args.type)
+        .eq("externalRef", args.externalRef),
+    )
+    .unique();
+  if (existing !== null) {
+    await ctx.db.patch(existing._id, { url: args.url, prState: args.prState });
+    return existing._id;
+  }
+  return await ctx.db.insert("gitLinks", {
+    task: args.task,
+    repository: args.repository,
+    type: args.type,
+    externalRef: args.externalRef,
+    url: args.url,
+    prState: args.prState,
+  });
+}
 
 export const link = mutation({
   args: {
@@ -25,33 +65,7 @@ export const link = mutation({
     if ((await ctx.db.get(args.repository)) === null) {
       throw new ConvexError("指定されたリポジトリが存在しません");
     }
-
-    // 冪等化: 同一 (repository, type, externalRef) が既にあれば更新する。
-    const existing = await ctx.db
-      .query("gitLinks")
-      .withIndex("by_ref", (q) =>
-        q
-          .eq("repository", args.repository)
-          .eq("type", args.type)
-          .eq("externalRef", args.externalRef),
-      )
-      .unique();
-    if (existing !== null) {
-      await ctx.db.patch(existing._id, {
-        url: args.url,
-        prState: args.prState,
-      });
-      return existing._id;
-    }
-
-    return await ctx.db.insert("gitLinks", {
-      task: args.task,
-      repository: args.repository,
-      type: args.type,
-      externalRef: args.externalRef,
-      url: args.url,
-      prState: args.prState,
-    });
+    return await upsertGitLink(ctx, args);
   },
 });
 

@@ -113,6 +113,11 @@ export default defineSchema({
   })
     .index("by_task", ["task"])
     .index("by_repository", ["repository"])
-    // Webhook の冪等化・既存リンク検索用（repository × type × ref で同定）
+    // 既存リンク検索・upsert 用（repository × type × ref で同定）
     .index("by_ref", ["repository", "type", "externalRef"]),
+
+  // Webhook 配信の冪等化（§7: X-GitHub-Delivery で重複処理を防ぐ）
+  webhookDeliveries: defineTable({
+    deliveryId: v.string(),
+  }).index("by_delivery", ["deliveryId"]),
 });

@@ -47,8 +47,8 @@ async function assertMemberExists(
   }
 }
 
-/** 指定列（project × status）の末尾 rank を返す（空なら null）。 */
-async function lastRankInColumn(
+/** 指定列（project × status）の末尾 rank を返す（空なら null）。Webhook 自動遷移でも再利用する。 */
+export async function lastRankInColumn(
   ctx: QueryCtx,
   project: Id<"projects">,
   status: Doc<"tasks">["status"],
