@@ -3,6 +3,8 @@ import { ConvexError } from "convex/values";
 import { type FormEvent, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { type Priority } from "../../lib/taskMeta";
+import { TaskMetaFields } from "../forms/TaskMetaFields";
 import s from "./AddTaskForm.module.css";
 
 /**
@@ -19,6 +21,8 @@ export function AddTaskForm({
   const createTask = useMutation(api.tasks.create);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [priority, setPriority] = useState<Priority>("none");
+  const [assignee, setAssignee] = useState<Id<"members"> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -27,6 +31,8 @@ export function AddTaskForm({
   function close() {
     setOpen(false);
     setTitle("");
+    setPriority("none");
+    setAssignee(null);
     setError(null);
   }
 
@@ -36,7 +42,13 @@ export function AddTaskForm({
     setSubmitting(true);
     setError(null);
     try {
-      await createTask({ issue, title: title.trim(), createdBy });
+      await createTask({
+        issue,
+        title: title.trim(),
+        priority,
+        assignee: assignee ?? undefined,
+        createdBy,
+      });
       close();
     } catch (err) {
       setError(
@@ -62,6 +74,12 @@ export function AddTaskForm({
         onChange={(e) => setTitle(e.target.value)}
         placeholder="タスクのタイトル"
         value={title}
+      />
+      <TaskMetaFields
+        assignee={assignee}
+        onAssignee={setAssignee}
+        onPriority={setPriority}
+        priority={priority}
       />
       <button className={s.submit} disabled={!canSubmit} type="submit">
         追加
