@@ -89,8 +89,8 @@ export default defineSchema({
     .index("by_project", ["project"])
     // 採番の一意性チェック・{key}-{number} 解決用
     .index("by_project_and_number", ["project", "number"])
-    // カンバン列（ステータス別一覧）取得用
-    .index("by_project_and_status", ["project", "status"])
+    // カンバン列（ステータス別一覧）を rank 昇順で取得・末尾採番するため rank を含める
+    .index("by_project_and_status", ["project", "status", "rank"])
     .index("by_assignee", ["assignee"]),
 
   // Repository — Git 連携先
