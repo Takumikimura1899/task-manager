@@ -1,0 +1,38 @@
+@layer components {
+  .board {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(180px, 1fr));
+    gap: var(--space-3);
+    overflow-x: auto;
+  }
+
+  .column {
+    min-height: 120px;
+    padding: var(--space-2);
+    background: var(--color-subtle);
+    border-radius: var(--radius-md);
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-1) var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+  }
+
+  .count {
+    padding-inline: var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    background: var(--color-chip);
+    border-radius: var(--radius-pill);
+  }
+
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+}

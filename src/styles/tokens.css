@@ -1,0 +1,39 @@
+/**
+ * デザイントークン。色・余白・角丸・タイポを一元管理する。
+ * 値の直書きは禁止し、コンポーネントは必ず var(--*) を参照する。
+ */
+@layer tokens {
+  :root {
+    /* color */
+    --color-bg: #f6f8fa;
+    --color-surface: #ffffff;
+    --color-subtle: #eaeef2;
+    --color-border: #d0d7de;
+    --color-chip: #d0d7de;
+    --color-text: #1f2328;
+    --color-text-muted: #57606a;
+    --color-danger: #cf222e;
+
+    /* spacing（4pxグリッド） */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-6: 24px;
+
+    /* radius */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-pill: 999px;
+
+    /* typography */
+    --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-size-xs: 11px;
+    --font-size-sm: 13px;
+    --font-size-md: 14px;
+    --font-size-lg: 20px;
+
+    /* layout */
+    --layout-max: 1200px;
+  }
+}

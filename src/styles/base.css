@@ -1,0 +1,16 @@
+/**
+ * 要素デフォルト。トークンを使ったページ全体の地の装飾。
+ * クラスを持たない素の要素にだけ適用する。
+ */
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    color: var(--color-text);
+    background: var(--color-bg);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

@@ -1,0 +1,9 @@
+/**
+ * 横断的に再利用する単機能クラス。最強レイヤーなので濫用しない。
+ * （色やレイアウトの大半はコンポーネント側の module.css で表現する）
+ */
+@layer utilities {
+  .hint {
+    color: var(--color-text-muted);
+  }
+}

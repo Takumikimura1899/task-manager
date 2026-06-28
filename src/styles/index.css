@@ -1,0 +1,14 @@
+/**
+ * グローバルCSSのエントリ。main.tsx で最初に読み込む。
+ *
+ * カスケードレイヤーの優先順位をここで一度だけ宣言する（後勝ち）。
+ * - reset < tokens < base < components < utilities
+ * コンポーネントの *.module.css は @layer components に属するため、
+ * 必ず base より強く、utilities より弱くなる（詳細度バトルを排除）。
+ */
+@layer reset, tokens, base, components, utilities;
+
+@import "./reset.css";
+@import "./tokens.css";
+@import "./base.css";
+@import "./utilities.css";

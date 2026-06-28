@@ -1,0 +1,27 @@
+@layer components {
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
+  .ref {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+
+  .title {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+  }
+
+  .priority {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+}
