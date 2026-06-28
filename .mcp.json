@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "task-manager": {
+      "command": "bun",
+      "args": ["mcp/main.ts"],
+      "env": {
+        "MCP_AGENT_EMAIL": "agent@example.com",
+        "MCP_AGENT_NAME": "AI Agent"
+      }
+    }
+  }
+}

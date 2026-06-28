@@ -8,8 +8,9 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "noEmit": true,
+    "types": ["node"],
     "lib": ["ESNext", "DOM"]
   },
-  "include": ["convex"],
+  "include": ["convex", "mcp"],
   "exclude": ["node_modules"]
 }

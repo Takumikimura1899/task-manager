@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "convex dev",
+    "mcp": "bun mcp/main.ts",
     "test": "vitest"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "convex": "^1.42.0",
-    "fractional-indexing": "^4.0.0"
+    "fractional-indexing": "^4.0.0",
+    "zod": "^3"
   },
   "devDependencies": {
+    "@types/node": "^26.0.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }

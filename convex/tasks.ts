@@ -210,6 +210,27 @@ export const move = mutation({
   },
 });
 
+/**
+ * タスク削除（破壊的操作・§6 で Human-in-the-Loop 承認必須）。
+ * 参照整合性（INVARIANT-3）維持のため、関連する GitLink も併せて削除する。
+ */
+export const deleteTask = mutation({
+  args: { id: v.id("tasks"), expectedRevision: v.number() },
+  handler: async (ctx, args) => {
+    const task = await getTaskOrThrow(ctx, args.id);
+    assertRevision(task, args.expectedRevision);
+
+    const links = await ctx.db
+      .query("gitLinks")
+      .withIndex("by_task", (q) => q.eq("task", task._id))
+      .collect();
+    for (const link of links) {
+      await ctx.db.delete(link._id);
+    }
+    await ctx.db.delete(task._id);
+  },
+});
+
 // --- Queries ----------------------------------------------------------------
 
 export const listByProject = query({
