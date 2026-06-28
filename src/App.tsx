@@ -5,10 +5,15 @@ import type { Id } from "../convex/_generated/dataModel";
 import s from "./App.module.css";
 import { Board } from "./components/Board/Board";
 import { IssueList } from "./components/IssueList/IssueList";
+import { NewIssueForm } from "./components/NewIssueForm/NewIssueForm";
 
 export function App() {
   const projects = useQuery(api.projects.list);
+  const members = useQuery(api.members.list);
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(null);
+
+  // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする。
+  const currentMember = members?.[0] ?? null;
 
   if (projects === undefined) {
     return <p className="hint">読み込み中…</p>;
@@ -47,7 +52,13 @@ export function App() {
           </select>
         </label>
       </header>
-      <IssueList project={selected._id} />
+      {currentMember !== null && (
+        <NewIssueForm createdBy={currentMember._id} project={selected._id} />
+      )}
+      <IssueList
+        createdBy={currentMember?._id ?? null}
+        project={selected._id}
+      />
       <Board project={selected._id} projectKey={selected.key} />
     </main>
   );

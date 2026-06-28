@@ -1,0 +1,61 @@
+@layer components {
+  .toggle {
+    padding: 2px var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .toggle:hover {
+    background: var(--color-subtle);
+  }
+
+  .form {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .input {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
+  .submit {
+    padding: 2px var(--space-3);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: #fff;
+    background: #0969da;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .submit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .cancel {
+    padding: 2px var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .error {
+    font-size: var(--font-size-xs);
+    color: var(--color-danger);
+  }
+}

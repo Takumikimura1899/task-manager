@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { AddTaskForm } from "./AddTaskForm";
 import s from "./IssueList.module.css";
 
 // Issue 派生ステータス（§5.1）の表示ラベル。
@@ -13,7 +14,13 @@ const STATUS_LABELS = {
 
 type IssueStatus = keyof typeof STATUS_LABELS;
 
-export function IssueList({ project }: { project: Id<"projects"> }) {
+export function IssueList({
+  project,
+  createdBy,
+}: {
+  project: Id<"projects">;
+  createdBy: Id<"members"> | null;
+}) {
   const issues = useQuery(api.issues.list, { project });
 
   if (issues === undefined) {
@@ -40,6 +47,9 @@ export function IssueList({ project }: { project: Id<"projects"> }) {
               <span className={s.count}>
                 タスク {issue.doneCount}/{issue.taskCount} 完了
               </span>
+              {createdBy !== null && (
+                <AddTaskForm createdBy={createdBy} issue={issue._id} />
+              )}
             </article>
           );
         })}
