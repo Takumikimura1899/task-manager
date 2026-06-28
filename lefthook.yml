@@ -5,9 +5,11 @@ pre-commit:
   parallel: true
   jobs:
     # ステージ済みファイルのみフォーマット→再ステージ（高速・差分最小）
+    # Markdown は規約上 oxfmt の対象外（手書き）。staged が全て除外対象でも
+    # エラーにしないよう --no-error-on-unmatched-pattern を付ける。
     - name: format
-      glob: "*.{ts,tsx,js,jsx,json,jsonc,css,scss,md,yaml,yml}"
-      run: bunx oxfmt --write {staged_files}
+      glob: "*.{ts,tsx,js,jsx,json,jsonc,css,scss,yaml,yml}"
+      run: bunx oxfmt --write --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
 
     # ステージ済みの TS/JS のみ静的解析（自動修正可能なものは修正）
