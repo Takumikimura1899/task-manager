@@ -98,4 +98,8 @@ docs/            設計書
 - [x] MCP サーバー（Resources 3 / Tools 8, §6）
 - [x] GitHub Webhook ＋ Git 駆動の自動遷移（§7 / §5）
 - [ ] 最小 UI（React・一覧＋カンバン D&D, §2）
-- [ ] docker-compose によるセルフホスト（§2）
+- [ ] docker-compose によるセルフホスト（Phase 2 へ延期 / 本番化時に Convex self-hosted で対応）
+
+> セルフホスト方針（ADR-5）は Convex セルフホスト OSS の採用で満たしている。
+> docker-compose 化（本番デプロイ用）は MVP 仮説の検証に不要なため Phase 2 へ延期。
+> 開発・検証はローカルの `bun run dev`（Convex ローカルデプロイ）で完結する。
