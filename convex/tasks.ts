@@ -1,5 +1,10 @@
 import { ConvexError, v } from "convex/values";
-import { type QueryCtx, mutation, query } from "./_generated/server";
+import {
+  type MutationCtx,
+  type QueryCtx,
+  mutation,
+  query,
+} from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
@@ -68,11 +73,60 @@ function nextMeta(task: Doc<"tasks">): { revision: number; updatedAt: number } {
   return { revision: task.revision + 1, updatedAt: Date.now() };
 }
 
+/**
+ * Task を採番して backlog 列の末尾に挿入する内部ヘルパー。
+ * 公開 create と issues.create（最初の Task 生成）から共有し、
+ * 採番（INVARIANT-1）と参照検証（INVARIANT-3）を一箇所に集約する。
+ */
+export async function insertTask(
+  ctx: MutationCtx,
+  args: {
+    issue: Id<"issues">;
+    project: Id<"projects">;
+    title: string;
+    description?: string;
+    priority?: Doc<"tasks">["priority"];
+    assignee?: Id<"members">;
+    createdBy: Id<"members">;
+  },
+): Promise<Id<"tasks">> {
+  const project = await ctx.db.get(args.project);
+  if (project === null) {
+    throw new ConvexError("指定されたプロジェクトが存在しません");
+  }
+  await assertMemberExists(ctx, args.createdBy);
+  if (args.assignee !== undefined) {
+    await assertMemberExists(ctx, args.assignee);
+  }
+
+  // 採番（INVARIANT-1）: 現在値を採番し、カウンタを進める。
+  const number = project.nextTaskNumber;
+  await ctx.db.patch(project._id, { nextTaskNumber: number + 1 });
+
+  // 新規 Task は backlog 列の末尾に置く。
+  const tail = await lastRankInColumn(ctx, args.project, "backlog");
+
+  return await ctx.db.insert("tasks", {
+    issue: args.issue,
+    project: args.project,
+    number,
+    title: args.title,
+    description: args.description,
+    status: "backlog",
+    priority: args.priority ?? "none",
+    assignee: args.assignee,
+    rank: rankBetween(tail, null),
+    createdBy: args.createdBy,
+    revision: 0,
+    updatedAt: Date.now(),
+  });
+}
+
 // --- Mutations --------------------------------------------------------------
 
 export const create = mutation({
   args: {
-    project: v.id("projects"),
+    issue: v.id("issues"),
     title: v.string(),
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
@@ -80,35 +134,20 @@ export const create = mutation({
     createdBy: v.id("members"),
   },
   handler: async (ctx, args) => {
-    const project = await ctx.db.get(args.project);
-    if (project === null) {
-      throw new ConvexError("指定されたプロジェクトが存在しません");
-    }
-    await assertMemberExists(ctx, args.createdBy);
-    if (args.assignee !== undefined) {
-      await assertMemberExists(ctx, args.assignee);
+    // Task は必ず Issue に従属する（INVARIANT-5）。project は Issue から解決する。
+    const issue = await ctx.db.get(args.issue);
+    if (issue === null) {
+      throw new ConvexError("指定された Issue が存在しません");
     }
 
-    // 採番（INVARIANT-1）: 現在値を採番し、カウンタを進める。
-    const number = project.nextTaskNumber;
-    await ctx.db.patch(project._id, { nextTaskNumber: number + 1 });
-
-    // 新規タスクは backlog 列の末尾に置く。
-    const tail = await lastRankInColumn(ctx, args.project, "backlog");
-    const rank = rankBetween(tail, null);
-
-    return await ctx.db.insert("tasks", {
-      project: args.project,
-      number,
+    return await insertTask(ctx, {
+      issue: issue._id,
+      project: issue.project,
       title: args.title,
       description: args.description,
-      status: "backlog",
-      priority: args.priority ?? "none",
+      priority: args.priority,
       assignee: args.assignee,
-      rank,
       createdBy: args.createdBy,
-      revision: 0,
-      updatedAt: Date.now(),
     });
   },
 });
@@ -217,6 +256,18 @@ export const deleteTask = mutation({
   handler: async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
+
+    // INVARIANT-5: Issue は常に ≥1 Task を持つ。最後の Task の削除は拒否し、
+    // Issue ごと削除する操作（issues.remove）へ誘導する。
+    const siblings = await ctx.db
+      .query("tasks")
+      .withIndex("by_issue", (q) => q.eq("issue", task.issue))
+      .collect();
+    if (siblings.length <= 1) {
+      throw new ConvexError(
+        "Issue の最後の Task は削除できません。Issue ごと削除してください。",
+      );
+    }
 
     const links = await ctx.db
       .query("gitLinks")

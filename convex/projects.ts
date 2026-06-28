@@ -35,7 +35,9 @@ export const create = mutation({
       key: args.key,
       name: args.name,
       description: args.description,
-      nextTaskNumber: 1, // 採番は 1 から開始（INVARIANT-1）
+      // 採番は 1 から開始（INVARIANT-1）。Task / Issue で別カウンタ。
+      nextTaskNumber: 1,
+      nextIssueNumber: 1,
     });
   },
 });

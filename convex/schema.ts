@@ -59,8 +59,9 @@ export default defineSchema({
     key: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
-    // 採番カウンタ: 次に発番する Task.number。採番時に atomic にインクリメントする。
+    // 採番カウンタ: 次に発番する番号。採番時に atomic にインクリメントする（INVARIANT-1）。
     nextTaskNumber: v.number(),
+    nextIssueNumber: v.number(),
   }).index("by_key", ["key"]),
 
   // Member — 人間および AI エージェントの主体（AIエージェントも role=member として表現）
@@ -70,8 +71,27 @@ export default defineSchema({
     role: memberRole,
   }).index("by_email", ["email"]),
 
-  // Task — タスク本体
+  // Issue — 解決すべき課題（Task の上位概念、基本設計書 ADR-9 / §3）
+  // status は保持しない派生属性（子 Task 群から算出、§5.1 / lib/issueStatus.ts）。
+  issues: defineTable({
+    project: v.id("projects"),
+    // プロジェクト内で一意の連番（表示は {key}#{number}）
+    number: v.number(),
+    title: v.string(),
+    description: v.optional(v.string()), // Markdown
+    createdBy: v.id("members"),
+    revision: v.number(), // 並行更新検出（楽観ロック）
+    updatedAt: v.number(),
+  })
+    .index("by_project", ["project"])
+    // 採番の一意性チェック・{key}#{number} 解決用
+    .index("by_project_and_number", ["project", "number"]),
+
+  // Task — タスク本体（Issue を解決する手段）
   tasks: defineTable({
+    // 所属 Issue（必須・INVARIANT-5）。Task は必ずいずれかの Issue に従属する。
+    issue: v.id("issues"),
+    // issue.project と一致させる冗長参照（ボード問い合わせ効率化。整合は Core で担保）。
     project: v.id("projects"),
     // プロジェクト内で一意の連番（表示は {key}-{number}）
     number: v.number(),
@@ -91,6 +111,8 @@ export default defineSchema({
     .index("by_project_and_number", ["project", "number"])
     // カンバン列（ステータス別一覧）を rank 昇順で取得・末尾採番するため rank を含める
     .index("by_project_and_status", ["project", "status", "rank"])
+    // Issue 配下の Task 一覧・派生ステータス算出・最低基数チェック用
+    .index("by_issue", ["issue"])
     .index("by_assignee", ["assignee"]),
 
   // Repository — Git 連携先

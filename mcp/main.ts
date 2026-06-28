@@ -97,6 +97,27 @@ async function resolveProject(key: string): Promise<Doc<"projects">> {
   return project;
 }
 
+const ISSUE_REF_PATTERN = /^([A-Z]+)#(\d+)$/;
+
+/** "TASK#1" 形式の Issue 参照を {key, number} に分解する。 */
+function parseIssueRef(ref: string): { key: string; number: number } {
+  const m = ISSUE_REF_PATTERN.exec(ref.trim());
+  if (m === null) {
+    throw new Error(`Issue 参照の形式が不正です: "${ref}"（例: TASK#1）`);
+  }
+  return { key: m[1], number: Number(m[2]) };
+}
+
+async function resolveIssueId(ref: string): Promise<Id<"issues">> {
+  const { key, number } = parseIssueRef(ref);
+  const issue = await convex.query(api.issues.getByRef, {
+    projectKey: key,
+    number,
+  });
+  if (issue === null) throw new Error(`Issue が見つかりません: ${ref}`);
+  return issue._id;
+}
+
 async function resolveMemberId(email: string): Promise<Id<"members">> {
   const member = await convex.query(api.members.getByEmail, { email });
   if (member === null) throw new Error(`メンバーが見つかりません: ${email}`);
@@ -287,28 +308,68 @@ async function main() {
   );
 
   server.registerTool(
+    "create_issue",
+    {
+      title: "Issue作成",
+      description:
+        "新しい Issue（解決すべき課題）を作成する。最初の Task を必ず伴う（Issue は常に ≥1 Task）。",
+      inputSchema: {
+        project_key: z.string(),
+        title: z.string(),
+        description: z.string().optional(),
+        first_task_title: z.string().describe("Issue 解決の最初の Task"),
+        first_task_priority: z.enum(PRIORITY_VALUES).optional(),
+      },
+    },
+    async ({
+      project_key,
+      title,
+      description,
+      first_task_title,
+      first_task_priority,
+    }) => {
+      try {
+        const project = await resolveProject(project_key);
+        const result = await convex.mutation(api.issues.create, {
+          project: project._id,
+          title,
+          description,
+          createdBy: agentMemberId,
+          firstTask: {
+            title: first_task_title,
+            priority: first_task_priority,
+          },
+        });
+        return ok({ ...result, message: "Issue を作成しました" });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     "create_task",
     {
       title: "タスク作成",
       description:
-        "新しいタスクを作成する（採番・初期状態 backlog は Core 側で決定）",
+        "既存の Issue に新しいタスクを追加する（採番・初期状態 backlog は Core 側で決定）",
       inputSchema: {
-        project_key: z.string(),
+        issue_ref: z.string().describe("所属 Issue（例: TASK#1）"),
         title: z.string(),
         description: z.string().optional(),
         priority: z.enum(PRIORITY_VALUES).optional(),
         assignee_email: z.string().optional(),
       },
     },
-    async ({ project_key, title, description, priority, assignee_email }) => {
+    async ({ issue_ref, title, description, priority, assignee_email }) => {
       try {
-        const project = await resolveProject(project_key);
+        const issue = await resolveIssueId(issue_ref);
         const assignee =
           assignee_email !== undefined
             ? await resolveMemberId(assignee_email)
             : undefined;
         const id = await convex.mutation(api.tasks.create, {
-          project: project._id,
+          issue,
           title,
           description,
           priority,
