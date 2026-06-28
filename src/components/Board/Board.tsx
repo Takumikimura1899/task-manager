@@ -16,13 +16,13 @@ import { ConvexError } from "convex/values";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
-import { neighborRanks } from "../../lib/board";
+import { type BoardTask, neighborRanks } from "../../lib/board";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
 import { Column } from "./Column";
 
 type TaskStatus = Doc<"tasks">["status"];
-type BoardColumn = { status: TaskStatus; tasks: Doc<"tasks">[] };
+type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
 
 // §5 の固定6状態に対する表示ラベル
 const STATUS_LABELS: Record<TaskStatus, string> = {
@@ -64,7 +64,7 @@ export function Board({
   const transitionStatus = useMutation(api.tasks.transitionStatus);
 
   const [board, setBoard] = useState<BoardColumn[] | null>(null);
-  const [activeTask, setActiveTask] = useState<Doc<"tasks"> | null>(null);
+  const [activeTask, setActiveTask] = useState<BoardTask | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // onDragEnd から最新の board を参照するための ref。
@@ -95,7 +95,7 @@ export function Board({
     return <p className="hint">読み込み中…</p>;
   }
 
-  function findTask(id: string): Doc<"tasks"> | null {
+  function findTask(id: string): BoardTask | null {
     for (const column of boardRef.current ?? []) {
       const found = column.tasks.find((t) => t._id === id);
       if (found) return found;
@@ -211,7 +211,12 @@ export function Board({
       </div>
       <DragOverlay>
         {activeTask ? (
-          <TaskCard projectKey={projectKey} task={activeTask} />
+          <TaskCard
+            assigneeName={activeTask.assigneeName}
+            issueNumber={activeTask.issueNumber}
+            projectKey={projectKey}
+            task={activeTask}
+          />
         ) : null}
       </DragOverlay>
     </DndContext>
