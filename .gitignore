@@ -7,3 +7,6 @@ convex/_generated/ai/
 dist/
 *.log
 .DS_Store
+
+# Playwright MCP の一時生成物
+.playwright-mcp/

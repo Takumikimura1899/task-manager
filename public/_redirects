@@ -1,5 +1,0 @@
-# SPA history フォールバック（Netlify / Cloudflare Pages 互換）。
-# BrowserRouter のクライアントルート（/:projectKey/issues/:number 等）を
-# 直リンク・リロードしても index.html を返し、404 を防ぐ。
-# Vite の dev/preview は内蔵で対応するため、本番静的ホスト向けの設定。
-/*    /index.html    200
