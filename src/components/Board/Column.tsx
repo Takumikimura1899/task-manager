@@ -4,6 +4,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { Doc } from "../../../convex/_generated/dataModel";
+import type { BoardTask } from "../../lib/board";
 import { SortableTaskCard } from "../TaskCard/SortableTaskCard";
 import s from "./Board.module.css";
 
@@ -19,7 +20,7 @@ export function Column({
 }: {
   status: Doc<"tasks">["status"];
   label: string;
-  tasks: Doc<"tasks">[];
+  tasks: BoardTask[];
   projectKey: string;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });

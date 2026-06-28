@@ -25,8 +25,21 @@
   }
 
   .ref {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
+  }
+
+  /* 所属 Issue バッジ。Task ID と区別するため語付き「Issue #N」。 */
+  .issue {
+    padding: 0 var(--space-2);
+    color: var(--color-text-muted);
+    background: var(--color-subtle);
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
   }
 
   .title {
@@ -35,8 +48,24 @@
     font-weight: 500;
   }
 
+  .meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
   .priority {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
+  }
+
+  .assignee {
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    background: var(--color-subtle);
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
   }
 }

@@ -12,19 +12,31 @@ const PRIORITY_LABELS: Record<Doc<"tasks">["priority"], string> = {
 export function TaskCard({
   task,
   projectKey,
+  issueNumber = null,
+  assigneeName = null,
 }: {
   task: Doc<"tasks">;
   projectKey: string;
+  issueNumber?: number | null;
+  assigneeName?: string | null;
 }) {
   return (
     <article className={s.card}>
       <span className={s.ref}>
         {projectKey}-{task.number}
+        {issueNumber !== null && (
+          <span className={s.issue}>Issue #{issueNumber}</span>
+        )}
       </span>
       <h3 className={s.title}>{task.title}</h3>
-      <span className={s.priority}>
-        優先度: {PRIORITY_LABELS[task.priority]}
-      </span>
+      <div className={s.meta}>
+        <span className={s.priority}>
+          優先度: {PRIORITY_LABELS[task.priority]}
+        </span>
+        {assigneeName !== null && (
+          <span className={s.assignee}>{assigneeName}</span>
+        )}
+      </div>
     </article>
   );
 }

@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Doc } from "../../../convex/_generated/dataModel";
+import type { BoardTask } from "../../lib/board";
 import { TaskCard } from "./TaskCard";
 import s from "./TaskCard.module.css";
 
@@ -13,7 +13,7 @@ export function SortableTaskCard({
   task,
   projectKey,
 }: {
-  task: Doc<"tasks">;
+  task: BoardTask;
   projectKey: string;
 }) {
   const {
@@ -33,7 +33,12 @@ export function SortableTaskCard({
       {...attributes}
       {...listeners}
     >
-      <TaskCard projectKey={projectKey} task={task} />
+      <TaskCard
+        assigneeName={task.assigneeName}
+        issueNumber={task.issueNumber}
+        projectKey={projectKey}
+        task={task}
+      />
     </div>
   );
 }

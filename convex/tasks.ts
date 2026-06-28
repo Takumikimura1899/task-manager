@@ -292,20 +292,44 @@ export const listByProject = query({
   },
 });
 
-/** カンバン表示用: 固定6状態の列順で、各列を rank 昇順に整列して返す。 */
+/**
+ * カンバン表示用: 固定6状態の列順で、各列を rank 昇順に整列して返す。
+ * 表示の利便のため、各 Task に所属 Issue 番号と担当者名を付与する
+ * （member の email 等 PII は返さず name のみ）。
+ */
 export const board = query({
   args: { project: v.id("projects") },
   handler: async (ctx, args) => {
+    // id → 表示値のマップを一度だけ構築する。
+    const issues = await ctx.db
+      .query("issues")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+    const issueNumber = new Map(issues.map((i) => [i._id, i.number]));
+    const memberName = new Map(
+      (await ctx.db.query("members").collect()).map((m) => [m._id, m.name]),
+    );
+
     const columns = await Promise.all(
-      TASK_STATUSES.map(async (status) => ({
-        status,
-        tasks: await ctx.db
+      TASK_STATUSES.map(async (status) => {
+        const tasks = await ctx.db
           .query("tasks")
           .withIndex("by_project_and_status", (q) =>
             q.eq("project", args.project).eq("status", status),
           )
-          .collect(), // index 末尾フィールドが rank のため既に昇順
-      })),
+          .collect(); // index 末尾フィールドが rank のため既に昇順
+        return {
+          status,
+          tasks: tasks.map((t) => ({
+            ...t,
+            issueNumber: issueNumber.get(t.issue) ?? null,
+            assigneeName:
+              t.assignee === undefined
+                ? null
+                : (memberName.get(t.assignee) ?? null),
+          })),
+        };
+      }),
     );
     return columns;
   },
