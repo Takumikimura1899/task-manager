@@ -51,6 +51,9 @@ export const getByEmail = query({
 export const list = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db.query("members").collect();
+    const members = await ctx.db.query("members").collect();
+    // PII（email）を未認証クライアントへ露出しない。UI に必要な最小限のみ返す。
+    // 認証導入（Phase2）までの暫定ハードニング。本人性の担保は認証側で行う。
+    return members.map((m) => ({ _id: m._id, name: m.name }));
   },
 });
