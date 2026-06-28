@@ -3,6 +3,8 @@ import { ConvexError } from "convex/values";
 import { type FormEvent, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { type Priority } from "../../lib/taskMeta";
+import { TaskMetaFields } from "../forms/TaskMetaFields";
 import s from "./NewIssueForm.module.css";
 
 /**
@@ -20,6 +22,8 @@ export function NewIssueForm({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
+  const [priority, setPriority] = useState<Priority>("none");
+  const [assignee, setAssignee] = useState<Id<"members"> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -30,6 +34,8 @@ export function NewIssueForm({
     setOpen(false);
     setTitle("");
     setTaskTitle("");
+    setPriority("none");
+    setAssignee(null);
     setError(null);
   }
 
@@ -43,7 +49,11 @@ export function NewIssueForm({
         project,
         title: title.trim(),
         createdBy,
-        firstTask: { title: taskTitle.trim() },
+        firstTask: {
+          title: taskTitle.trim(),
+          priority,
+          assignee: assignee ?? undefined,
+        },
       });
       close();
     } catch (err) {
@@ -83,6 +93,12 @@ export function NewIssueForm({
           onChange={(e) => setTaskTitle(e.target.value)}
           placeholder="最初のタスクのタイトル"
           value={taskTitle}
+        />
+        <TaskMetaFields
+          assignee={assignee}
+          onAssignee={setAssignee}
+          onPriority={setPriority}
+          priority={priority}
         />
         {error !== null && <p className={s.error}>{error}</p>}
         <div className={s.actions}>
