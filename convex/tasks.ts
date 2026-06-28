@@ -176,7 +176,11 @@ export const updateFields = mutation({
 });
 
 /**
- * ステータス遷移（§5 状態機械）。遷移先列の末尾に再配置する。
+ * ステータス遷移（§5 状態機械）。遷移先列へ再配置する。
+ * - before/after を指定すると、その隣接 rank の間へ挿入する（列をまたぐ D&D の
+ *   ドロップ位置を尊重する）。同一列並べ替え（move）と同じ OrderedRank 方式。
+ * - 未指定なら遷移先列の末尾に置く（MCP/自動化など位置を持たない呼び出し向け）。
+ *
  * 破壊的遷移（done/canceled）の Human-in-the-Loop 承認はホスト（MCP/UI）の責務で、
  * ここでは遷移の妥当性のみを強制する。
  */
@@ -185,6 +189,8 @@ export const transitionStatus = mutation({
     id: v.id("tasks"),
     to: taskStatus,
     expectedRevision: v.number(),
+    before: v.optional(v.union(v.string(), v.null())),
+    after: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
@@ -194,11 +200,16 @@ export const transitionStatus = mutation({
       throw new ConvexError(`状態遷移できません: ${task.status} → ${args.to}`);
     }
 
-    // 遷移先の列の末尾に置く（列ごとに rank 空間は独立）。
-    const tail = await lastRankInColumn(ctx, task.project, args.to);
+    // 位置指定（before/after のいずれか）があればその間へ、なければ列の末尾へ。
+    // 列ごとに rank 空間は独立する。
+    const positioned = args.before !== undefined || args.after !== undefined;
+    const rank = positioned
+      ? rankBetween(args.before ?? null, args.after ?? null)
+      : rankBetween(await lastRankInColumn(ctx, task.project, args.to), null);
+
     await ctx.db.patch(task._id, {
       status: args.to,
-      rank: rankBetween(tail, null),
+      rank,
       ...nextMeta(task),
     });
   },

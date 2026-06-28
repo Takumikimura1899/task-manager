@@ -162,10 +162,19 @@ export function Board({
           expectedRevision: dragged.revision,
         });
       } else {
-        // 列をまたぐ移動は状態遷移（遷移先列の末尾に着地・状態機械で検証）。
+        // 列をまたぐ移動は状態遷移（状態機械で検証）。
+        // handleDragOver でカードは既に遷移先列のドロップ位置へ配置済みなので、
+        // その近傍 rank を渡して末尾固定ではなく任意位置へ挿入する。
+        const movedIndex = columnTasks.findIndex((t) => t._id === activeId);
+        const { before, after } = neighborRanks(
+          columnTasks.map((t) => t.rank),
+          movedIndex,
+        );
         await transitionStatus({
           id: dragged._id,
           to: targetStatus,
+          before,
+          after,
           expectedRevision: dragged.revision,
         });
       }
