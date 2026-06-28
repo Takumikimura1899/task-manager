@@ -2,20 +2,31 @@
 # 参考: https://lefthook.dev/
 
 pre-commit:
+  # 拡張子ごとにジョブを分け（glob は重複なし）、各ジョブ内は逐次実行する。
+  # → 同一ファイルを複数ツールが並列に書き換える競合を構造的に排除する。
+  # Markdown は規約上どのツールの整形対象でもないため対象外。
   parallel: true
   jobs:
-    # ステージ済みファイルのみフォーマット→再ステージ（高速・差分最小）
-    # Markdown は規約上 oxfmt の対象外（手書き）。staged が全て除外対象でも
-    # エラーにしないよう --no-error-on-unmatched-pattern を付ける。
-    - name: format
-      glob: "*.{ts,tsx,js,jsx,json,jsonc,css,scss,yaml,yml}"
-      run: bunx oxfmt --write --no-error-on-unmatched-pattern {staged_files}
+    # TS/JS: 整形 → 静的解析 の順
+    - name: js
+      glob: "*.{ts,tsx,js,jsx}"
+      run: >-
+        bunx oxfmt --write --no-error-on-unmatched-pattern {staged_files} &&
+        bunx oxlint --fix {staged_files}
       stage_fixed: true
 
-    # ステージ済みの TS/JS のみ静的解析（自動修正可能なものは修正）
-    - name: lint
-      glob: "*.{ts,tsx,js,jsx}"
-      run: bunx oxlint --fix {staged_files}
+    # CSS: lint(stylelint) → 整形(oxfmt) の順
+    - name: css
+      glob: "*.{css,scss}"
+      run: >-
+        bunx stylelint --fix --allow-empty-input {staged_files} &&
+        bunx oxfmt --write --no-error-on-unmatched-pattern {staged_files}
+      stage_fixed: true
+
+    # その他データ系（json/yaml）: 整形のみ
+    - name: data
+      glob: "*.{json,jsonc,yaml,yml}"
+      run: bunx oxfmt --write --no-error-on-unmatched-pattern {staged_files}
       stage_fixed: true
 
 commit-msg:

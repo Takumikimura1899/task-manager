@@ -30,6 +30,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Lint CSS
+        run: bun run lint:css
+
       - name: Format check
         run: bun run format:check
 
