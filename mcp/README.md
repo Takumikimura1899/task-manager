@@ -23,12 +23,13 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
 ### Tools（実行）
 
 `list_tasks` / `get_task` / `create_task` / `update_task` /
-`transition_status` / `assign_task` / `delete_task`
+`transition_status` / `assign_task` / `delete_task` / `link_git`
 
 - `delete_task` と `transition_status`（done/canceled 遷移）は破壊的操作のため
   `destructiveHint` を付与。承認はホスト（Claude Code 等）が担う（Human-in-the-Loop, §6）。
 - 更新系ツールの `version` 引数には `get_task` で得た `revision` を渡す（楽観ロック）。
-- `link_git` は Repository / GitLink の Core API 実装後に追加予定。
+- `link_git` はタスクの所属プロジェクトからリポジトリを解決する（複数ある場合は
+  `repository_url` を指定）。`(repository, type, ref)` で冪等。
 
 ## 環境変数
 

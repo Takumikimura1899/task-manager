@@ -21,6 +21,8 @@ import type { Doc, Id } from "../convex/_generated/dataModel.js";
 import { TASK_STATUSES } from "../convex/lib/taskStatus.js";
 
 const PRIORITY_VALUES = ["none", "low", "medium", "high", "urgent"] as const;
+const GIT_LINK_TYPES = ["branch", "commit", "pull_request"] as const;
+const PR_STATES = ["draft", "open", "merged", "closed"] as const;
 
 const log = (...args: unknown[]) => console.error("[mcp]", ...args);
 
@@ -99,6 +101,35 @@ async function resolveMemberId(email: string): Promise<Id<"members">> {
   const member = await convex.query(api.members.getByEmail, { email });
   if (member === null) throw new Error(`メンバーが見つかりません: ${email}`);
   return member._id;
+}
+
+/**
+ * タスクの所属プロジェクトからリポジトリを特定する。
+ * 1つなら自動選択、複数あれば repositoryUrl で曖昧性を解消する。
+ */
+async function resolveRepositoryId(
+  projectId: Id<"projects">,
+  repositoryUrl: string | undefined,
+): Promise<Id<"repositories">> {
+  const repos = await convex.query(api.repositories.listByProject, {
+    project: projectId,
+  });
+  if (repos.length === 0) {
+    throw new Error("このプロジェクトにはリポジトリが登録されていません");
+  }
+  if (repositoryUrl !== undefined) {
+    const match = repos.find((r) => r.remoteUrl === repositoryUrl);
+    if (match === undefined) {
+      throw new Error(`リポジトリが見つかりません: ${repositoryUrl}`);
+    }
+    return match._id;
+  }
+  if (repos.length > 1) {
+    throw new Error(
+      "プロジェクトに複数のリポジトリがあります。repository_url を指定してください",
+    );
+  }
+  return repos[0]._id;
 }
 
 const isActive = (t: Doc<"tasks">) =>
@@ -386,6 +417,46 @@ async function main() {
           expectedRevision: version,
         });
         return ok({ message: "削除しました" });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "link_git",
+    {
+      title: "Git アーティファクト紐付け",
+      description:
+        "タスクに Git のブランチ/コミット/PR を紐付ける。リポジトリはタスクの所属プロジェクトから解決する（複数ある場合は repository_url を指定）。(repository, type, ref) で冪等",
+      inputSchema: {
+        task_ref: z.string().describe("例: TASK-123"),
+        type: z.enum(GIT_LINK_TYPES),
+        ref: z.string().describe("sha / PR番号 / ブランチ名"),
+        url: z.string(),
+        pr_state: z.enum(PR_STATES).optional().describe("type=pull_request のとき"),
+        repository_url: z
+          .string()
+          .optional()
+          .describe("プロジェクトに複数リポジトリがある場合の指定"),
+      },
+    },
+    async ({ task_ref, type, ref, url, pr_state, repository_url }) => {
+      try {
+        const task = await resolveTask(task_ref);
+        const repository = await resolveRepositoryId(
+          task.project,
+          repository_url,
+        );
+        const id = await convex.mutation(api.gitLinks.link, {
+          task: task._id,
+          repository,
+          type,
+          externalRef: ref,
+          url,
+          prState: pr_state,
+        });
+        return ok({ id, message: "Git アーティファクトを紐付けました" });
       } catch (e) {
         return fail(e);
       }
