@@ -15,6 +15,7 @@ import type * as lib_crypto from "../lib/crypto.js";
 import type * as lib_gitAutomation from "../lib/gitAutomation.js";
 import type * as lib_gitRef from "../lib/gitRef.js";
 import type * as lib_issueStatus from "../lib/issueStatus.js";
+import type * as lib_members from "../lib/members.js";
 import type * as lib_rank from "../lib/rank.js";
 import type * as lib_taskStatus from "../lib/taskStatus.js";
 import type * as lib_validators from "../lib/validators.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   "lib/gitAutomation": typeof lib_gitAutomation;
   "lib/gitRef": typeof lib_gitRef;
   "lib/issueStatus": typeof lib_issueStatus;
+  "lib/members": typeof lib_members;
   "lib/rank": typeof lib_rank;
   "lib/taskStatus": typeof lib_taskStatus;
   "lib/validators": typeof lib_validators;

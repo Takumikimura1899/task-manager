@@ -35,6 +35,12 @@
   .title {
     flex: 1;
     font-size: var(--font-size-md);
+    color: var(--color-text);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
   }
 
   .count {

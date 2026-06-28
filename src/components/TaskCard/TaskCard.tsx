@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import s from "./TaskCard.module.css";
 
@@ -23,7 +24,13 @@ export function TaskCard({
   return (
     <article className={s.card}>
       <span className={s.ref}>
-        {projectKey}-{task.number}
+        <Link
+          className={s.refLink}
+          draggable={false}
+          to={`/${projectKey}/tasks/${task.number}`}
+        >
+          {projectKey}-{task.number}
+        </Link>
         {issueNumber !== null && (
           <span className={s.issue}>Issue #{issueNumber}</span>
         )}

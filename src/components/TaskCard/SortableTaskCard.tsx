@@ -7,6 +7,7 @@ import s from "./TaskCard.module.css";
 /**
  * TaskCard を @dnd-kit の sortable アイテムとしてラップする。
  * 表示は TaskCard（表示専任）に委譲し、ここは D&D の配線だけを担う。
+ * 詳細画面への遷移は TaskCard 内の参照リンク（セマンティックな anchor）が担う。
  * transform はドラッグ追従のため動的値であり、インラインstyleが正となる。
  */
 export function SortableTaskCard({

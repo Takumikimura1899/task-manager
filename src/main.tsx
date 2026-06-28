@@ -1,6 +1,7 @@
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import "./styles/index.css";
 import { App } from "./App";
 
@@ -21,7 +22,9 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <ConvexProvider client={convex}>
-      <App />
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
     </ConvexProvider>
   </StrictMode>,
 );

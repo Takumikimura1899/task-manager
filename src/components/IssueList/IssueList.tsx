@@ -1,24 +1,18 @@
 import { useQuery } from "convex/react";
+import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { type IssueStatus, ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { AddTaskForm } from "./AddTaskForm";
 import s from "./IssueList.module.css";
 
-// Issue 派生ステータス（§5.1）の表示ラベル。
-const STATUS_LABELS = {
-  open: "未着手",
-  in_progress: "着手中",
-  done: "完了",
-  canceled: "中止",
-} as const;
-
-type IssueStatus = keyof typeof STATUS_LABELS;
-
 export function IssueList({
   project,
+  projectKey,
   createdBy,
 }: {
   project: Id<"projects">;
+  projectKey: string;
   createdBy: Id<"members"> | null;
 }) {
   const issues = useQuery(api.issues.list, { project });
@@ -41,9 +35,14 @@ export function IssueList({
             <article className={s.item} key={issue._id}>
               <span className={s.ref}>Issue #{issue.number}</span>
               <span className={`${s.badge} ${s[status]}`}>
-                {STATUS_LABELS[status]}
+                {ISSUE_STATUS_LABELS[status]}
               </span>
-              <span className={s.title}>{issue.title}</span>
+              <Link
+                className={s.title}
+                to={`/${projectKey}/issues/${issue.number}`}
+              >
+                {issue.title}
+              </Link>
               <span className={s.count}>
                 タスク {issue.doneCount}/{issue.taskCount} 完了
               </span>

@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { type QueryCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { deriveIssueStatus } from "./lib/issueStatus";
+import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { taskPriority } from "./schema";
 import { insertTask } from "./tasks";
 
@@ -133,18 +134,24 @@ export const list = query({
     return await Promise.all(
       issues.map(async (issue) => {
         const tasks = await tasksOfIssue(ctx, issue._id);
+        // 進捗は canceled を除いた「実行対象」で集計（派生ステータスと同基準・§5.1）。
+        const active = tasks.filter((t) => t.status !== "canceled");
         return {
           ...issue,
           status: deriveIssueStatus(tasks.map((t) => t.status)),
-          taskCount: tasks.length,
-          doneCount: tasks.filter((t) => t.status === "done").length,
+          taskCount: active.length,
+          doneCount: active.filter((t) => t.status === "done").length,
         };
       }),
     );
   },
 });
 
-/** {key}#{number} 形式の参照から Issue を解決し、派生ステータスと配下 Task を返す。 */
+/**
+ * {key}#{number} 形式の参照から Issue を解決し、派生ステータスと配下 Task を返す。
+ * 詳細画面の表示用に作成者名と各 Task の担当者名を付与する
+ * （member の PII は返さず name のみ）。
+ */
 export const getByRef = query({
   args: { projectKey: v.string(), number: v.number() },
   handler: async (ctx, args) => {
@@ -163,10 +170,25 @@ export const getByRef = query({
     if (issue === null) return null;
 
     const tasks = await tasksOfIssue(ctx, issue._id);
+
+    // 担当者名は参照された分だけ解決する（members 全件 .collect() は避ける）。
+    const memberName = await resolveMemberNames(
+      ctx,
+      tasks.map((t) => t.assignee),
+    );
+
     return {
       ...issue,
+      projectKey: project.key,
       status: deriveIssueStatus(tasks.map((t) => t.status)),
-      tasks,
+      createdByName: await resolveMemberName(ctx, issue.createdBy),
+      tasks: tasks.map((t) => ({
+        ...t,
+        assigneeName:
+          t.assignee === undefined
+            ? null
+            : (memberName.get(t.assignee) ?? null),
+      })),
     };
   },
 });

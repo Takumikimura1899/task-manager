@@ -15,24 +15,14 @@ import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
-import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../../convex/_generated/dataModel";
 import { type BoardTask, neighborRanks } from "../../lib/board";
+import { type TaskStatus, TASK_STATUS_LABELS } from "../../lib/taskMeta";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
 import { Column } from "./Column";
 
-type TaskStatus = Doc<"tasks">["status"];
 type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
-
-// §5 の固定6状態に対する表示ラベル
-const STATUS_LABELS: Record<TaskStatus, string> = {
-  backlog: "バックログ",
-  todo: "未着手",
-  in_progress: "進行中",
-  in_review: "レビュー中",
-  done: "完了",
-  canceled: "キャンセル",
-};
 
 /** server スナップショットをローカル編集可能な形へ複製する。 */
 function toLocal(columns: readonly BoardColumn[]): BoardColumn[] {
@@ -202,7 +192,7 @@ export function Board({
         {board.map((column) => (
           <Column
             key={column.status}
-            label={STATUS_LABELS[column.status]}
+            label={TASK_STATUS_LABELS[column.status]}
             projectKey={projectKey}
             status={column.status}
             tasks={column.tasks}
