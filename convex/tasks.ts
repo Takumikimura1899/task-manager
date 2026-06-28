@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
+import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
 import { rankBetween } from "./lib/rank";
 
@@ -306,36 +307,44 @@ export const board = query({
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
     const issueNumber = new Map(issues.map((i) => [i._id, i.number]));
-    const memberName = new Map(
-      (await ctx.db.query("members").collect()).map((m) => [m._id, m.name]),
-    );
 
-    const columns = await Promise.all(
-      TASK_STATUSES.map(async (status) => {
-        const tasks = await ctx.db
+    const columnTasks = await Promise.all(
+      TASK_STATUSES.map(async (status) => ({
+        status,
+        tasks: await ctx.db
           .query("tasks")
           .withIndex("by_project_and_status", (q) =>
             q.eq("project", args.project).eq("status", status),
           )
-          .collect(); // index 末尾フィールドが rank のため既に昇順
-        return {
-          status,
-          tasks: tasks.map((t) => ({
-            ...t,
-            issueNumber: issueNumber.get(t.issue) ?? null,
-            assigneeName:
-              t.assignee === undefined
-                ? null
-                : (memberName.get(t.assignee) ?? null),
-          })),
-        };
-      }),
+          .collect(), // index 末尾フィールドが rank のため既に昇順
+      })),
     );
-    return columns;
+
+    // 担当者名は参照された分だけ解決する（members 全件 .collect() は避ける）。
+    const memberName = await resolveMemberNames(
+      ctx,
+      columnTasks.flatMap((c) => c.tasks.map((t) => t.assignee)),
+    );
+
+    return columnTasks.map(({ status, tasks }) => ({
+      status,
+      tasks: tasks.map((t) => ({
+        ...t,
+        issueNumber: issueNumber.get(t.issue) ?? null,
+        assigneeName:
+          t.assignee === undefined
+            ? null
+            : (memberName.get(t.assignee) ?? null),
+      })),
+    }));
   },
 });
 
-/** {key}-{number} 形式の参照からタスクを解決する。 */
+/**
+ * {key}-{number} 形式の参照から素の Task ドキュメントを解決する。
+ * MCP（get_task / task:// リソース）が依存する安定した契約のため、
+ * 表示用の join は付与しない（詳細画面は getDetail を使う）。
+ */
 export const getByRef = query({
   args: { projectKey: v.string(), number: v.number() },
   handler: async (ctx, args) => {
@@ -351,5 +360,55 @@ export const getByRef = query({
         q.eq("project", project._id).eq("number", args.number),
       )
       .unique();
+  },
+});
+
+/**
+ * Task 詳細画面用に、表示に必要な関連情報を付与して Task を解決する。
+ * member の PII（email 等）は返さず name のみ。
+ * - 親 Issue の number/title（パンくず用）
+ * - assignee/createdBy の表示名
+ * - GitLink 一覧（repository.remoteUrl を join）
+ * - projectKey（表示・リンク生成用）
+ */
+export const getDetail = query({
+  args: { projectKey: v.string(), number: v.number() },
+  handler: async (ctx, args) => {
+    const project = await ctx.db
+      .query("projects")
+      .withIndex("by_key", (q) => q.eq("key", args.projectKey))
+      .unique();
+    if (project === null) return null;
+
+    const task = await ctx.db
+      .query("tasks")
+      .withIndex("by_project_and_number", (q) =>
+        q.eq("project", project._id).eq("number", args.number),
+      )
+      .unique();
+    if (task === null) return null;
+
+    const issue = await ctx.db.get(task.issue);
+
+    const links = await ctx.db
+      .query("gitLinks")
+      .withIndex("by_task", (q) => q.eq("task", task._id))
+      .collect();
+    const gitLinks = await Promise.all(
+      links.map(async (link) => {
+        const repository = await ctx.db.get(link.repository);
+        return { ...link, remoteUrl: repository?.remoteUrl ?? null };
+      }),
+    );
+
+    return {
+      ...task,
+      projectKey: project.key,
+      issueNumber: issue?.number ?? null,
+      issueTitle: issue?.title ?? null,
+      assigneeName: await resolveMemberName(ctx, task.assignee),
+      createdByName: await resolveMemberName(ctx, task.createdBy),
+      gitLinks,
+    };
   },
 });

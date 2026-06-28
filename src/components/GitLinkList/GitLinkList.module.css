@@ -1,0 +1,60 @@
+@layer components {
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .type {
+    padding: 0 var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    background: var(--color-subtle);
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
+
+  .ref {
+    font-size: var(--font-size-sm);
+    color: #0969da;
+    word-break: break-all;
+  }
+
+  /* PR 状態バッジ。色はトークンから派生（color-mix）。 */
+  .state {
+    padding: 0 var(--space-2);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+  }
+
+  .draft {
+    color: var(--color-text-muted);
+    background: var(--color-subtle);
+  }
+
+  .open {
+    color: #1a7f37;
+    background: color-mix(in srgb, #1a7f37 12%, transparent);
+  }
+
+  .merged {
+    color: #8250df;
+    background: color-mix(in srgb, #8250df 12%, transparent);
+  }
+
+  .closed {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  }
+}
