@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type GitEventKind,
-  transitionForGitEvent,
-} from "./gitAutomation";
+import { type GitEventKind, transitionForGitEvent } from "./gitAutomation";
 import type { TaskStatus } from "./taskStatus";
 
 /**

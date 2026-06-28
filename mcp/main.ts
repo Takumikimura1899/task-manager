@@ -192,10 +192,15 @@ async function main() {
         projectKey: String(key),
         number: n,
       });
-      if (task === null) throw new Error(`タスクが見つかりません: ${key}-${number}`);
+      if (task === null)
+        throw new Error(`タスクが見つかりません: ${key}-${number}`);
       return {
         contents: [
-          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(task, null, 2) },
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(task, null, 2),
+          },
         ],
       };
     },
@@ -219,7 +224,11 @@ async function main() {
       );
       return {
         contents: [
-          { uri: uri.href, mimeType: "application/json", text: JSON.stringify(mine, null, 2) },
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(mine, null, 2),
+          },
         ],
       };
     },
@@ -231,7 +240,8 @@ async function main() {
     "list_tasks",
     {
       title: "タスク一覧",
-      description: "プロジェクトのタスクを status / assignee で絞り込んで取得する",
+      description:
+        "プロジェクトのタスクを status / assignee で絞り込んで取得する",
       inputSchema: {
         project_key: z.string().describe("プロジェクトキー（例: TASK）"),
         status: z.enum(TASK_STATUSES).optional(),
@@ -280,7 +290,8 @@ async function main() {
     "create_task",
     {
       title: "タスク作成",
-      description: "新しいタスクを作成する（採番・初期状態 backlog は Core 側で決定）",
+      description:
+        "新しいタスクを作成する（採番・初期状態 backlog は Core 側で決定）",
       inputSchema: {
         project_key: z.string(),
         title: z.string(),
@@ -374,7 +385,8 @@ async function main() {
     "assign_task",
     {
       title: "担当者割り当て",
-      description: "タスクの担当者を設定する（assignee_email を null にすると解除）",
+      description:
+        "タスクの担当者を設定する（assignee_email を null にすると解除）",
       inputSchema: {
         task_ref: z.string(),
         assignee_email: z.string().nullable(),
@@ -434,7 +446,10 @@ async function main() {
         type: z.enum(GIT_LINK_TYPES),
         ref: z.string().describe("sha / PR番号 / ブランチ名"),
         url: z.string(),
-        pr_state: z.enum(PR_STATES).optional().describe("type=pull_request のとき"),
+        pr_state: z
+          .enum(PR_STATES)
+          .optional()
+          .describe("type=pull_request のとき"),
         repository_url: z
           .string()
           .optional()

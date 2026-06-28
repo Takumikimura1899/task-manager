@@ -6,7 +6,11 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { decryptSecret } from "./lib/crypto";
-import { type TaskRef, extractTaskRef, extractTaskRefsFromCommit } from "./lib/gitRef";
+import {
+  type TaskRef,
+  extractTaskRef,
+  extractTaskRefsFromCommit,
+} from "./lib/gitRef";
 import { type GitEventKind, transitionForGitEvent } from "./lib/gitAutomation";
 import { lastRankInColumn } from "./tasks";
 import { upsertGitLink } from "./gitLinks";

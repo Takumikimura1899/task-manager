@@ -36,18 +36,16 @@ describe("Git タスク参照の抽出", () => {
     });
 
     it("複数の参照を抽出する", () => {
-      expect(
-        extractTaskRefsFromCommit("[TASK-1] と [TASK-2] を実装"),
-      ).toEqual([
+      expect(extractTaskRefsFromCommit("[TASK-1] と [TASK-2] を実装")).toEqual([
         { key: "TASK", number: 1 },
         { key: "TASK", number: 2 },
       ]);
     });
 
     it("重複は排除する", () => {
-      expect(
-        extractTaskRefsFromCommit("[TASK-1] 修正、再度 [TASK-1]"),
-      ).toEqual([{ key: "TASK", number: 1 }]);
+      expect(extractTaskRefsFromCommit("[TASK-1] 修正、再度 [TASK-1]")).toEqual(
+        [{ key: "TASK", number: 1 }],
+      );
     });
 
     it.each([

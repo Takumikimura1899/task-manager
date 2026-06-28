@@ -16,10 +16,7 @@ export type GitEventKind =
   | "pr_closed"; // PR closed（未マージ）→ in_progress（done 以外なら差し戻し）
 
 // 前進イベントの目標状態（pr_closed は差し戻しのため別扱い）
-const FORWARD_TARGET: Record<
-  Exclude<GitEventKind, "pr_closed">,
-  TaskStatus
-> = {
+const FORWARD_TARGET: Record<Exclude<GitEventKind, "pr_closed">, TaskStatus> = {
   branch_created: "in_progress",
   pr_opened: "in_progress",
   pr_ready: "in_review",

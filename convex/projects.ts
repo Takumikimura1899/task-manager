@@ -26,7 +26,9 @@ export const create = mutation({
       .withIndex("by_key", (q) => q.eq("key", args.key))
       .unique();
     if (existing !== null) {
-      throw new ConvexError(`プロジェクトキー "${args.key}" は既に使用されています`);
+      throw new ConvexError(
+        `プロジェクトキー "${args.key}" は既に使用されています`,
+      );
     }
 
     return await ctx.db.insert("projects", {

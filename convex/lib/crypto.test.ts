@@ -7,8 +7,12 @@ import { decryptSecret, encryptSecret } from "./crypto";
  */
 
 // テスト用の固定鍵（base64 エンコードされた32バイト）
-const KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)));
-const OTHER_KEY = btoa(String.fromCharCode(...Array.from({ length: 32 }, () => 99)));
+const KEY = btoa(
+  String.fromCharCode(...Array.from({ length: 32 }, (_, i) => i + 1)),
+);
+const OTHER_KEY = btoa(
+  String.fromCharCode(...Array.from({ length: 32 }, () => 99)),
+);
 
 describe("webhookSecret の暗号化", () => {
   it("暗号化→復号で元の平文に戻る", async () => {
@@ -46,8 +50,6 @@ describe("webhookSecret の暗号化", () => {
 
   it("鍵長が不正な場合はエラー", async () => {
     const shortKey = btoa("too-short");
-    await expect(encryptSecret("x", shortKey)).rejects.toThrow(
-      /32バイト/,
-    );
+    await expect(encryptSecret("x", shortKey)).rejects.toThrow(/32バイト/);
   });
 });

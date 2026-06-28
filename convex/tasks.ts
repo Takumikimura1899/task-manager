@@ -151,9 +151,7 @@ export const transitionStatus = mutation({
     assertRevision(task, args.expectedRevision);
 
     if (!canTransition(task.status, args.to)) {
-      throw new ConvexError(
-        `状態遷移できません: ${task.status} → ${args.to}`,
-      );
+      throw new ConvexError(`状態遷移できません: ${task.status} → ${args.to}`);
     }
 
     // 遷移先の列の末尾に置く（列ごとに rank 空間は独立）。
