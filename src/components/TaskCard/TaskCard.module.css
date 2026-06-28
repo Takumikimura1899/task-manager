@@ -1,4 +1,19 @@
 @layer components {
+  /* D&D ラッパー。タッチ操作の誤スクロールを防ぐため touch-action を無効化。 */
+  .sortable {
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .sortable:active {
+    cursor: grabbing;
+  }
+
+  /* ドラッグ中、元の位置のカードは半透明にして移動元を示す。 */
+  .dragging {
+    opacity: 0.4;
+  }
+
   .card {
     display: flex;
     flex-direction: column;
