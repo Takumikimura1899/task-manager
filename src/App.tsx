@@ -4,6 +4,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import s from "./App.module.css";
 import { Board } from "./components/Board/Board";
+import { IssueList } from "./components/IssueList/IssueList";
 
 export function App() {
   const projects = useQuery(api.projects.list);
@@ -46,6 +47,7 @@ export function App() {
           </select>
         </label>
       </header>
+      <IssueList project={selected._id} />
       <Board project={selected._id} projectKey={selected.key} />
     </main>
   );
