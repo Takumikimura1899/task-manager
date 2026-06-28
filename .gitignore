@@ -1,7 +1,9 @@
 node_modules/
 .env.local
 .env
-convex/_generated/
+# Convex 生成コードは CI の typecheck/build のためコミットする（schema/関数から
+# 決まる純粋な生成物・機密なし）。AI 向け補助ドキュメントのみ ignore する。
+convex/_generated/ai/
 dist/
 *.log
 .DS_Store
