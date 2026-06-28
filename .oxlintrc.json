@@ -1,0 +1,32 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "env": {
+    "builtin": true,
+    "node": true,
+    "es2024": true
+  },
+  "ignorePatterns": [
+    "convex/_generated/**",
+    ".convex/**",
+    "dist/**",
+    "node_modules/**"
+  ],
+  "rules": {
+    "no-underscore-dangle": ["warn", { "allow": ["_id", "_creationTime"] }]
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "plugins": ["vitest"],
+      "env": { "vitest": true },
+      "rules": {
+        "vitest/require-to-throw-message": "off"
+      }
+    }
+  ]
+}

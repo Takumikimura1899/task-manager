@@ -1,0 +1,32 @@
+# lefthook 設定: コミット/プッシュ時にコード品質を自動チェックする
+# 参考: https://lefthook.dev/
+
+pre-commit:
+  parallel: true
+  jobs:
+    # ステージ済みファイルのみフォーマット→再ステージ（高速・差分最小）
+    - name: format
+      glob: "*.{ts,tsx,js,jsx,json,jsonc,css,scss,md,yaml,yml}"
+      run: bunx oxfmt --write {staged_files}
+      stage_fixed: true
+
+    # ステージ済みの TS/JS のみ静的解析（自動修正可能なものは修正）
+    - name: lint
+      glob: "*.{ts,tsx,js,jsx}"
+      run: bunx oxlint --fix {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  jobs:
+    # Conventional Commits 準拠をチェック
+    - name: commitlint
+      run: bunx commitlint --edit {1}
+
+pre-push:
+  parallel: false
+  jobs:
+    # プッシュ前にプロジェクト全体の型検査とテストを実行
+    - name: typecheck
+      run: bun run typecheck
+    - name: test
+      run: bun run test:run
