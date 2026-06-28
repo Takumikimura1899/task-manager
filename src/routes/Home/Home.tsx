@@ -12,16 +12,36 @@ import s from "./Home.module.css";
 // 「← 一覧へ」で戻った際に選択を復元できるよう sessionStorage に退避する。
 const SELECTED_PROJECT_KEY = "selectedProjectId";
 
+// sessionStorage はプライベートブラウジングやストレージ無効環境で例外を投げうる。
+// 選択保持は補助機能のため、失敗時はクラッシュさせず黙ってデグレードする。
+function readSelectedProject(): Id<"projects"> | null {
+  try {
+    return sessionStorage.getItem(
+      SELECTED_PROJECT_KEY,
+    ) as Id<"projects"> | null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSelectedProject(id: Id<"projects">): void {
+  try {
+    sessionStorage.setItem(SELECTED_PROJECT_KEY, id);
+  } catch {
+    // 保存できなくても遷移自体は機能する（次回復元できないだけ）。
+  }
+}
+
 export function Home() {
   const projects = useQuery(api.projects.list);
   const members = useQuery(api.members.list);
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
-    () => sessionStorage.getItem(SELECTED_PROJECT_KEY) as Id<"projects"> | null,
+    readSelectedProject,
   );
 
   function selectProject(id: Id<"projects">) {
     setSelectedId(id);
-    sessionStorage.setItem(SELECTED_PROJECT_KEY, id);
+    writeSelectedProject(id);
   }
 
   // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする。
