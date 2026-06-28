@@ -8,9 +8,10 @@
     "esModuleInterop": true,
     "isolatedModules": true,
     "noEmit": true,
+    "jsx": "react-jsx",
     "types": ["node"],
-    "lib": ["ESNext", "DOM"]
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["convex", "mcp"],
+  "include": ["convex", "mcp", "src", "vite.config.ts"],
   "exclude": ["node_modules"]
 }
