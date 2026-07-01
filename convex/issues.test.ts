@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
+import { seedMember, seedProject, type T } from "../test/convexSupport";
 
 /**
  * Issue Core ミューテーション／クエリの結合テスト（基本設計書 §3/§5.1/ADR-9/ADR-10）。
@@ -18,35 +19,6 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 const setup = () => convexTest(schema, modules);
-type T = ReturnType<typeof setup>;
-
-const seedProject = (
-  t: T,
-  overrides: Partial<{
-    key: string;
-    name: string;
-    nextTaskNumber: number;
-    nextIssueNumber: number;
-  }> = {},
-) =>
-  t.run((ctx) =>
-    ctx.db.insert("projects", {
-      key: "TASK",
-      name: "Test Project",
-      nextTaskNumber: 1,
-      nextIssueNumber: 1,
-      ...overrides,
-    }),
-  );
-
-const seedMember = (t: T) =>
-  t.run((ctx) =>
-    ctx.db.insert("members", {
-      name: "Alice",
-      email: "alice@example.com",
-      role: "member",
-    }),
-  );
 
 /** Task を状態機械に沿って target まで前進させる（revision を追跡）。 */
 const driveTo = async (t: T, taskId: Id<"tasks">, target: string) => {
