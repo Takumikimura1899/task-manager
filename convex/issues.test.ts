@@ -20,11 +20,17 @@ import { seedMember, seedProject, type T } from "../test/convexSupport";
 const modules = import.meta.glob("./**/*.ts");
 const setup = () => convexTest(schema, modules);
 
+/** active な Task の線形な前進経路（backlog はこの手前の初期状態）。 */
+const FORWARD_PATH = ["todo", "in_progress", "in_review", "done"] as const;
+
 /** Task を状態機械に沿って target まで前進させる（revision を追跡）。 */
-const driveTo = async (t: T, taskId: Id<"tasks">, target: string) => {
-  const path = ["todo", "in_progress", "in_review", "done"] as const;
+const driveTo = async (
+  t: T,
+  taskId: Id<"tasks">,
+  target: (typeof FORWARD_PATH)[number],
+) => {
   let rev = 0;
-  for (const to of path) {
+  for (const to of FORWARD_PATH) {
     await t.mutation(api.tasks.transitionStatus, {
       id: taskId,
       to,
