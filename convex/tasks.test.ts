@@ -5,7 +5,12 @@ import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
-import { getTask, seedMember, seedProject } from "../test/convexSupport";
+import {
+  getTask,
+  seedMember,
+  seedProject,
+  type T,
+} from "../test/convexSupport";
 
 /**
  * Task Core ミューテーションの結合テスト（基本設計書 §3/§4/§5）。
@@ -22,7 +27,7 @@ const setup = () => convexTest(schema, modules);
 
 /** Issue と最初の Task を Core API 経由で作成する（INVARIANT-5 を尊重）。 */
 const seedIssueWithTask = (
-  t: ReturnType<typeof setup>,
+  t: T,
   project: Id<"projects">,
   createdBy: Id<"members">,
 ) =>
@@ -35,7 +40,7 @@ const seedIssueWithTask = (
 
 /** 指定列（status）の Task を rank 昇順（＝ボード表示順）に number で返す。 */
 const columnNumbers = async (
-  t: ReturnType<typeof setup>,
+  t: T,
   project: Id<"projects">,
   status: Doc<"tasks">["status"],
 ): Promise<number[]> => {
@@ -190,7 +195,7 @@ describe("tasks.transitionStatus", () => {
 
 describe("tasks の並べ替え（rank・D&D スコープ）", () => {
   /** backlog に Task を3件並べ、それぞれの id を作成順（rank 昇順）で返す。 */
-  const seedThreeBacklogTasks = async (t: ReturnType<typeof setup>) => {
+  const seedThreeBacklogTasks = async (t: T) => {
     const project = await seedProject(t);
     const member = await seedMember(t);
     const { issue, task: a } = await seedIssueWithTask(t, project, member);
