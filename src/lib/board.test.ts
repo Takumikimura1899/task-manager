@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { neighborRanks, resolveSameColumnTargetIndex } from "./board";
+import {
+  neighborRanks,
+  prioritizeCardCollisions,
+  resolveSameColumnTargetIndex,
+} from "./board";
 
 /**
  * カンバン並べ替えの近傍rank算出（純粋関数）の振る舞いを検証する。
@@ -40,6 +44,32 @@ describe("resolveSameColumnTargetIndex", () => {
   ])("%s", (_case, oldIndex, overIndex, taskCount, expected) => {
     expect(resolveSameColumnTargetIndex(oldIndex, overIndex, taskCount)).toBe(
       expected,
+    );
+  });
+});
+
+/**
+ * 衝突検出のカード優先絞り込みを検証する。
+ * over が列コンテナに解決されると末尾フォールバックが誤発動するため、
+ * カードと列が同時に衝突している間はカードだけが over 候補に残ることを確認する。
+ */
+describe("prioritizeCardCollisions", () => {
+  const columnIds: ReadonlySet<string> = new Set(["backlog", "todo"]);
+
+  it.each([
+    // [ケース, 入力の衝突id列, 期待する出力id列]
+    [
+      "カードと列が混在したらカードのみ残す",
+      ["backlog", "task1", "task2"],
+      ["task1", "task2"],
+    ],
+    ["カードのみはそのまま", ["task1"], ["task1"]],
+    ["列のみはそのまま（余白へのドロップ）", ["backlog"], ["backlog"]],
+    ["空はそのまま", [], []],
+  ])("%s", (_case, ids, expected) => {
+    const collisions = ids.map((id) => ({ id }));
+    expect(prioritizeCardCollisions(collisions, columnIds)).toEqual(
+      expected.map((id) => ({ id })),
     );
   });
 });

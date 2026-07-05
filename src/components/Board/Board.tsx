@@ -1,5 +1,6 @@
 import {
   closestCorners,
+  type CollisionDetection,
   DndContext,
   type DragEndEvent,
   type DragOverEvent,
@@ -7,6 +8,8 @@ import {
   DragOverlay,
   KeyboardSensor,
   PointerSensor,
+  pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
@@ -19,14 +22,42 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import {
   type BoardTask,
   neighborRanks,
+  prioritizeCardCollisions,
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
-import { type TaskStatus, TASK_STATUS_LABELS } from "../../lib/taskMeta";
+import {
+  type TaskStatus,
+  TASK_STATUS_LABELS,
+  TASK_STATUS_ORDER,
+} from "../../lib/taskMeta";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
 import { Column } from "./Column";
 
 type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
+
+const COLUMN_IDS: ReadonlySet<string> = new Set(TASK_STATUS_ORDER);
+
+/**
+ * ポインタ基準でカードを列コンテナより優先する衝突検出。
+ * closestCorners 単独では over がカードと列の間で揺れ、列へのドロップ＝末尾移動の
+ * フォールバックが誤発動する（意図しない末尾移動・プレビューのちらつき）。
+ * pointerWithin → rectIntersection → closestCorners の順で解決し、
+ * どの段でもカードを列より優先する。closestCorners は距離ベースで必ず候補を
+ * 返すため、ポインタも矩形も droppable に届かない位置（空列の中央など）や
+ * キーボード操作のドロップ先解決を担う。
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args);
+  const collisions =
+    pointer.length > 0
+      ? pointer
+      : (() => {
+          const rect = rectIntersection(args);
+          return rect.length > 0 ? rect : closestCorners(args);
+        })();
+  return prioritizeCardCollisions(collisions, COLUMN_IDS);
+};
 
 /** server スナップショットをローカル編集可能な形へ複製する。 */
 function toLocal(columns: readonly BoardColumn[]): BoardColumn[] {
@@ -199,7 +230,7 @@ export function Board({
 
   return (
     <DndContext
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetection}
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDragStart={handleDragStart}
