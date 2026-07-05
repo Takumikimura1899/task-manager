@@ -51,3 +51,19 @@ export function resolveSameColumnTargetIndex(
   const target = overIndex === -1 ? taskCount - 1 : overIndex;
   return target === oldIndex ? null : target;
 }
+
+/**
+ * 衝突検出の結果から「カード」を「列コンテナ」より優先して絞り込む。
+ *
+ * over が列コンテナに解決されると同一列ドロップは末尾へフォールバックする
+ * （resolveSameColumnTargetIndex）ため、カードに重なっている間は必ずカード側を
+ * over にし、列が over になるのは本当にカードのない余白へ落とすときだけに限る。
+ * カードの衝突が無い場合は入力をそのまま返す（列・空いずれも）。
+ */
+export function prioritizeCardCollisions<T extends { id: string | number }>(
+  collisions: readonly T[],
+  columnIds: ReadonlySet<string>,
+): T[] {
+  const cards = collisions.filter((c) => !columnIds.has(String(c.id)));
+  return cards.length > 0 ? cards : [...collisions];
+}

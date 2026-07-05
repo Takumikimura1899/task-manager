@@ -7,6 +7,8 @@
   }
 
   .column {
+    display: flex;
+    flex-direction: column;
     min-height: 120px;
     padding: var(--space-2);
     background: var(--color-subtle);
@@ -32,10 +34,12 @@
 
   .body {
     display: flex;
+    flex-grow: 1;
     flex-direction: column;
     gap: var(--space-2);
 
-    /* 空列でもドロップ先になれるよう最小の高さを確保する。 */
+    /* 空列でも列全域がドロップ先になるよう、ヘッダー以外の残り高さを占める。
+       （ポインタ基準の衝突検出は droppable の矩形内にポインタが無いと反応しない） */
     min-height: var(--space-6);
     border-radius: var(--radius-sm);
   }
