@@ -11,3 +11,28 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## プロジェクト規約
+
+### テスト方針（Vitest）
+
+- テストランナーは Vitest（`bun run test`）。
+- Convex 関数（mutation / query）は **convex-test による結合層検証**を基本とする。
+  インメモリ環境で関数を実際に実行し、観測可能な結果（返り値・DB の状態変化）で
+  振る舞いを検証する（`convex/tasks.test.ts` / `convex/issues.test.ts`、
+  共通ヘルパは `test/convexSupport.ts`）。
+- 状態機械・rank・暗号化・Git 参照抽出などの純粋ロジックは
+  `convex/lib/*.test.ts` のユニットテストで検証する。
+- 詳細は技術スタック定義書 §9 を参照。
+
+### サイレント失敗の回避
+
+- エラー・解析失敗・未知の参照は握り潰さず、ログに残すか呼び出し元へ伝播させる
+  （Webhook 処理の方針は基本設計書 §7）。
+
+### 設計ドキュメント
+
+- [docs/基本設計書.md](./docs/基本設計書.md) — ADR・データモデル・状態機械・MCP 設計
+- [docs/技術スタック定義書.md](./docs/技術スタック定義書.md) — 技術選定と ADR の対応・テスト・デプロイ
+- [docs/フロントエンドCSS規約.md](./docs/フロントエンドCSS規約.md) — CSS 記述規約
+- [docs/詳細画面設計.md](./docs/詳細画面設計.md) — Issue/Task 詳細画面の設計
