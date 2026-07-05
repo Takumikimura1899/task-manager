@@ -12,6 +12,17 @@ export default defineConfig({
   //   `@vitest-environment edge-runtime` docblock とも一致）
   // - src/**:   コンポーネント/純粋関数テスト用の jsdom + testing-library
   test: {
+    // カバレッジ設定は projects 構成ではルートレベルにのみ置ける
+    // （Vitest 4: ルートの coverage 設定が全プロジェクトに適用される）
+    coverage: {
+      provider: "v8",
+      // テスト対象の実装コードのみ計測（生成コード・テスト・型定義は除外）。
+      // 拡張子で絞らないと convex/tsconfig.json 等の非ソースまで拾われる。
+      include: ["convex/**/*.ts", "src/**/*.{ts,tsx}"],
+      exclude: ["convex/_generated/**", "**/*.test.{ts,tsx}", "**/*.d.ts"],
+      // CI ログでの現状把握が目的のため text レポータのみ（外部連携なし）
+      reporter: ["text"],
+    },
     projects: [
       {
         extends: true,
