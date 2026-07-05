@@ -1,0 +1,347 @@
+// @vitest-environment edge-runtime
+/// <reference types="vite/client" />
+import { convexTest } from "convex-test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
+import schema from "./schema";
+import {
+  TEST_REPO_REMOTE_URL,
+  TEST_WEBHOOK_ENCRYPTION_KEY,
+  TEST_WEBHOOK_SECRET,
+  getTask,
+  listTaskGitLinks,
+  seedMember,
+  seedProject,
+  seedRepository,
+  type T,
+} from "../test/convexSupport";
+
+/**
+ * GitHub Webhook 受信エンドポイントの結合テスト（基本設計書 §7）。
+ *
+ * t.fetch で HTTP 境界ごと検証する: HMAC-SHA256 署名検証（復号した secret を使う
+ * 経路を含む）・delivery-id による冪等化・イベント種別のディスパッチを、
+ * HTTP レスポンスと DB の最終状態で固定する。各ハンドラ内部の分岐の網羅は
+ * webhooks.test.ts に委ねる。
+ *
+ * 注意: ディスパッチ処理が失敗した場合の再送挙動（冪等マーカー先行コミット問題）は
+ * Issue #12 の修正側でテストを追加する。ここでは成功経路のみを固定する。
+ */
+
+const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
+const setup = () => convexTest(schema, modules);
+
+// findRepositoryByUrls が webhookSecret を復号するため、本番同様に環境変数で鍵を注入する
+beforeEach(() => {
+  vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", TEST_WEBHOOK_ENCRYPTION_KEY);
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+// --- リクエスト組み立て -------------------------------------------------------
+
+/** GitHub と同じ方式（HMAC-SHA256 の hex に sha256= を前置）で署名を計算する。 */
+const sign = async (secret: string, body: string): Promise<string> => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new Uint8Array(new TextEncoder().encode(secret)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new Uint8Array(new TextEncoder().encode(body)),
+  );
+  return `sha256=${Array.from(new Uint8Array(mac))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")}`;
+};
+
+/**
+ * Webhook リクエストを送る。署名は既定でリポジトリの secret による正しい値を計算し、
+ * 異常系は signature / secret のオーバーライドで表現する。
+ */
+const postWebhook = async (
+  t: T,
+  args: {
+    event: string;
+    payload?: unknown;
+    rawBody?: string;
+    secret?: string;
+    delivery?: string;
+    signature?: string;
+  },
+) => {
+  const body = args.rawBody ?? JSON.stringify(args.payload);
+  const signature =
+    args.signature ?? (await sign(args.secret ?? TEST_WEBHOOK_SECRET, body));
+  return await t.fetch("/webhooks/github", {
+    method: "POST",
+    headers: {
+      "x-github-event": args.event,
+      "x-github-delivery": args.delivery ?? crypto.randomUUID(),
+      "x-hub-signature-256": signature,
+    },
+    body,
+  });
+};
+
+// --- ペイロードのファクトリ ---------------------------------------------------
+
+const createCommit = (
+  overrides: Partial<{ id: string; message: string; url: string }> = {},
+) => ({
+  id: "abc123",
+  message: "[TASK-1] fix: バグ修正",
+  url: `${TEST_REPO_REMOTE_URL}/commit/abc123`,
+  ...overrides,
+});
+
+const createPushPayload = (
+  overrides: Partial<{
+    repository: { html_url: string };
+    commits: ReturnType<typeof createCommit>[];
+  }> = {},
+) => ({
+  repository: { html_url: TEST_REPO_REMOTE_URL },
+  commits: [createCommit()],
+  ...overrides,
+});
+
+const createBranchCreatePayload = (
+  overrides: Partial<{
+    repository: { html_url: string };
+    ref: string;
+    ref_type: string;
+  }> = {},
+) => ({
+  repository: { html_url: TEST_REPO_REMOTE_URL },
+  ref: "feature/TASK-1-login",
+  ref_type: "branch",
+  ...overrides,
+});
+
+const createPullRequestPayload = (
+  pr: Partial<{
+    merged: boolean;
+    draft: boolean;
+    number: number;
+    html_url: string;
+    title: string;
+    body: string;
+    head: { ref: string };
+  }> = {},
+  overrides: Partial<{ repository: { html_url: string }; action: string }> = {},
+) => ({
+  repository: { html_url: TEST_REPO_REMOTE_URL },
+  action: "opened",
+  ...overrides,
+  pull_request: {
+    merged: false,
+    draft: false,
+    number: 5,
+    html_url: `${TEST_REPO_REMOTE_URL}/pull/5`,
+    title: "TASK-1 ログイン修正",
+    body: "",
+    head: { ref: "feature/task" },
+    ...pr,
+  },
+});
+
+// --- シナリオ seed ------------------------------------------------------------
+
+/** key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。 */
+const seedScenario = async (t: T) => {
+  const project = await seedProject(t);
+  const member = await seedMember(t);
+  const { issue, task } = await t.mutation(api.issues.create, {
+    project,
+    title: "課題",
+    createdBy: member,
+    firstTask: { title: "最初のタスク" },
+  });
+  const repository = await seedRepository(t, project);
+  return { project, member, issue, task, repository };
+};
+
+/** Task を todo へ進める（branch_created / pr_opened の自動遷移が効く状態にする）。 */
+const toTodo = (t: T, task: Id<"tasks">) =>
+  t.mutation(api.tasks.transitionStatus, {
+    id: task,
+    to: "todo",
+    expectedRevision: 0,
+  });
+
+// --- 署名検証 -----------------------------------------------------------------
+
+describe("POST /webhooks/github の署名検証", () => {
+  it("正しい署名の push を 200 で受理し、コミットの GitLink を反映する", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+
+    const res = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "commit", externalRef: "abc123" },
+    ]);
+  });
+
+  it.each([
+    { name: "別の secret で署名した", override: { secret: "attacker-secret" } },
+    {
+      name: "署名が改ざんされた",
+      override: { signature: `sha256=${"0".repeat(64)}` },
+    },
+    { name: "署名ヘッダがない", override: { signature: "" } },
+  ])(
+    "$name リクエストは 401 で拒否し、何も反映しない",
+    async ({ override }) => {
+      const t = setup();
+      const { task } = await seedScenario(t);
+
+      const res = await postWebhook(t, {
+        event: "push",
+        payload: createPushPayload(),
+        ...override,
+      });
+
+      expect(res.status).toBe(401);
+      expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+    },
+  );
+
+  it("未登録リポジトリからのリクエストは 404 を返す", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+
+    const res = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload({
+        repository: { html_url: "https://github.com/acme/unknown" },
+      }),
+    });
+
+    expect(res.status).toBe(404);
+    expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+  });
+
+  it("JSON として解釈できないボディは 400 を返す", async () => {
+    const t = setup();
+    await seedScenario(t);
+
+    const res = await postWebhook(t, { event: "push", rawBody: "not-json" });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+// --- 冪等化（X-GitHub-Delivery） ------------------------------------------------
+
+describe("POST /webhooks/github の重複配信", () => {
+  it("同一 delivery-id の再送は duplicate として 200 で無視する", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+    const delivery = "delivery-1";
+
+    const first = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+      delivery,
+    });
+    expect(first.status).toBe(200);
+    expect(await first.text()).toBe("ok");
+
+    // 同じ delivery-id で内容の異なる正規リクエストを再送しても処理されない
+    const second = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload({
+        commits: [
+          createCommit({
+            id: "def456",
+            url: `${TEST_REPO_REMOTE_URL}/commit/def456`,
+          }),
+        ],
+      }),
+      delivery,
+    });
+    expect(second.status).toBe(200);
+    expect(await second.text()).toBe("duplicate");
+
+    // 反映されているのは初回の内容だけ
+    const links = await listTaskGitLinks(t, task);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ externalRef: "abc123" });
+  });
+});
+
+// --- イベント種別ディスパッチ ---------------------------------------------------
+
+describe("POST /webhooks/github のイベントディスパッチ", () => {
+  it("create(branch) イベントでタスクが todo → in_progress に自動遷移する", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+    await toTodo(t, task);
+
+    const res = await postWebhook(t, {
+      event: "create",
+      payload: createBranchCreatePayload(),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await getTask(t, task))?.status).toBe("in_progress");
+  });
+
+  it("create イベントでも ref_type が branch 以外（tag）は無視する", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+    await toTodo(t, task);
+
+    const res = await postWebhook(t, {
+      event: "create",
+      payload: createBranchCreatePayload({ ref_type: "tag", ref: "TASK-1" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect((await getTask(t, task))?.status).toBe("todo");
+  });
+
+  it("pull_request イベントで GitLink(pull_request) と自動遷移を反映する", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+    await toTodo(t, task);
+
+    const res = await postWebhook(t, {
+      event: "pull_request",
+      payload: createPullRequestPayload(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "pull_request", externalRef: "5", prState: "open" },
+    ]);
+    expect((await getTask(t, task))?.status).toBe("in_progress");
+  });
+
+  it("未対応イベント（issues 等）は 200 で受理し、何も反映しない", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+
+    const res = await postWebhook(t, {
+      event: "issues",
+      payload: { repository: { html_url: TEST_REPO_REMOTE_URL } },
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+  });
+});
