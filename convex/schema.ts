@@ -122,7 +122,10 @@ export default defineSchema({
     remoteUrl: v.string(),
     // 署名検証用の機密値。保存時の暗号化は実装層（Core ロジック）の責務。
     webhookSecret: v.string(),
-  }).index("by_project", ["project"]),
+  })
+    .index("by_project", ["project"])
+    // Webhook 受信時の remoteUrl 逆引き用（全件走査の回避・Issue #19）
+    .index("by_remoteUrl", ["remoteUrl"]),
 
   // GitLink — タスクと Git アーティファクトの関連
   gitLinks: defineTable({

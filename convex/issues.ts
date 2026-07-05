@@ -131,19 +131,33 @@ export const list = query({
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
 
-    return await Promise.all(
-      issues.map(async (issue) => {
-        const tasks = await tasksOfIssue(ctx, issue._id);
-        // 進捗は canceled を除いた「実行対象」で集計（派生ステータスと同基準・§5.1）。
-        const active = tasks.filter((t) => t.status !== "canceled");
-        return {
-          ...issue,
-          status: deriveIssueStatus(tasks.map((t) => t.status)),
-          taskCount: active.length,
-          doneCount: active.filter((t) => t.status === "done").length,
-        };
-      }),
-    );
+    // N+1 回避: Issue ごとに tasksOfIssue を発行せず、project 配下の Task を
+    // by_project で一括取得してメモリ上で Issue ごとにグルーピングする。
+    const projectTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+    const tasksByIssue = new Map<Id<"issues">, Doc<"tasks">[]>();
+    for (const task of projectTasks) {
+      const group = tasksByIssue.get(task.issue);
+      if (group === undefined) {
+        tasksByIssue.set(task.issue, [task]);
+      } else {
+        group.push(task);
+      }
+    }
+
+    return issues.map((issue) => {
+      const tasks = tasksByIssue.get(issue._id) ?? [];
+      // 進捗は canceled を除いた「実行対象」で集計（派生ステータスと同基準・§5.1）。
+      const active = tasks.filter((t) => t.status !== "canceled");
+      return {
+        ...issue,
+        status: deriveIssueStatus(tasks.map((t) => t.status)),
+        taskCount: active.length,
+        doneCount: active.filter((t) => t.status === "done").length,
+      };
+    });
   },
 });
 
