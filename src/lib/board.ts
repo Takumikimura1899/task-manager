@@ -35,3 +35,19 @@ export function neighborRanks(
         : null,
   };
 }
+
+/**
+ * 同一列内ドロップの移動先 index を解決する。
+ * - `overIndex === -1`（over がタスクではなく列コンテナ＝空きスペースやヘッダー付近）は
+ *   列をまたぐ D&D と同様に「末尾へ移動」としてフォールバックする。
+ * - 移動しても位置が変わらない場合、または移動元が見つからない場合は null（no-op）。
+ */
+export function resolveSameColumnTargetIndex(
+  oldIndex: number,
+  overIndex: number,
+  taskCount: number,
+): number | null {
+  if (oldIndex === -1) return null;
+  const target = overIndex === -1 ? taskCount - 1 : overIndex;
+  return target === oldIndex ? null : target;
+}

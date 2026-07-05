@@ -16,7 +16,11 @@ import { ConvexError } from "convex/values";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { type BoardTask, neighborRanks } from "../../lib/board";
+import {
+  type BoardTask,
+  neighborRanks,
+  resolveSameColumnTargetIndex,
+} from "../../lib/board";
 import { type TaskStatus, TASK_STATUS_LABELS } from "../../lib/taskMeta";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
@@ -140,9 +144,15 @@ export function Board({
 
     try {
       if (targetStatus === dragged.status) {
-        // 同一列内の並べ替え。位置が変わらないなら何もしない。
-        if (overIndex === -1 || overIndex === oldIndex) return;
-        columnTasks = arrayMove(columnTasks, oldIndex, overIndex);
+        // 同一列内の並べ替え。over が列コンテナ（overIndex === -1）なら末尾へ
+        // フォールバックし、位置が変わらないなら何もしない。
+        const targetIndex = resolveSameColumnTargetIndex(
+          oldIndex,
+          overIndex,
+          columnTasks.length,
+        );
+        if (targetIndex === null) return;
+        columnTasks = arrayMove(columnTasks, oldIndex, targetIndex);
         setBoard((prev) =>
           prev === null
             ? prev
@@ -150,10 +160,9 @@ export function Board({
                 i === toCol ? { ...c, tasks: columnTasks } : c,
               ),
         );
-        const idx = columnTasks.findIndex((t) => t._id === activeId);
         const { before, after } = neighborRanks(
           columnTasks.map((t) => t.rank),
-          idx,
+          targetIndex,
         );
         await moveTask({
           id: dragged._id,
