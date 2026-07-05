@@ -1,12 +1,16 @@
-import { httpRouter } from "convex/server";
+import { type FunctionArgs, httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 
 /**
  * GitHub Webhook の受信エンドポイント（基本設計書 §7）。
  *
  * - HMAC-SHA256（X-Hub-Signature-256）でペイロードを検証する。
- * - X-GitHub-Delivery で冪等化し、重複配信を握り潰す。
+ * - X-GitHub-Delivery で冪等化し、重複配信を握り潰す。冪等マーキングと
+ *   イベント反映は webhooks.processEvent が単一トランザクションで行うため、
+ *   処理失敗（500）時はマーカーが残らず、GitHub の再送で再処理される
+ *   （at-least-once、Issue #12）。
  * - 解析失敗・未知参照はサイレントに隠さず、適切な HTTP ステータスとログで返す。
  */
 
@@ -46,6 +50,54 @@ async function verifySignature(
   return timingSafeEqual(`sha256=${hex}`, signatureHeader);
 }
 
+type WebhookEvent = FunctionArgs<
+  typeof internal.webhooks.processEvent
+>["event"];
+
+/** GitHub のペイロードを processEvent への入力に変換する（未対応イベントは ignored）。 */
+function parseWebhookEvent(
+  event: string,
+  payload: any,
+  repo: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
+): WebhookEvent {
+  if (event === "create" && payload.ref_type === "branch") {
+    return {
+      kind: "branch_created",
+      projectId: repo.projectId,
+      branchName: String(payload.ref ?? ""),
+    };
+  }
+  if (event === "push") {
+    return {
+      kind: "push",
+      repositoryId: repo.repositoryId,
+      projectId: repo.projectId,
+      commits: (payload.commits ?? []).map((c: any) => ({
+        message: String(c.message ?? ""),
+        sha: String(c.id ?? ""),
+        url: String(c.url ?? ""),
+      })),
+    };
+  }
+  if (event === "pull_request") {
+    const pr = payload.pull_request ?? {};
+    return {
+      kind: "pull_request",
+      repositoryId: repo.repositoryId,
+      projectId: repo.projectId,
+      action: String(payload.action ?? ""),
+      merged: Boolean(pr.merged),
+      draft: Boolean(pr.draft),
+      number: Number(pr.number ?? 0),
+      url: String(pr.html_url ?? ""),
+      title: String(pr.title ?? ""),
+      body: String(pr.body ?? ""),
+      branch: String(pr.head?.ref ?? ""),
+    };
+  }
+  return { kind: "ignored", name: event };
+}
+
 http.route({
   path: "/webhooks/github",
   method: "POST",
@@ -83,50 +135,16 @@ http.route({
       return new Response("invalid signature", { status: 401 });
     }
 
-    // 冪等化（リプレイ対策）
-    if (delivery !== "") {
-      const fresh = await ctx.runMutation(internal.webhooks.tryMarkDelivery, {
-        deliveryId: delivery,
-      });
-      if (!fresh) {
-        return new Response("duplicate", { status: 200 });
-      }
-    }
-
-    // イベントディスパッチ
+    // 冪等マーキング（X-GitHub-Delivery）とイベント反映を単一の mutation
+    // （同一トランザクション）で実行する。処理が throw した場合はマーカーごと
+    // ロールバックされ、GitHub の再送で再処理される（at-least-once、Issue #12）。
     try {
-      if (event === "create" && payload.ref_type === "branch") {
-        await ctx.runMutation(internal.webhooks.handleBranchCreated, {
-          projectId: repo.projectId,
-          branchName: String(payload.ref ?? ""),
-        });
-      } else if (event === "push") {
-        const commits = (payload.commits ?? []).map((c: any) => ({
-          message: String(c.message ?? ""),
-          sha: String(c.id ?? ""),
-          url: String(c.url ?? ""),
-        }));
-        await ctx.runMutation(internal.webhooks.handlePush, {
-          repositoryId: repo.repositoryId,
-          projectId: repo.projectId,
-          commits,
-        });
-      } else if (event === "pull_request") {
-        const pr = payload.pull_request ?? {};
-        await ctx.runMutation(internal.webhooks.handlePullRequest, {
-          repositoryId: repo.repositoryId,
-          projectId: repo.projectId,
-          action: String(payload.action ?? ""),
-          merged: Boolean(pr.merged),
-          draft: Boolean(pr.draft),
-          number: Number(pr.number ?? 0),
-          url: String(pr.html_url ?? ""),
-          title: String(pr.title ?? ""),
-          body: String(pr.body ?? ""),
-          branch: String(pr.head?.ref ?? ""),
-        });
-      } else {
-        console.error(`[webhook] 未対応イベント: ${event}`);
+      const outcome = await ctx.runMutation(internal.webhooks.processEvent, {
+        deliveryId: delivery,
+        event: parseWebhookEvent(event, payload, repo),
+      });
+      if (outcome === "duplicate") {
+        return new Response("duplicate", { status: 200 });
       }
     } catch (e) {
       console.error("[webhook] 処理エラー:", e);

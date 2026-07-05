@@ -136,3 +136,7 @@ export const listTaskGitLinks = (t: T, task: Id<"tasks">) =>
       .withIndex("by_task", (q) => q.eq("task", task))
       .collect(),
   );
+
+/** webhookDeliveries の全件を取得する（冪等マーカーの最終状態の検証用）。 */
+export const listWebhookDeliveries = (t: T) =>
+  t.run((ctx) => ctx.db.query("webhookDeliveries").collect());
