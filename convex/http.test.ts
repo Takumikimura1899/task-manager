@@ -276,9 +276,52 @@ describe("POST /webhooks/github の署名検証", () => {
   });
 });
 
+// --- リポジトリ解決の失敗（サーバ構成不備、Issue #16） --------------------------
+
+describe("POST /webhooks/github のリポジトリ解決失敗", () => {
+  it.each([
+    { name: "暗号鍵が未設定の", key: "" },
+    {
+      // 保存時と異なる鍵では AES-GCM のタグ検証で復号が例外を投げる
+      name: "暗号鍵が保存時と異なり復号に失敗する",
+      key: btoa("fedcba9876543210fedcba9876543210"),
+    },
+  ])("$name 場合は貫通させず 500 を返し、何も反映しない", async ({ key }) => {
+    const t = setup();
+    // seed は正しい鍵（beforeEach で注入済み）で行い、受信時だけ構成を壊す
+    const { task } = await seedScenario(t);
+    vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", key);
+
+    const res = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+    });
+
+    expect(res.status).toBe(500);
+    expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+  });
+});
+
 // --- 冪等化（X-GitHub-Delivery） ------------------------------------------------
 
 describe("POST /webhooks/github の重複配信", () => {
+  // ヘッダ欠落（headers.get が null）はハンドラ側で "" に正規化されるため、
+  // 空文字ヘッダの送信で「欠落」と同じ経路を検証できる。
+  it("x-github-delivery の無いリクエストは冪等化できないため 400 で拒否し、何も反映しない（Issue #16）", async () => {
+    const t = setup();
+    const { task } = await seedScenario(t);
+
+    const res = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+      delivery: "",
+    });
+
+    expect(res.status).toBe(400);
+    expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+    expect(await listWebhookDeliveries(t)).toHaveLength(0);
+  });
+
   it("同一 delivery-id の再送は duplicate として 200 で無視する", async () => {
     const t = setup();
     const { task } = await seedScenario(t);

@@ -591,6 +591,21 @@ describe("webhooks.processEvent", () => {
     ]);
   });
 
+  it("deliveryId が空文字の場合は冪等マーカーを記録せず処理する（HTTP 層が 400 で拒否する前提の防御的分岐）", async () => {
+    const t = setup();
+    const { project, task, repository } = await seedScenario(t);
+
+    const result = await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPushEvent({ repositoryId: repository, projectId: project }),
+    });
+
+    expect(result).toBe("processed");
+    expect(await listTaskGitLinks(t, task)).toHaveLength(1);
+    // 空文字を deliveryId として記録すると無関係な配信同士が重複扱いになるため記録しない
+    expect(await listWebhookDeliveries(t)).toHaveLength(0);
+  });
+
   it("イベント処理が失敗するとマーカーごとロールバックし、同一 delivery の再送で処理できる", async () => {
     const t = setup();
     const { project, task, repository } = await seedScenario(t);
