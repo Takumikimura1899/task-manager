@@ -27,6 +27,10 @@ import {
  * HTTP レスポンスと DB の最終状態で固定する。各ハンドラ内部の分岐の網羅は
  * webhooks.test.ts に委ねる。
  *
+ * 検証を通らないリクエスト（署名不正・未登録リポジトリ）はすべて同一の
+ * 404 応答（ボディも同一）で拒否される。応答の違いから remoteUrl の登録状態を
+ * 列挙できないことを固定する（Issue #18）。
+ *
  * 冪等マーキングとイベント反映は単一トランザクション（webhooks.processEvent）で
  * 行われる（Issue #12）。処理失敗（500）時にマーカーが残らず、GitHub の再送で
  * 再処理される（at-least-once）ことも「重複配信」の describe で固定する。
@@ -205,8 +209,9 @@ describe("POST /webhooks/github の署名検証", () => {
       override: { signature: `sha256=${"0".repeat(64)}` },
     },
     { name: "署名ヘッダがない", override: { signature: "" } },
+    { name: "署名ヘッダの形式が不正な", override: { signature: "sha256=xyz" } },
   ])(
-    "$name リクエストは 401 で拒否し、何も反映しない",
+    "$name リクエストは 404 で拒否し、何も反映しない",
     async ({ override }) => {
       const t = setup();
       const { task } = await seedScenario(t);
@@ -217,12 +222,13 @@ describe("POST /webhooks/github の署名検証", () => {
         ...override,
       });
 
-      expect(res.status).toBe(401);
+      expect(res.status).toBe(404);
+      expect(await res.text()).toBe("not found");
       expect(await listTaskGitLinks(t, task)).toHaveLength(0);
     },
   );
 
-  it("未登録リポジトリからのリクエストは 404 を返す", async () => {
+  it("未登録リポジトリからのリクエストは 404 を返し、何も反映しない", async () => {
     const t = setup();
     const { task } = await seedScenario(t);
 
@@ -234,7 +240,30 @@ describe("POST /webhooks/github の署名検証", () => {
     });
 
     expect(res.status).toBe(404);
+    expect(await res.text()).toBe("not found");
     expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+  });
+
+  it("未登録リポジトリと署名不一致の応答は status・ボディともに同一で区別できない（Issue #18）", async () => {
+    const t = setup();
+    await seedScenario(t);
+
+    // 未登録の remoteUrl へ、形式上正しい署名を付けて送る
+    const unregistered = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload({
+        repository: { html_url: "https://github.com/acme/unknown" },
+      }),
+    });
+    // 登録済みの remoteUrl へ、誤った secret の署名を付けて送る
+    const badSignature = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+      secret: "attacker-secret",
+    });
+
+    expect(unregistered.status).toBe(badSignature.status);
+    expect(await unregistered.text()).toBe(await badSignature.text());
   });
 
   it("JSON として解釈できないボディは 400 を返す", async () => {
