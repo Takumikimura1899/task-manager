@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { parseRefNumber } from "./routeParams";
 
 /**
- * ルートパラメータの参照番号解釈（純粋関数）の現行仕様を固定する。
- * Number() 直呼びでは "1e3" や " 5 " も数値化され別タスクの誤表示に
- * つながるため（routeParams.ts:8 の設計意図）、桁のみを許可する。
+ * ルートパラメータの参照番号解釈（純粋関数）の仕様を固定する。
+ * Number() 直呼びでは "1e3" や " 5 " も数値化され、先頭ゼロ（"007"）も
+ * #7 と別解釈されて非正規 URL を通してしまうため、正規化された表現
+ * （先頭ゼロなしの桁のみ）だけを許可する（routeParams.ts / Issue #16）。
  */
 describe("parseRefNumber", () => {
   it.each([
@@ -22,16 +23,13 @@ describe("parseRefNumber", () => {
     ["abc"], // 非数値
     ["-1"], // 符号付き
     ["1.5"], // 小数
-  ])("桁のみでない %j は null で拒否する", (input) => {
+    ["007"], // 先頭ゼロ（#7 の非正規表現。Issue #16 で拒否に変更）
+    ["0"], // ゼロ（参照番号は 1 始まりの正の整数）
+  ])("正規化された正の整数でない %j は null で拒否する", (input) => {
     expect(parseRefNumber(input)).toBeNull();
   });
 
   it("undefined（パラメータ欠落）は null で拒否する", () => {
     expect(parseRefNumber(undefined)).toBeNull();
-  });
-
-  // NOTE: 先頭ゼロ（"007" → 7）は現行挙動の記録。Issue #16 で拒否に変更予定。
-  it("先頭ゼロは現行挙動では通る（#16 で変更予定）", () => {
-    expect(parseRefNumber("007")).toBe(7);
   });
 });

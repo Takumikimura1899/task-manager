@@ -243,7 +243,8 @@ async function markDeliveryIfNew(
  * - 同一 deliveryId の再送は "duplicate" を返し、イベント処理をスキップする。
  * - イベント処理が throw した場合は冪等マーカーごとロールバックされるため、
  *   GitHub の再送で再処理できる（at-least-once）。
- * - deliveryId が空文字（ヘッダ欠落）の場合は冪等化せず常に処理する。
+ * - deliveryId が空文字の場合は冪等化せず常に処理する（HTTP 層がヘッダ欠落を
+ *   400 で拒否するため通常経路では到達しない、防御的な分岐。Issue #16）。
  */
 export const processEvent = internalMutation({
   args: {

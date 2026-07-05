@@ -1,4 +1,8 @@
-import { type FunctionArgs, httpRouter } from "convex/server";
+import {
+  type FunctionArgs,
+  type FunctionReturnType,
+  httpRouter,
+} from "convex/server";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -10,7 +14,8 @@ import type { Id } from "./_generated/dataModel";
  * - 検証を通らないリクエスト（署名ヘッダ不正・未登録リポジトリ・署名不一致）には
  *   すべて同一の 404 応答を返す。応答の違いから remoteUrl の登録状態を列挙
  *   されることを防ぐため、区別可能な情報はログにのみ残す（Issue #18）。
- * - X-GitHub-Delivery で冪等化し、重複配信を握り潰す。冪等マーキングと
+ * - X-GitHub-Delivery で冪等化し、重複配信を握り潰す。ヘッダが欠落した
+ *   リクエストは冪等化できないため 400 で拒否する（Issue #16）。冪等マーキングと
  *   イベント反映は webhooks.processEvent が単一トランザクションで行うため、
  *   処理失敗（500）時はマーカーが残らず、GitHub の再送で再処理される
  *   （at-least-once、Issue #12）。
@@ -129,6 +134,14 @@ http.route({
     const delivery = request.headers.get("x-github-delivery") ?? "";
     const signature = request.headers.get("x-hub-signature-256") ?? "";
 
+    // X-GitHub-Delivery が無いと冪等化（重複配信の検出）が働かず、同一イベントが
+    // 二重処理され得るため 400 で拒否する（Issue #16）。GitHub の正規配信には
+    // 必ず付与されるヘッダで、欠落は不正・非正規なリクエストとみなせる。
+    if (delivery === "") {
+      console.error("[webhook] X-GitHub-Delivery ヘッダ欠落");
+      return new Response("missing delivery id", { status: 400 });
+    }
+
     // 署名ヘッダの形式検査。署名は生ボディに対する HMAC のため、リポジトリ特定
     // （ペイロード中の URL が必要）より前には完結できないが、形式検査だけを
     // JSON.parse より前に行い、署名を持たないリクエストをパース前に安価に弾く。
@@ -151,9 +164,18 @@ http.route({
       payload?.repository?.clone_url,
       payload?.repository?.ssh_url,
     ].filter((u): u is string => typeof u === "string");
-    const repo = await ctx.runQuery(internal.webhooks.findRepositoryByUrls, {
-      urls: repoUrls,
-    });
+    let repo: FunctionReturnType<typeof internal.webhooks.findRepositoryByUrls>;
+    try {
+      repo = await ctx.runQuery(internal.webhooks.findRepositoryByUrls, {
+        urls: repoUrls,
+      });
+    } catch (e) {
+      // 暗号鍵（WEBHOOK_ENCRYPTION_KEY）未設定や webhookSecret の復号失敗
+      // （GCM タグ検証例外）はサーバ側の構成不備。貫通させず、ログを残して
+      // 500 を返し、構成の復旧後に GitHub の再送で再処理できるようにする（Issue #16）。
+      console.error("[webhook] リポジトリ解決に失敗:", e);
+      return new Response("processing error", { status: 500 });
+    }
     if (repo === null) {
       console.error("[webhook] 未登録のリポジトリ:", repoUrls);
       // 登録済み経路と処理時間を近づけるためダミー secret で HMAC を計算する

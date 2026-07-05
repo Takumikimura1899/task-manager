@@ -5,6 +5,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { Board } from "../../components/Board/Board";
 import { IssueList } from "../../components/IssueList/IssueList";
 import { NewIssueForm } from "../../components/NewIssueForm/NewIssueForm";
+import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotice";
 import s from "./Home.module.css";
 
 // 選択中プロジェクトを session 内で保持するキー。
@@ -84,8 +85,12 @@ export function Home() {
           </select>
         </label>
       </header>
-      {currentMember !== null && (
+      {currentMember !== null ? (
         <NewIssueForm createdBy={currentMember._id} project={selected._id} />
+      ) : (
+        // メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
+        // （Issue #16）。members 読み込み中（undefined）は判定できないため何も出さない。
+        members !== undefined && <NoMembersNotice />
       )}
       <IssueList
         createdBy={currentMember?._id ?? null}
