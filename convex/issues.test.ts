@@ -230,3 +230,66 @@ describe("issues.remove", () => {
     ).rejects.toThrowError("競合");
   });
 });
+
+// --- getByRef（{key}#{number} 解決・詳細表示用 join） -------------------------
+
+describe("issues.getByRef", () => {
+  it("参照を解決し、派生ステータス・作成者名・配下 Task（担当者名付き）を返す", async () => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const creator = await seedMember(t, { name: "Alice" });
+    const assignee = await seedMember(t, {
+      name: "Bob",
+      email: "bob@example.com",
+    });
+    const { issue, task } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題A",
+      createdBy: creator,
+      firstTask: { title: "タスクA", assignee },
+    });
+    const unassigned = await t.mutation(api.tasks.create, {
+      issue,
+      title: "タスクB",
+      createdBy: creator,
+    });
+    await driveTo(t, task, "in_progress"); // 派生ステータスを動かす
+
+    const found = await t.query(api.issues.getByRef, {
+      projectKey: "TASK",
+      number: 1,
+    });
+
+    expect(found).toMatchObject({
+      _id: issue,
+      projectKey: "TASK",
+      number: 1,
+      title: "課題A",
+      status: "in_progress", // 子 Task から派生（§5.1）
+      createdByName: "Alice",
+      tasks: [
+        { _id: task, assigneeName: "Bob" },
+        { _id: unassigned, assigneeName: null }, // 未割り当ては null
+      ],
+    });
+  });
+
+  it.each([
+    { name: "プロジェクトキーが未知", projectKey: "NONE", number: 1 },
+    { name: "Issue 番号が未知", projectKey: "TASK", number: 999 },
+  ])("$name の場合は null を返す", async ({ projectKey, number }) => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const member = await seedMember(t);
+    await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク" },
+    });
+
+    expect(
+      await t.query(api.issues.getByRef, { projectKey, number }),
+    ).toBeNull();
+  });
+});

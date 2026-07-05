@@ -1,14 +1,18 @@
 // @vitest-environment edge-runtime
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema from "./schema";
 import {
+  TEST_REPO_REMOTE_URL,
+  TEST_WEBHOOK_ENCRYPTION_KEY,
   getTask,
+  seedGitLink,
   seedMember,
   seedProject,
+  seedRepository,
   type T,
 } from "../test/convexSupport";
 
@@ -443,5 +447,307 @@ describe("tasks.deleteTask", () => {
     await expect(
       t.mutation(api.tasks.deleteTask, { id: first, expectedRevision: 0 }),
     ).rejects.toThrowError("競合");
+  });
+});
+
+// --- updateFields -------------------------------------------------------------
+
+describe("tasks.updateFields", () => {
+  it("指定したフィールドのみ更新し、revision を進める", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { issue, task } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: {
+        title: "元のタイトル",
+        description: "元の説明",
+        priority: "low",
+      },
+    });
+
+    await t.mutation(api.tasks.updateFields, {
+      id: task,
+      expectedRevision: 0,
+      title: "新しいタイトル",
+      priority: "urgent",
+    });
+
+    const after = await loadTask(t, task);
+    expect(after).toMatchObject({
+      title: "新しいタイトル",
+      priority: "urgent",
+      description: "元の説明", // 未指定フィールドは保持される
+      issue,
+      status: "backlog", // status/assignee/rank は本 mutation の対象外
+      revision: 1,
+    });
+  });
+
+  it("古い revision での更新を競合として拒否し、フィールドを変更しない（楽観ロック）", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { task } = await seedIssueWithTask(t, project, member);
+
+    // revision を 0→1 に進めておく
+    await t.mutation(api.tasks.updateFields, {
+      id: task,
+      expectedRevision: 0,
+      title: "1回目の更新",
+    });
+
+    await expect(
+      t.mutation(api.tasks.updateFields, {
+        id: task,
+        expectedRevision: 0, // 古い revision
+        title: "競合する更新",
+      }),
+    ).rejects.toThrowError("競合");
+
+    expect((await loadTask(t, task)).title).toBe("1回目の更新");
+  });
+
+  it("存在しないタスクを拒否する", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { issue, task } = await seedIssueWithTask(t, project, member);
+    await t.mutation(api.issues.remove, { id: issue, expectedRevision: 0 });
+
+    await expect(
+      t.mutation(api.tasks.updateFields, {
+        id: task,
+        expectedRevision: 0,
+        title: "x",
+      }),
+    ).rejects.toThrowError("タスクが見つかりません");
+  });
+});
+
+// --- listByProject ------------------------------------------------------------
+
+describe("tasks.listByProject", () => {
+  it("指定プロジェクトの Task のみ返す（他プロジェクトの Task は含まない）", async () => {
+    const t = setup();
+    const member = await seedMember(t);
+    const project = await seedProject(t, { key: "TASK" });
+    const other = await seedProject(t, { key: "OTHER" });
+    const { issue } = await seedIssueWithTask(t, project, member);
+    await t.mutation(api.tasks.create, {
+      issue,
+      title: "2つ目",
+      createdBy: member,
+    });
+    await seedIssueWithTask(t, other, member); // 他プロジェクト側にも Task を作る
+
+    const listed = await t.query(api.tasks.listByProject, { project });
+
+    expect(listed).toHaveLength(2);
+    expect(listed.every((task) => task.project === project)).toBe(true);
+    expect(listed.map((task) => task.number).toSorted()).toEqual([1, 2]);
+  });
+
+  it("Task のないプロジェクトは空配列を返す", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+
+    expect(await t.query(api.tasks.listByProject, { project })).toEqual([]);
+  });
+});
+
+// --- getByRef -------------------------------------------------------------
+
+describe("tasks.getByRef", () => {
+  it("{key}-{number} 参照から素の Task ドキュメントを解決する（表示用 join なし）", async () => {
+    const t = setup();
+    const member = await seedMember(t);
+    const project = await seedProject(t, { key: "TASK" });
+    const { issue } = await seedIssueWithTask(t, project, member);
+    const second = await t.mutation(api.tasks.create, {
+      issue,
+      title: "2つ目",
+      createdBy: member,
+    });
+
+    const found = await t.query(api.tasks.getByRef, {
+      projectKey: "TASK",
+      number: 2,
+    });
+
+    expect(found).toMatchObject({
+      _id: second,
+      project,
+      number: 2,
+      title: "2つ目",
+    });
+    // MCP が依存する安定契約: 表示用の join フィールドは付与しない
+    expect(found).not.toHaveProperty("assigneeName");
+    expect(found).not.toHaveProperty("issueNumber");
+  });
+
+  it.each([
+    { name: "プロジェクトキーが未知", projectKey: "NONE", number: 1 },
+    { name: "タスク番号が未知", projectKey: "TASK", number: 999 },
+  ])("$name の場合は null を返す", async ({ projectKey, number }) => {
+    const t = setup();
+    const member = await seedMember(t);
+    const project = await seedProject(t, { key: "TASK" });
+    await seedIssueWithTask(t, project, member);
+
+    expect(
+      await t.query(api.tasks.getByRef, { projectKey, number }),
+    ).toBeNull();
+  });
+});
+
+// --- getDetail ------------------------------------------------------------
+
+describe("tasks.getDetail", () => {
+  // seedRepository が webhookSecret を暗号化するため環境変数で鍵を注入する
+  beforeEach(() => {
+    vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", TEST_WEBHOOK_ENCRYPTION_KEY);
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("親 Issue・表示名・GitLink（remoteUrl join）を付与して返す", async () => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const creator = await seedMember(t, { name: "Alice" });
+    const assignee = await seedMember(t, {
+      name: "Bob",
+      email: "bob@example.com",
+    });
+    const { issue, task } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題A",
+      createdBy: creator,
+      firstTask: { title: "タスクA", assignee },
+    });
+    const repository = await seedRepository(t, project);
+    await seedGitLink(t, { task, repository });
+
+    const detail = await t.query(api.tasks.getDetail, {
+      projectKey: "TASK",
+      number: 1,
+    });
+
+    expect(detail).toMatchObject({
+      _id: task,
+      issue,
+      projectKey: "TASK",
+      issueNumber: 1,
+      issueTitle: "課題A",
+      assigneeName: "Bob",
+      createdByName: "Alice",
+      gitLinks: [
+        {
+          type: "branch",
+          externalRef: "feature/TASK-1",
+          remoteUrl: TEST_REPO_REMOTE_URL, // repository を join した表示用 URL
+        },
+      ],
+    });
+  });
+
+  it("担当者・GitLink がない Task は null / 空配列で返す", async () => {
+    const t = setup();
+    const member = await seedMember(t);
+    const project = await seedProject(t, { key: "TASK" });
+    await seedIssueWithTask(t, project, member);
+
+    const detail = await t.query(api.tasks.getDetail, {
+      projectKey: "TASK",
+      number: 1,
+    });
+
+    expect(detail).toMatchObject({ assigneeName: null, gitLinks: [] });
+  });
+
+  it.each([
+    { name: "プロジェクトキーが未知", projectKey: "NONE", number: 1 },
+    { name: "タスク番号が未知", projectKey: "TASK", number: 999 },
+  ])("$name の場合は null を返す", async ({ projectKey, number }) => {
+    const t = setup();
+    const member = await seedMember(t);
+    const project = await seedProject(t, { key: "TASK" });
+    await seedIssueWithTask(t, project, member);
+
+    expect(
+      await t.query(api.tasks.getDetail, { projectKey, number }),
+    ).toBeNull();
+  });
+});
+
+// --- board（整形出力） ------------------------------------------------------
+
+describe("tasks.board（整形出力）", () => {
+  it("固定6状態の列を順序どおり返し、各 Task に issueNumber と assigneeName を付与する", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const creator = await seedMember(t, { name: "Alice" });
+    const assignee = await seedMember(t, {
+      name: "Bob",
+      email: "bob@example.com",
+    });
+    const { issue } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題A",
+      createdBy: creator,
+      firstTask: { title: "担当あり", assignee },
+    });
+    await t.mutation(api.tasks.create, {
+      issue,
+      title: "担当なし",
+      createdBy: creator,
+    });
+
+    const board = await t.query(api.tasks.board, { project });
+
+    // 列は §5 の固定6状態・固定順
+    expect(board.map((column) => column.status)).toEqual([
+      "backlog",
+      "todo",
+      "in_progress",
+      "in_review",
+      "done",
+      "canceled",
+    ]);
+
+    const backlog = board.find((column) => column.status === "backlog")!;
+    expect(backlog.tasks).toMatchObject([
+      { number: 1, issueNumber: 1, assigneeName: "Bob" },
+      { number: 2, issueNumber: 1, assigneeName: null }, // 未割り当ては null
+    ]);
+    // PII: 表示名のみで member の email は載らない
+    for (const task of backlog.tasks) {
+      expect(task).not.toHaveProperty("email");
+    }
+  });
+
+  it("担当者の実体が欠落していれば assigneeName は null になる", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const ghost = await seedMember(t, {
+      name: "Ghost",
+      email: "ghost@example.com",
+    });
+    const { task } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク", assignee: ghost },
+    });
+    await t.run((ctx) => ctx.db.delete(ghost)); // 参照だけ残して実体を消す
+
+    const board = await t.query(api.tasks.board, { project });
+
+    const backlog = board.find((column) => column.status === "backlog")!;
+    expect(backlog.tasks).toMatchObject([{ _id: task, assigneeName: null }]);
   });
 });
