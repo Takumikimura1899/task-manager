@@ -53,17 +53,24 @@ export function resolveSameColumnTargetIndex(
 }
 
 /**
- * 衝突検出の結果から「カード」を「列コンテナ」より優先して絞り込む。
+ * 複数段階の衝突検出結果から「カード」を「列コンテナ」より優先して選ぶ。
  *
  * over が列コンテナに解決されると同一列ドロップは末尾へフォールバックする
- * （resolveSameColumnTargetIndex）ため、カードに重なっている間は必ずカード側を
- * over にし、列が over になるのは本当にカードのない余白へ落とすときだけに限る。
- * カードの衝突が無い場合は入力をそのまま返す（列・空いずれも）。
+ * （resolveSameColumnTargetIndex）ため、いずれかの段階でカードに当たっていれば
+ * 必ずカード側を over にする。列 body は列の全高を占めており、ポインタが盤面内に
+ * ある限り先頭段階（pointerWithin）は列を返す——そこで打ち切らず後続段階から
+ * カードを探すことで、カード間の隙間へのドロップが「末尾へ移動」と誤判定される
+ * のを防ぐ。どの段階にもカードが無ければ、最初に衝突があった段階の結果
+ * （列コンテナ＝本当に余白へのドロップ）を返す。
  */
-export function prioritizeCardCollisions<T extends { id: string | number }>(
-  collisions: readonly T[],
+export function pickCardFirstCollisions<T extends { id: string | number }>(
+  stages: readonly (readonly T[])[],
   columnIds: ReadonlySet<string>,
 ): T[] {
-  const cards = collisions.filter((c) => !columnIds.has(String(c.id)));
-  return cards.length > 0 ? cards : [...collisions];
+  for (const stage of stages) {
+    const cards = stage.filter((c) => !columnIds.has(String(c.id)));
+    if (cards.length > 0) return cards;
+  }
+  const fallback = stages.find((stage) => stage.length > 0);
+  return fallback ? [...fallback] : [];
 }
