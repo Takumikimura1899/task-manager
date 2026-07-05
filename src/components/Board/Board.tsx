@@ -22,7 +22,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import {
   type BoardTask,
   neighborRanks,
-  prioritizeCardCollisions,
+  pickCardFirstCollisions,
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
 import {
@@ -39,24 +39,24 @@ type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
 const COLUMN_IDS: ReadonlySet<string> = new Set(TASK_STATUS_ORDER);
 
 /**
- * ポインタ基準でカードを列コンテナより優先する衝突検出。
+ * カードを列コンテナより優先する衝突検出。
  * closestCorners 単独では over がカードと列の間で揺れ、列へのドロップ＝末尾移動の
  * フォールバックが誤発動する（意図しない末尾移動・プレビューのちらつき）。
- * pointerWithin → rectIntersection → closestCorners の順で解決し、
- * どの段でもカードを列より優先する。closestCorners は距離ベースで必ず候補を
- * 返すため、ポインタも矩形も droppable に届かない位置（空列の中央など）や
- * キーボード操作のドロップ先解決を担う。
+ * 列 body は列の全高を占めるため、ポインタが盤面内にある限り pointerWithin は
+ * 列を返す——先頭段階の衝突有無で打ち切らず、重なり系の2段階
+ * （pointerWithin → rectIntersection）からカードを優先して探す
+ * （カード間の隙間へのドロップは rectIntersection が隣接カードを拾う）。
+ * カードにもどの列にも重なっていないときだけ closestCorners で最寄りに解決する。
+ * closestCorners は距離ベースで交差していなくても必ず候補を返すため、
+ * カード優先の段階に含めると空列へのドロップが最寄りカード（ドラッグ中の
+ * 自分自身など）に吸われて no-op になる——最終手段に限定すること。
  */
 const collisionDetection: CollisionDetection = (args) => {
-  const pointer = pointerWithin(args);
-  const collisions =
-    pointer.length > 0
-      ? pointer
-      : (() => {
-          const rect = rectIntersection(args);
-          return rect.length > 0 ? rect : closestCorners(args);
-        })();
-  return prioritizeCardCollisions(collisions, COLUMN_IDS);
+  const overlapping = pickCardFirstCollisions(
+    [pointerWithin(args), rectIntersection(args)],
+    COLUMN_IDS,
+  );
+  return overlapping.length > 0 ? overlapping : closestCorners(args);
 };
 
 /** server スナップショットをローカル編集可能な形へ複製する。 */

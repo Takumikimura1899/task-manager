@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   neighborRanks,
-  prioritizeCardCollisions,
+  pickCardFirstCollisions,
   resolveSameColumnTargetIndex,
 } from "./board";
 
@@ -49,26 +49,36 @@ describe("resolveSameColumnTargetIndex", () => {
 });
 
 /**
- * 衝突検出のカード優先絞り込みを検証する。
+ * 衝突検出のカード優先選択を検証する。
  * over が列コンテナに解決されると末尾フォールバックが誤発動するため、
- * カードと列が同時に衝突している間はカードだけが over 候補に残ることを確認する。
+ * どこかの段階でカードに当たっていれば必ずカードが選ばれること、
+ * 特に「先頭段階が列のみでも後続段階のカードを採用する」
+ * （＝カード間の隙間へのドロップの誤判定防止）を確認する。
  */
-describe("prioritizeCardCollisions", () => {
+describe("pickCardFirstCollisions", () => {
   const columnIds: ReadonlySet<string> = new Set(["backlog", "todo"]);
 
   it.each([
-    // [ケース, 入力の衝突id列, 期待する出力id列]
+    // [ケース, 段階ごとの衝突id列, 期待する出力id列]
     [
-      "カードと列が混在したらカードのみ残す",
-      ["backlog", "task1", "task2"],
+      "先頭段階にカードと列が混在したらカードのみ返す",
+      [["backlog", "task1", "task2"]],
       ["task1", "task2"],
     ],
-    ["カードのみはそのまま", ["task1"], ["task1"]],
-    ["列のみはそのまま（余白へのドロップ）", ["backlog"], ["backlog"]],
-    ["空はそのまま", [], []],
-  ])("%s", (_case, ids, expected) => {
-    const collisions = ids.map((id) => ({ id }));
-    expect(prioritizeCardCollisions(collisions, columnIds)).toEqual(
+    [
+      "先頭段階が列のみでも後続段階のカードを採用する（カード間の隙間）",
+      [["backlog"], ["task1", "backlog"], ["task2"]],
+      ["task1"],
+    ],
+    [
+      "全段階にカードが無ければ最初に衝突があった段階の列を返す（余白へのドロップ）",
+      [[], ["backlog"], ["todo"]],
+      ["backlog"],
+    ],
+    ["全段階が空なら空を返す", [[], [], []], []],
+  ])("%s", (_case, stageIds, expected) => {
+    const stages = stageIds.map((ids) => ids.map((id) => ({ id })));
+    expect(pickCardFirstCollisions(stages, columnIds)).toEqual(
       expected.map((id) => ({ id })),
     );
   });
