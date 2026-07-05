@@ -22,9 +22,11 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
 
 ### Tools（実行）
 
-`list_tasks` / `get_task` / `create_task` / `update_task` /
+`list_tasks` / `get_task` / `create_issue` / `create_task` / `update_task` /
 `transition_status` / `assign_task` / `delete_task` / `link_git`
 
+- `create_issue` は最初の Task を必ず伴う（Issue は常に ≥1 Task、INVARIANT-5）。
+  引数は `project_key` / `title` / `description?` / `first_task_title` / `first_task_priority?`。
 - `delete_task` と `transition_status`（done/canceled 遷移）は破壊的操作のため
   `destructiveHint` を付与。承認はホスト（Claude Code 等）が担う（Human-in-the-Loop, §6）。
 - 更新系ツールの `version` 引数には `get_task` で得た `revision` を渡す（楽観ロック）。
