@@ -36,5 +36,7 @@ jobs:
       - name: Format check
         run: bun run format:check
 
-      - name: Test
-        run: bun run test:run
+      # カバレッジサマリ（text）を CI ログに出す。閾値ゲートは現状値の把握が
+      # 先のため未設定（#24）。外部サービス連携も行わない。
+      - name: Test (with coverage)
+        run: bun run test:coverage

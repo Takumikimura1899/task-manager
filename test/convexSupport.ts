@@ -58,6 +58,24 @@ export const seedMember = (
     }),
   );
 
+/**
+ * 「実体のないメンバー参照」を作る：seed 直後に delete し、Id だけを残す。
+ * 参照整合性（存在しないメンバーの拒否）テスト用のゴースト生成ヘルパー。
+ * email は既定の seedMember と衝突しない値にしてあるため、通常メンバーと併用できる。
+ */
+export const seedGhostMember = async (
+  t: T,
+  overrides: Parameters<typeof seedMember>[1] = {},
+) => {
+  const id = await seedMember(t, {
+    name: "Ghost",
+    email: "ghost@example.com",
+    ...overrides,
+  });
+  await t.run((ctx) => ctx.db.delete(id));
+  return id;
+};
+
 /** id から素の Task ドキュメントを取得する（最終状態の検証用）。 */
 export const getTask = (t: T, id: Id<"tasks">) =>
   t.run((ctx) => ctx.db.get(id));

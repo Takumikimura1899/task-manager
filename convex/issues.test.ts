@@ -5,7 +5,12 @@ import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
-import { seedMember, seedProject, type T } from "../test/convexSupport";
+import {
+  seedGhostMember,
+  seedMember,
+  seedProject,
+  type T,
+} from "../test/convexSupport";
 
 /**
  * Issue Core ミューテーション／クエリの結合テスト（基本設計書 §3/§5.1/ADR-9/ADR-10）。
@@ -93,14 +98,13 @@ describe("issues.create", () => {
   it("存在しない createdBy を指定すると拒否する", async () => {
     const t = setup();
     const project = await seedProject(t);
-    const member = await seedMember(t);
-    await t.run((ctx) => ctx.db.delete(member));
+    const ghost = await seedGhostMember(t);
 
     await expect(
       t.mutation(api.issues.create, {
         project,
         title: "x",
-        createdBy: member,
+        createdBy: ghost,
         firstTask: { title: "t" },
       }),
     ).rejects.toThrowError("メンバーが存在しません");
