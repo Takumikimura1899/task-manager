@@ -17,7 +17,7 @@ import { seedMember, seedProject, type T } from "../test/convexSupport";
  * ミューテーション経由で Task を遷移させたとき、クエリが正しい派生状態を返すかを見る。
  */
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const setup = () => convexTest(schema, modules);
 
 /** active な Task の線形な前進経路（backlog はこの手前の初期状態）。 */

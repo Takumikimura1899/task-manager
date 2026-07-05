@@ -22,7 +22,7 @@ import {
  * seedProject / seedMember / getTask は test/convexSupport.ts に一元化。
  */
 
-const modules = import.meta.glob("./**/*.ts");
+const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const setup = () => convexTest(schema, modules);
 
 /** Issue と最初の Task を Core API 経由で作成する（INVARIANT-5 を尊重）。 */
