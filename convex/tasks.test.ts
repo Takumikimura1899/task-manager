@@ -25,6 +25,17 @@ import {
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const setup = () => convexTest(schema, modules);
 
+/**
+ * Task を取得し、存在（非 null）を表明してから素のドキュメントを返す。
+ * アサーションで `?.` を使うと、Task が消失していても `undefined` 経由で
+ * 検証が通り抜ける偽陽性が起きうるため、フィールド検証の前に null を弾く。
+ */
+const loadTask = async (t: T, id: Id<"tasks">) => {
+  const task = await getTask(t, id);
+  expect(task).not.toBeNull();
+  return task!;
+};
+
 /** Issue と最初の Task を Core API 経由で作成する（INVARIANT-5 を尊重）。 */
 const seedIssueWithTask = (
   t: T,
@@ -121,9 +132,9 @@ describe("tasks.transitionStatus", () => {
       expectedRevision: 0,
     });
 
-    const after = await getTask(t, task);
-    expect(after?.status).toBe("todo");
-    expect(after?.revision).toBe(1);
+    const after = await loadTask(t, task);
+    expect(after.status).toBe("todo");
+    expect(after.revision).toBe(1);
   });
 
   it("状態機械が許さない遷移（backlog→done）を拒否する（INVARIANT-4）", async () => {
@@ -164,7 +175,7 @@ describe("tasks.transitionStatus", () => {
       expectedRevision: rev,
     });
 
-    expect((await getTask(t, task))?.status).toBe("in_progress");
+    expect((await loadTask(t, task)).status).toBe("in_progress");
   });
 
   it("古い revision での更新を競合として検出し拒否する（INVARIANT-2 楽観ロック）", async () => {
@@ -219,8 +230,8 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     // 初期の backlog 並びは作成順 [1(a), 2(b), 3(c)]
     expect(await columnNumbers(t, project, "backlog")).toEqual([1, 2, 3]);
 
-    const aRank = (await getTask(t, a))!.rank;
-    const bRank = (await getTask(t, b))!.rank;
+    const aRank = (await loadTask(t, a)).rank;
+    const bRank = (await loadTask(t, b)).rank;
 
     // c を a と b の間へ移動（before=a, after=b）
     await t.mutation(api.tasks.move, {
@@ -232,7 +243,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
 
     // 並びは [a, c, b] = [1, 3, 2] になり、c の rank は厳密に a と b の間
     expect(await columnNumbers(t, project, "backlog")).toEqual([1, 3, 2]);
-    const moved = (await getTask(t, c))!;
+    const moved = await loadTask(t, c);
     expect(aRank < moved.rank && moved.rank < bRank).toBe(true);
     expect(moved.revision).toBe(1);
   });
@@ -243,7 +254,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
 
     // c を先頭へ移動。先頭に来るには「現在の先頭（a）の前」= after に a の rank を渡す。
     // before=null は先頭より前（左端）を意味し、rankBetween(null, aRank) で a より前の rank になる。
-    const aRank = (await getTask(t, a))!.rank;
+    const aRank = (await loadTask(t, a)).rank;
     await t.mutation(api.tasks.move, {
       id: c,
       before: null,
@@ -273,8 +284,8 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     });
     expect(await columnNumbers(t, project, "todo")).toEqual([1, 2]);
 
-    const aRank = (await getTask(t, a))!.rank;
-    const bRank = (await getTask(t, b))!.rank;
+    const aRank = (await loadTask(t, a)).rank;
+    const bRank = (await loadTask(t, b)).rank;
 
     // c を backlog から todo の a・b の間へドロップ
     await t.mutation(api.tasks.transitionStatus, {
@@ -288,7 +299,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     // todo は [a, c, b] = [1, 3, 2]、c は todo へ移り backlog から消える
     expect(await columnNumbers(t, project, "todo")).toEqual([1, 3, 2]);
     expect(await columnNumbers(t, project, "backlog")).toEqual([]);
-    expect((await getTask(t, c))!.status).toBe("todo");
+    expect((await loadTask(t, c)).status).toBe("todo");
   });
 
   it("位置指定なしの transitionStatus は遷移先列の末尾に置く", async () => {
@@ -329,14 +340,14 @@ describe("tasks.assign", () => {
       assignee,
       expectedRevision: 0,
     });
-    expect((await getTask(t, task))?.assignee).toBe(assignee);
+    expect((await loadTask(t, task)).assignee).toBe(assignee);
 
     await t.mutation(api.tasks.assign, {
       id: task,
       assignee: null,
       expectedRevision: 1,
     });
-    expect((await getTask(t, task))?.assignee).toBeUndefined();
+    expect((await loadTask(t, task)).assignee).toBeUndefined();
   });
 
   it("存在しないメンバーの割り当てを拒否する", async () => {
