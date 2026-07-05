@@ -98,7 +98,12 @@ async function processBranchCreated(
   ctx: MutationCtx,
   { projectId, branchName }: ObjectType<typeof branchCreatedFields>,
 ): Promise<void> {
-  const ref = extractTaskRef(branchName);
+  const project = await ctx.db.get(projectId);
+  if (project === null) {
+    console.error(`[webhook] プロジェクトが存在しない: ${projectId}`);
+    return;
+  }
+  const ref = extractTaskRef(branchName, project.key);
   if (ref === null) {
     console.error(`[webhook] ブランチ名にタスク参照なし: ${branchName}`);
     return;
@@ -163,11 +168,16 @@ async function processPullRequest(
   ctx: MutationCtx,
   args: ObjectType<typeof pullRequestFields>,
 ): Promise<void> {
-  // 参照は タイトル → 本文 → ブランチ名 の順で探す
+  const project = await ctx.db.get(args.projectId);
+  if (project === null) {
+    console.error(`[webhook] プロジェクトが存在しない: ${args.projectId}`);
+    return;
+  }
+  // 参照は タイトル → 本文 → ブランチ名 の順で探す（プロジェクトキー一致のみ対象）
   const ref =
-    extractTaskRef(args.title) ??
-    extractTaskRef(args.body) ??
-    extractTaskRef(args.branch);
+    extractTaskRef(args.title, project.key) ??
+    extractTaskRef(args.body, project.key) ??
+    extractTaskRef(args.branch, project.key);
   if (ref === null) {
     console.error(`[webhook] PR #${args.number} にタスク参照なし`);
     return;
