@@ -1,5 +1,6 @@
 import type { TestConvex } from "convex-test";
-import type { Id } from "../convex/_generated/dataModel";
+import type { Doc, Id } from "../convex/_generated/dataModel";
+import { encryptSecret } from "../convex/lib/crypto";
 import schema from "../convex/schema";
 
 /**
@@ -60,3 +61,78 @@ export const seedMember = (
 /** id から素の Task ドキュメントを取得する（最終状態の検証用）。 */
 export const getTask = (t: T, id: Id<"tasks">) =>
   t.run((ctx) => ctx.db.get(id));
+
+// --- Git 連携（repositories / gitLinks, §7） ---------------------------------
+
+/**
+ * テスト用の WEBHOOK_ENCRYPTION_KEY（base64 エンコードされた32バイトの固定値）。
+ * repositories.ts / webhooks.ts は process.env から鍵を読むため、
+ * seedRepository を使うテストでは `vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", ...)` で注入する。
+ */
+export const TEST_WEBHOOK_ENCRYPTION_KEY = btoa(
+  "0123456789abcdef0123456789abcdef",
+);
+
+/** seedRepository が既定で使う平文の webhookSecret（HMAC 署名の計算にも使う）。 */
+export const TEST_WEBHOOK_SECRET = "test-webhook-secret";
+
+/** seedRepository が既定で使う remoteUrl（webhook ペイロードの repository URL と揃える）。 */
+export const TEST_REPO_REMOTE_URL = "https://github.com/acme/repo";
+
+/**
+ * repositories を1件 seed する。webhookSecret は本番経路と同じく AES-256-GCM で
+ * 暗号化して保存する（署名検証が復号込みで通ることを検証できるようにするため）。
+ * 事前に WEBHOOK_ENCRYPTION_KEY（TEST_WEBHOOK_ENCRYPTION_KEY）の注入が必要。
+ */
+export const seedRepository = async (
+  t: T,
+  project: Id<"projects">,
+  overrides: Partial<{ remoteUrl: string; webhookSecret: string }> = {},
+) => {
+  const key = process.env.WEBHOOK_ENCRYPTION_KEY;
+  if (key === undefined || key === "") {
+    throw new Error(
+      "seedRepository には WEBHOOK_ENCRYPTION_KEY が必要です（vi.stubEnv 等で注入してください）",
+    );
+  }
+  const {
+    remoteUrl = TEST_REPO_REMOTE_URL,
+    webhookSecret = TEST_WEBHOOK_SECRET,
+  } = overrides;
+  const encrypted = await encryptSecret(webhookSecret, key);
+  return await t.run((ctx) =>
+    ctx.db.insert("repositories", {
+      project,
+      provider: "github",
+      remoteUrl,
+      webhookSecret: encrypted,
+    }),
+  );
+};
+
+/** gitLinks を1件 seed する（upsert 検証などで既存リンクを用意する用途）。 */
+export const seedGitLink = (
+  t: T,
+  refs: { task: Id<"tasks">; repository: Id<"repositories"> },
+  overrides: Partial<
+    Pick<Doc<"gitLinks">, "type" | "externalRef" | "url" | "prState">
+  > = {},
+) =>
+  t.run((ctx) =>
+    ctx.db.insert("gitLinks", {
+      ...refs,
+      type: "branch",
+      externalRef: "feature/TASK-1",
+      url: `${TEST_REPO_REMOTE_URL}/tree/feature/TASK-1`,
+      ...overrides,
+    }),
+  );
+
+/** Task に紐づく GitLink 一覧を取得する（最終状態の検証用）。 */
+export const listTaskGitLinks = (t: T, task: Id<"tasks">) =>
+  t.run((ctx) =>
+    ctx.db
+      .query("gitLinks")
+      .withIndex("by_task", (q) => q.eq("task", task))
+      .collect(),
+  );
