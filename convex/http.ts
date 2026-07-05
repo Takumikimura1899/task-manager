@@ -7,6 +7,9 @@ import type { Id } from "./_generated/dataModel";
  * GitHub Webhook の受信エンドポイント（基本設計書 §7）。
  *
  * - HMAC-SHA256（X-Hub-Signature-256）でペイロードを検証する。
+ * - 検証を通らないリクエスト（署名ヘッダ不正・未登録リポジトリ・署名不一致）には
+ *   すべて同一の 404 応答を返す。応答の違いから remoteUrl の登録状態を列挙
+ *   されることを防ぐため、区別可能な情報はログにのみ残す（Issue #18）。
  * - X-GitHub-Delivery で冪等化し、重複配信を握り潰す。冪等マーキングと
  *   イベント反映は webhooks.processEvent が単一トランザクションで行うため、
  *   処理失敗（500）時はマーカーが残らず、GitHub の再送で再処理される
@@ -98,6 +101,25 @@ function parseWebhookEvent(
   return { kind: "ignored", name: event };
 }
 
+/** X-Hub-Signature-256 の期待形式（sha256= + HMAC-SHA256 の hex 64桁）。 */
+const SIGNATURE_FORMAT = /^sha256=[0-9a-f]{64}$/;
+
+/**
+ * 未登録リポジトリの応答タイミングを署名不一致に近づけるためのダミー secret。
+ * 値自体に意味はなく、これで署名が一致することはない（検証結果は常に破棄する）。
+ */
+const DUMMY_SECRET = "dummy-secret-for-timing-equalization";
+
+/**
+ * 検証を通らないリクエストへの同一応答（Issue #18）。
+ *
+ * 署名ヘッダ不正・未登録リポジトリ・署名不一致のすべてでこの応答を返し、
+ * status・ボディの違いから remoteUrl の登録状態を列挙できないようにする。
+ */
+function unverifiedResponse(): Response {
+  return new Response("not found", { status: 404 });
+}
+
 http.route({
   path: "/webhooks/github",
   method: "POST",
@@ -106,6 +128,14 @@ http.route({
     const event = request.headers.get("x-github-event") ?? "";
     const delivery = request.headers.get("x-github-delivery") ?? "";
     const signature = request.headers.get("x-hub-signature-256") ?? "";
+
+    // 署名ヘッダの形式検査。署名は生ボディに対する HMAC のため、リポジトリ特定
+    // （ペイロード中の URL が必要）より前には完結できないが、形式検査だけを
+    // JSON.parse より前に行い、署名を持たないリクエストをパース前に安価に弾く。
+    if (!SIGNATURE_FORMAT.test(signature)) {
+      console.error(`[webhook] 署名ヘッダ不正 delivery=${delivery}`);
+      return unverifiedResponse();
+    }
 
     let payload: any;
     try {
@@ -126,13 +156,16 @@ http.route({
     });
     if (repo === null) {
       console.error("[webhook] 未登録のリポジトリ:", repoUrls);
-      return new Response("repository not registered", { status: 404 });
+      // 登録済み経路と処理時間を近づけるためダミー secret で HMAC を計算する
+      // （結果は使わない）。応答自体は署名不一致と同一（Issue #18）。
+      await verifySignature(DUMMY_SECRET, body, signature);
+      return unverifiedResponse();
     }
 
-    // HMAC 署名検証
+    // HMAC 署名検証（不一致は未登録リポジトリと同一応答。Issue #18）
     if (!(await verifySignature(repo.secret, body, signature))) {
       console.error(`[webhook] 署名検証失敗 delivery=${delivery}`);
-      return new Response("invalid signature", { status: 401 });
+      return unverifiedResponse();
     }
 
     // 冪等マーキング（X-GitHub-Delivery）とイベント反映を単一の mutation
