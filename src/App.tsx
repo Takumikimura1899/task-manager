@@ -2,6 +2,7 @@ import { Route, Routes } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { Home } from "./routes/Home/Home";
 import { IssueDetail } from "./routes/IssueDetail/IssueDetail";
+import { NotFound } from "./routes/NotFound/NotFound";
 import { TaskDetail } from "./routes/TaskDetail/TaskDetail";
 
 // 各ルートを ErrorBoundary で包み、Convex useQuery の throw 等による
@@ -34,6 +35,8 @@ export function App() {
         }
         path="/:projectKey/tasks/:number"
       />
+      {/* 未定義 URL のフォールバック。空白画面を防ぐ（Issue #16） */}
+      <Route element={<NotFound />} path="*" />
     </Routes>
   );
 }
