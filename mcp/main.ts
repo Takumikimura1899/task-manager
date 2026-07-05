@@ -277,16 +277,16 @@ async function main() {
     async ({ project_key, status, assignee_email }) => {
       try {
         const project = await resolveProject(project_key);
-        let tasks = await convex.query(api.tasks.listByProject, {
+        // 絞り込みはサーバー側（tasks.listFiltered）に寄せ、全件転送を避ける。
+        const assignee =
+          assignee_email !== undefined
+            ? await resolveMemberId(assignee_email)
+            : undefined;
+        const tasks = await convex.query(api.tasks.listFiltered, {
           project: project._id,
+          status,
+          assignee,
         });
-        if (status !== undefined) {
-          tasks = tasks.filter((t) => t.status === status);
-        }
-        if (assignee_email !== undefined) {
-          const memberId = await resolveMemberId(assignee_email);
-          tasks = tasks.filter((t) => t.assignee === memberId);
-        }
         return ok(tasks);
       } catch (e) {
         return fail(e);

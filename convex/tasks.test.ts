@@ -558,6 +558,115 @@ describe("tasks.listByProject", () => {
   });
 });
 
+// --- listFiltered（MCP list_tasks 用のサーバー側絞り込み） --------------------
+
+/**
+ * listFiltered 用の配置。2プロジェクト・担当者ありなしで Task を配置する:
+ * - TASK: 1(todo, Bob) / 2(backlog, Bob) / 3(backlog, 担当なし)
+ * - OTHER: 1(backlog, Bob) …… project 絞り込みの検証用
+ */
+const arrangeFilteredTasks = async (t: T) => {
+  const member = await seedMember(t);
+  const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
+  const project = await seedProject(t, { key: "TASK" });
+  const other = await seedProject(t, { key: "OTHER" });
+
+  const { issue, task: first } = await t.mutation(api.issues.create, {
+    project,
+    title: "課題",
+    createdBy: member,
+    firstTask: { title: "1つ目", assignee: bob },
+  });
+  await t.mutation(api.tasks.transitionStatus, {
+    id: first,
+    to: "todo",
+    expectedRevision: 0,
+  });
+  await t.mutation(api.tasks.create, {
+    issue,
+    title: "2つ目",
+    assignee: bob,
+    createdBy: member,
+  });
+  await t.mutation(api.tasks.create, {
+    issue,
+    title: "3つ目",
+    createdBy: member,
+  });
+  await t.mutation(api.issues.create, {
+    project: other,
+    title: "他プロジェクトの課題",
+    createdBy: member,
+    firstTask: { title: "他プロジェクトのタスク", assignee: bob },
+  });
+
+  return { project, other, member, bob };
+};
+
+describe("tasks.listFiltered", () => {
+  const arrange = arrangeFilteredTasks;
+
+  it("絞り込みなしならプロジェクトの全 Task を返す（listByProject と同じ内容）", async () => {
+    const t = setup();
+    const { project } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, { project });
+
+    expect(listed.map((task) => task.number).toSorted()).toEqual([1, 2, 3]);
+    expect(listed.every((task) => task.project === project)).toBe(true);
+  });
+
+  it("status 指定で該当ステータスの Task のみ返す", async () => {
+    const t = setup();
+    const { project } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, {
+      project,
+      status: "backlog",
+    });
+
+    expect(listed.map((task) => task.number).toSorted()).toEqual([2, 3]);
+    expect(listed.every((task) => task.status === "backlog")).toBe(true);
+  });
+
+  it("assignee 指定で担当 Task のみ返す（他プロジェクトの担当 Task は含まない）", async () => {
+    const t = setup();
+    const { project, bob } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, {
+      project,
+      assignee: bob,
+    });
+
+    // OTHER 側にも Bob 担当の Task があるが、project で絞り込まれる
+    expect(listed.map((task) => task.number).toSorted()).toEqual([1, 2]);
+    expect(listed.every((task) => task.project === project)).toBe(true);
+    expect(listed.every((task) => task.assignee === bob)).toBe(true);
+  });
+
+  it("status と assignee の同時指定は両条件を満たす Task のみ返す", async () => {
+    const t = setup();
+    const { project, bob } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, {
+      project,
+      status: "todo",
+      assignee: bob,
+    });
+
+    expect(listed.map((task) => task.number)).toEqual([1]);
+  });
+
+  it("該当がなければ空配列を返す", async () => {
+    const t = setup();
+    const { project } = await arrange(t);
+
+    expect(
+      await t.query(api.tasks.listFiltered, { project, status: "done" }),
+    ).toEqual([]);
+  });
+});
+
 // --- getByRef -------------------------------------------------------------
 
 describe("tasks.getByRef", () => {

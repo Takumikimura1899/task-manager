@@ -68,14 +68,20 @@ async function applyTransition(
 
 /**
  * URL 候補からリポジトリを探し、復号した webhookSecret を返す（署名検証用）。
- * MVP 規模のため全件走査で remoteUrl を突き合わせる。
+ * 全件走査は避け、候補 URL ごとに by_remoteUrl インデックスで逆引きする（Issue #19）。
  */
 export const findRepositoryByUrls = internalQuery({
   args: { urls: v.array(v.string()) },
   handler: async (ctx, { urls }) => {
-    const repos = await ctx.db.query("repositories").collect();
-    const repo = repos.find((r) => urls.includes(r.remoteUrl));
-    if (repo === undefined) return null;
+    let repo: Doc<"repositories"> | null = null;
+    for (const url of urls) {
+      repo = await ctx.db
+        .query("repositories")
+        .withIndex("by_remoteUrl", (q) => q.eq("remoteUrl", url))
+        .first();
+      if (repo !== null) break;
+    }
+    if (repo === null) return null;
 
     const key = process.env.WEBHOOK_ENCRYPTION_KEY;
     if (key === undefined || key === "") {

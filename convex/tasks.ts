@@ -305,6 +305,49 @@ export const listByProject = query({
 });
 
 /**
+ * status / assignee で絞り込んだプロジェクトの Task 一覧（MCP list_tasks 用）。
+ * 全件転送してクライアント側でフィルタする代わりに、条件に応じたインデックスで
+ * サーバー側に絞り込みを寄せる（Issue #19）:
+ * - assignee 指定あり → by_assignee で担当者の Task だけ読み、project/status を照合
+ * - status のみ → by_project_and_status で該当列だけ読む
+ * - 指定なし → by_project（listByProject と同じ読み取り）
+ */
+export const listFiltered = query({
+  args: {
+    project: v.id("projects"),
+    status: v.optional(taskStatus),
+    assignee: v.optional(v.id("members")),
+  },
+  handler: async (ctx, args) => {
+    if (args.assignee !== undefined) {
+      const assignee = args.assignee;
+      const tasks = await ctx.db
+        .query("tasks")
+        .withIndex("by_assignee", (q) => q.eq("assignee", assignee))
+        .collect();
+      return tasks.filter(
+        (t) =>
+          t.project === args.project &&
+          (args.status === undefined || t.status === args.status),
+      );
+    }
+    if (args.status !== undefined) {
+      const status = args.status;
+      return await ctx.db
+        .query("tasks")
+        .withIndex("by_project_and_status", (q) =>
+          q.eq("project", args.project).eq("status", status),
+        )
+        .collect();
+    }
+    return await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+  },
+});
+
+/**
  * カンバン表示用: 固定6状態の列順で、各列を rank 昇順に整列して返す。
  * 表示の利便のため、各 Task に所属 Issue 番号と担当者名を付与する
  * （member の email 等 PII は返さず name のみ）。
@@ -312,13 +355,6 @@ export const listByProject = query({
 export const board = query({
   args: { project: v.id("projects") },
   handler: async (ctx, args) => {
-    // id → 表示値のマップを一度だけ構築する。
-    const issues = await ctx.db
-      .query("issues")
-      .withIndex("by_project", (q) => q.eq("project", args.project))
-      .collect();
-    const issueNumber = new Map(issues.map((i) => [i._id, i.number]));
-
     const columnTasks = await Promise.all(
       TASK_STATUSES.map(async (status) => ({
         status,
@@ -329,6 +365,19 @@ export const board = query({
           )
           .collect(), // index 末尾フィールドが rank のため既に昇順
       })),
+    );
+
+    // Issue 番号はタスクが参照する Issue のみ取得する
+    // （project 配下の issues 全件 .collect() は避ける・Issue #19）。
+    const issueIds = [
+      ...new Set(columnTasks.flatMap((c) => c.tasks.map((t) => t.issue))),
+    ];
+    const issueNumber = new Map<Id<"issues">, number>();
+    await Promise.all(
+      issueIds.map(async (id) => {
+        const issue = await ctx.db.get(id);
+        if (issue !== null) issueNumber.set(id, issue.number);
+      }),
     );
 
     // 担当者名は参照された分だけ解決する（members 全件 .collect() は避ける）。
