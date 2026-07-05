@@ -52,6 +52,11 @@ export const demo = internalMutation({
     // Issue とその配下 Task をまとめて作る小さなヘルパー。
     let issueNo = 1;
     let taskNo = 1;
+    // rank は列（status）内の並び順を決める。rankBetween(null, null) を毎回呼ぶと
+    // 全タスクが同一 rank "a0" になり、並び順が退化し move で例外が起きるため、
+    // 直前タスクの rank を before に渡して単調増加の系列を連鎖生成する。
+    // （seed の全タスクは backlog 列なので、系列は1本でよい）
+    let prevRank: string | null = null;
     const addIssue = async (title: string, taskTitles: string[]) => {
       const issue = await ctx.db.insert("issues", {
         project,
@@ -63,6 +68,7 @@ export const demo = internalMutation({
       });
       const taskIds: Id<"tasks">[] = [];
       for (const t of taskTitles) {
+        prevRank = rankBetween(prevRank, null);
         taskIds.push(
           await ctx.db.insert("tasks", {
             issue,
@@ -71,7 +77,7 @@ export const demo = internalMutation({
             title: t,
             status: "backlog",
             priority: "none",
-            rank: rankBetween(null, null),
+            rank: prevRank,
             createdBy: member,
             revision: 0,
             updatedAt: Date.now(),
