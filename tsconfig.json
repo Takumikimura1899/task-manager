@@ -12,6 +12,6 @@
     "types": ["node"],
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
-  "include": ["convex", "mcp", "src", "vite.config.ts"],
+  "include": ["convex", "mcp", "src", "test", "vite.config.ts"],
   "exclude": ["node_modules"]
 }
