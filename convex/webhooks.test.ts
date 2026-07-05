@@ -9,6 +9,7 @@ import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   getTask,
   listTaskGitLinks,
+  listWebhookDeliveries,
   seedGitLink,
   seedMember,
   seedProject,
@@ -24,8 +25,9 @@ import {
  * 固定する（古典学派・結合テスト層）。参照抽出（gitRef）・遷移表（gitAutomation）の
  * 純粋関数は lib/*.test.ts で単体検証済みで、ここでは結線を検証する。
  *
- * 注意: ディスパッチ処理が失敗した場合の再送挙動（冪等マーカー先行コミット問題）は
- * Issue #12 の修正側でテストを追加する。ここでは成功経路のみを固定する。
+ * 冪等マーキングとイベント反映は processEvent が単一トランザクションで行う
+ * （Issue #12）。処理失敗時にマーカーが残らず再送で再処理できることも
+ * ここで固定する（processEvent の describe を参照）。
  */
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
@@ -534,27 +536,108 @@ describe("webhooks.handlePullRequest", () => {
   });
 });
 
-// --- tryMarkDelivery（成功経路の冪等化。失敗時の再送挙動は Issue #12 側で扱う） ---
+// --- processEvent（冪等マーキング + イベント反映の単一トランザクション、Issue #12） ---
 
-describe("webhooks.tryMarkDelivery", () => {
-  it("新規 delivery-id には true、同一 id の再送には false を返す", async () => {
+/** processEvent へ渡す push イベント入力のファクトリ。 */
+const createPushEvent = (
+  ids: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
+  overrides: Partial<{ commits: ReturnType<typeof createCommit>[] }> = {},
+) => ({
+  kind: "push" as const,
+  ...ids,
+  commits: [createCommit()],
+  ...overrides,
+});
+
+describe("webhooks.processEvent", () => {
+  it("新規 delivery はイベントを反映して processed を返し、delivery を記録する", async () => {
     const t = setup();
+    const { project, task, repository } = await seedScenario(t);
 
-    expect(
-      await t.mutation(internal.webhooks.tryMarkDelivery, {
-        deliveryId: "d-1",
+    const result = await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "d-1",
+      event: createPushEvent({ repositoryId: repository, projectId: project }),
+    });
+
+    expect(result).toBe("processed");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "commit", externalRef: "abc123" },
+    ]);
+    expect(await listWebhookDeliveries(t)).toMatchObject([
+      { deliveryId: "d-1" },
+    ]);
+  });
+
+  it("同一 delivery の再送は duplicate を返し、イベント処理をスキップする", async () => {
+    const t = setup();
+    const { project, task, repository } = await seedScenario(t);
+    const ids = { repositoryId: repository, projectId: project };
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "d-1",
+      event: createPushEvent(ids),
+    });
+
+    const result = await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "d-1",
+      event: createPushEvent(ids, {
+        commits: [createCommit({ message: "[TASK-1] 別内容", sha: "def456" })],
       }),
-    ).toBe(true);
-    expect(
-      await t.mutation(internal.webhooks.tryMarkDelivery, {
-        deliveryId: "d-1",
-      }),
-    ).toBe(false);
-    // 異なる id は独立に受理される
-    expect(
-      await t.mutation(internal.webhooks.tryMarkDelivery, {
-        deliveryId: "d-2",
-      }),
-    ).toBe(true);
+    });
+
+    expect(result).toBe("duplicate");
+    // 反映されているのは初回の内容だけ
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { externalRef: "abc123" },
+    ]);
+  });
+
+  it("イベント処理が失敗するとマーカーごとロールバックし、同一 delivery の再送で処理できる", async () => {
+    const t = setup();
+    const { project, task, repository } = await seedScenario(t);
+    // 同一 (repository, type, externalRef) の GitLink を2件用意し、
+    // upsertGitLink の .unique() を実際の経路で失敗させる（データ不整合の注入）
+    await seedGitLink(
+      t,
+      { task, repository },
+      {
+        type: "commit",
+        externalRef: "abc123",
+        url: "https://old-1.example.com",
+      },
+    );
+    const extra = await seedGitLink(
+      t,
+      { task, repository },
+      {
+        type: "commit",
+        externalRef: "abc123",
+        url: "https://old-2.example.com",
+      },
+    );
+    const args = {
+      deliveryId: "d-retry",
+      event: createPushEvent({ repositoryId: repository, projectId: project }),
+    };
+
+    await expect(
+      t.mutation(internal.webhooks.processEvent, args),
+    ).rejects.toThrow();
+    // 冪等マーカーは処理と同一トランザクションでロールバックされ、残らない
+    expect(await listWebhookDeliveries(t)).toHaveLength(0);
+
+    // 不整合を解消してから GitHub の再送（同一 delivery-id）を模すと、今度は処理される
+    await t.run((ctx) => ctx.db.delete(extra));
+    expect(await t.mutation(internal.webhooks.processEvent, args)).toBe(
+      "processed",
+    );
+    const links = await listTaskGitLinks(t, task);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      externalRef: "abc123",
+      url: "https://github.com/acme/repo/commit/abc123",
+    });
+    expect(await listWebhookDeliveries(t)).toMatchObject([
+      { deliveryId: "d-retry" },
+    ]);
   });
 });
