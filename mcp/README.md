@@ -28,7 +28,10 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
 - `create_issue` は最初の Task を必ず伴う（Issue は常に ≥1 Task、INVARIANT-5）。
   引数は `project_key` / `title` / `description?` / `first_task_title` / `first_task_priority?`。
 - `delete_task` と `transition_status`（done/canceled 遷移）は破壊的操作のため
-  `destructiveHint` を付与。承認はホスト（Claude Code 等）が担う（Human-in-the-Loop, §6）。
+  **サーバー側で人間の承認を強制する**（Human-in-the-Loop, §6）。人間の承認を得た上で
+  `approved: true` を指定しない限り操作は拒否される（`delete_task` は常に、
+  `transition_status` は遷移先が done / canceled の場合）。`destructiveHint` も付与
+  しているため、対応ホスト（Claude Code 等）では承認プロンプトも表示される。
 - 更新系ツールの `version` 引数には `get_task` で得た `revision` を渡す（楽観ロック）。
 - `link_git` はタスクの所属プロジェクトからリポジトリを解決する（複数ある場合は
   `repository_url` を指定）。`(repository, type, ref)` で冪等。

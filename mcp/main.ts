@@ -18,6 +18,10 @@ import { ConvexError } from "convex/values";
 import { z } from "zod";
 import { api } from "../convex/_generated/api.js";
 import type { Doc, Id } from "../convex/_generated/dataModel.js";
+import {
+  checkDeleteApproval,
+  checkTransitionApproval,
+} from "../convex/lib/approval.js";
 import { TASK_STATUSES } from "../convex/lib/taskStatus.js";
 
 const PRIORITY_VALUES = ["none", "low", "medium", "high", "urgent"] as const;
@@ -419,16 +423,24 @@ async function main() {
     {
       title: "ステータス遷移",
       description:
-        "タスクの状態を遷移させる（状態機械で検証）。done / canceled への遷移は破壊的操作のため承認が必要。version は revision を渡す",
+        "タスクの状態を遷移させる（状態機械で検証）。done / canceled への遷移は破壊的操作のため人間の承認が必須：ユーザーの明示的な承認を得た上で approved: true を指定すること（無ければサーバーが拒否する）。version は revision を渡す",
       inputSchema: {
         task_ref: z.string(),
         to_status: z.enum(TASK_STATUSES),
         version: z.number(),
+        approved: z
+          .boolean()
+          .optional()
+          .describe(
+            "done / canceled への遷移で必須。人間の承認を得た場合のみ true を指定する",
+          ),
       },
       annotations: { destructiveHint: true },
     },
-    async ({ task_ref, to_status, version }) => {
+    async ({ task_ref, to_status, version, approved }) => {
       try {
+        const decision = checkTransitionApproval(to_status, approved);
+        if (!decision.allowed) return fail(new Error(decision.reason));
         const task = await resolveTask(task_ref);
         await convex.mutation(api.tasks.transitionStatus, {
           id: task._id,
@@ -478,12 +490,21 @@ async function main() {
     {
       title: "タスク削除",
       description:
-        "タスクを削除する（破壊的操作・要承認）。関連 GitLink も削除される。version は revision を渡す",
-      inputSchema: { task_ref: z.string(), version: z.number() },
+        "タスクを削除する。破壊的操作のため人間の承認が必須：ユーザーの明示的な承認を得た上で approved: true を指定すること（無ければサーバーが拒否する）。関連 GitLink も削除される。version は revision を渡す",
+      inputSchema: {
+        task_ref: z.string(),
+        version: z.number(),
+        approved: z
+          .boolean()
+          .optional()
+          .describe("必須。人間の承認を得た場合のみ true を指定する"),
+      },
       annotations: { destructiveHint: true },
     },
-    async ({ task_ref, version }) => {
+    async ({ task_ref, version, approved }) => {
       try {
+        const decision = checkDeleteApproval(approved);
+        if (!decision.allowed) return fail(new Error(decision.reason));
         const task = await resolveTask(task_ref);
         await convex.mutation(api.tasks.deleteTask, {
           id: task._id,
