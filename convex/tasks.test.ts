@@ -9,6 +9,7 @@ import {
   TEST_REPO_REMOTE_URL,
   TEST_WEBHOOK_ENCRYPTION_KEY,
   getTask,
+  seedGhostMember,
   seedGitLink,
   seedMember,
   seedProject,
@@ -112,8 +113,7 @@ describe("tasks.create", () => {
     const project = await seedProject(t);
     const member = await seedMember(t);
     const { issue } = await seedIssueWithTask(t, project, member);
-    const ghost = await seedMember(t, { email: "ghost@example.com" });
-    await t.run((ctx) => ctx.db.delete(ghost));
+    const ghost = await seedGhostMember(t);
 
     await expect(
       t.mutation(api.tasks.create, { issue, title: "x", createdBy: ghost }),
@@ -267,8 +267,9 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     });
 
     // 並びは [c, a, b] = [3, 1, 2] になり、c が列の先頭に来る。
+    // order[0] のみだと a/b の相対順序の破壊を見逃すため、全順序で検証する。
     const order = await columnNumbers(t, project, "backlog");
-    expect(order[0]).toBe(3); // c(3) が先頭
+    expect(order).toEqual([3, 1, 2]);
   });
 
   it("transitionStatus は列をまたいで before/after の間へ挿入する（D&D ドロップ位置・#8）", async () => {
@@ -358,8 +359,7 @@ describe("tasks.assign", () => {
     const t = setup();
     const project = await seedProject(t);
     const member = await seedMember(t);
-    const ghost = await seedMember(t, { email: "ghost@example.com" });
-    await t.run((ctx) => ctx.db.delete(ghost));
+    const ghost = await seedGhostMember(t);
     const { task } = await seedIssueWithTask(t, project, member);
 
     await expect(
