@@ -180,6 +180,94 @@ describe("issues.list（派生ステータス）", () => {
   });
 });
 
+// --- update（タイトル・説明の編集） ------------------------------------------
+
+describe("issues.update", () => {
+  it("タイトルと説明を更新し revision を進める", async () => {
+    const t = setup();
+    const { issue } = await arrangeSingleIssue(t);
+
+    await t.mutation(api.issues.update, {
+      id: issue,
+      expectedRevision: 0,
+      title: "改題した課題",
+      description: "詳細を追記",
+    });
+
+    expect(await t.run((ctx) => ctx.db.get(issue))).toMatchObject({
+      title: "改題した課題",
+      description: "詳細を追記",
+      revision: 1,
+    });
+  });
+
+  it("未指定のフィールドは変更しない", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { issue } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      description: "元の説明",
+      createdBy: member,
+      firstTask: { title: "タスク" },
+    });
+
+    await t.mutation(api.issues.update, {
+      id: issue,
+      expectedRevision: 0,
+      title: "改題のみ",
+    });
+
+    expect(await t.run((ctx) => ctx.db.get(issue))).toMatchObject({
+      title: "改題のみ",
+      description: "元の説明",
+      revision: 1,
+    });
+  });
+
+  it("古い revision での更新を競合として拒否し、何も書き換えない（楽観ロック）", async () => {
+    const t = setup();
+    const { issue } = await arrangeSingleIssue(t);
+
+    await expect(
+      t.mutation(api.issues.update, {
+        id: issue,
+        expectedRevision: 99,
+        title: "更新されないはず",
+      }),
+    ).rejects.toThrowError("競合");
+
+    expect(await t.run((ctx) => ctx.db.get(issue))).toMatchObject({
+      title: "課題",
+      revision: 0,
+    });
+  });
+
+  it("存在しない Issue への更新を拒否する", async () => {
+    const t = setup();
+    const { issue } = await arrangeSingleIssue(t);
+    await t.run(async (ctx) => {
+      // 配下 Task ごと消して Id だけ残す（INVARIANT-5 を壊した状態は作らない）
+      for (const task of await ctx.db
+        .query("tasks")
+        .withIndex("by_issue", (q) => q.eq("issue", issue))
+        .collect()) {
+        await ctx.db.delete(task._id);
+      }
+      await ctx.db.delete(issue);
+    });
+
+    await expect(
+      t.mutation(api.issues.update, {
+        id: issue,
+        expectedRevision: 0,
+        title: "x",
+      }),
+    ).rejects.toThrowError("Issue が見つかりません");
+  });
+});
+
 // --- remove（カスケード削除） -----------------------------------------------
 
 describe("issues.remove", () => {
