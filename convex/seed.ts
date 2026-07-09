@@ -30,20 +30,41 @@ export const reset = internalMutation({
   },
 });
 
+/** seed:demo が投入するデモプロジェクトのキー。 */
+const DEMO_PROJECT_KEY = "TASK";
+
 /**
  * 新モデル（Project→Issue→Task）でデモデータを投入する。
  * Issue ごとに最初の Task を作り、追加 Task を足して派生ステータスを観察できるようにする。
+ *
+ * 冪等性（#50）: 同キーのプロジェクトが既に存在する場合は投入せずスキップする。
+ * `projects.create` を経由しない直接 insert のため、既存チェックを欠くと再実行で
+ * key 重複が生じ、by_key への `.unique()` を使う全経路が throw する。
+ * スキップ時はサイレントにせず、返り値とログで呼び出し元へ伝える。
  */
 export const demo = internalMutation({
   args: {},
-  handler: async (ctx) => {
+  handler: async (
+    ctx,
+  ): Promise<{ status: "created" | "skipped"; message: string }> => {
+    // .unique() は（過去の重複により）2件以上あると throw するため .first() で確認する
+    const existing = await ctx.db
+      .query("projects")
+      .withIndex("by_key", (q) => q.eq("key", DEMO_PROJECT_KEY))
+      .first();
+    if (existing !== null) {
+      const message = `プロジェクトキー "${DEMO_PROJECT_KEY}" は既に存在するため、seed:demo の投入をスキップしました（作り直す場合は seed:reset を先に実行してください）`;
+      console.warn(message);
+      return { status: "skipped", message };
+    }
+
     const member = await ctx.db.insert("members", {
       name: "テスト太郎",
       email: "taro@example.com",
       role: "admin",
     });
     const project = await ctx.db.insert("projects", {
-      key: "TASK",
+      key: DEMO_PROJECT_KEY,
       name: "検証用プロジェクト",
       nextTaskNumber: 1,
       nextIssueNumber: 1,
@@ -101,5 +122,10 @@ export const demo = internalMutation({
       nextTaskNumber: taskNo,
       nextIssueNumber: issueNo,
     });
+
+    return {
+      status: "created",
+      message: `プロジェクト "${DEMO_PROJECT_KEY}" とデモデータ（Issue ${issueNo - 1}件 / Task ${taskNo - 1}件）を投入しました`,
+    };
   },
 });
