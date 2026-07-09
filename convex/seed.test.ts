@@ -18,6 +18,38 @@ const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 const setup = () => convexTest(schema, modules);
 
 describe("seed.demo", () => {
+  it("2回実行してもプロジェクトは1件のまま増えず、既存データも変化しない（冪等性 #50）", async () => {
+    const t = setup();
+    const first = await t.mutation(internal.seed.demo, {});
+    expect(first.status).toBe("created");
+
+    const snapshotAfterFirst = await t.run(async (ctx) => ({
+      projects: await ctx.db.query("projects").collect(),
+      issues: await ctx.db.query("issues").collect(),
+      tasks: await ctx.db.query("tasks").collect(),
+      members: await ctx.db.query("members").collect(),
+    }));
+
+    // 2回目はスキップされ、その旨が返り値で呼び出し元に伝わる（サイレント失敗の回避）
+    const second = await t.mutation(internal.seed.demo, {});
+    expect(second.status).toBe("skipped");
+    expect(second.message).toContain("TASK");
+
+    const snapshotAfterSecond = await t.run(async (ctx) => ({
+      projects: await ctx.db.query("projects").collect(),
+      issues: await ctx.db.query("issues").collect(),
+      tasks: await ctx.db.query("tasks").collect(),
+      members: await ctx.db.query("members").collect(),
+    }));
+
+    // key="TASK" のプロジェクトが重複しない（.unique() 経路のクラッシュ原因の排除）
+    expect(
+      snapshotAfterSecond.projects.filter((p) => p.key === "TASK"),
+    ).toHaveLength(1);
+    // 既存データが一切変化しない（追加・変更なし）
+    expect(snapshotAfterSecond).toEqual(snapshotAfterFirst);
+  });
+
   it("生成タスクの rank は列内で全て相異なり、作成順に単調増加である", async () => {
     const t = setup();
     await t.mutation(internal.seed.demo, {});
