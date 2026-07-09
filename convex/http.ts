@@ -62,10 +62,39 @@ type WebhookEvent = FunctionArgs<
   typeof internal.webhooks.processEvent
 >["event"];
 
+/** pull_request イベントのペイロードのうち参照するフィールド。 */
+type PullRequestPayload = {
+  merged?: boolean;
+  draft?: boolean;
+  number?: number;
+  html_url?: string;
+  title?: string;
+  body?: string | null;
+  head?: { ref?: string };
+};
+
+/**
+ * GitHub Webhook ペイロードのうち本エンドポイントが参照するフィールドの型。
+ * 外部入力のため実行時の形は保証されない。欠落・型不一致で throw しないよう、
+ * 値は parse 側で String() / Number() / Boolean() により防御的に変換する。
+ */
+type GitHubWebhookPayload = {
+  ref?: string;
+  ref_type?: string;
+  action?: string;
+  commits?: { id?: string; message?: string; url?: string }[];
+  pull_request?: PullRequestPayload;
+  repository?: {
+    html_url?: string;
+    clone_url?: string;
+    ssh_url?: string;
+  };
+};
+
 /** GitHub のペイロードを processEvent への入力に変換する（未対応イベントは ignored）。 */
 function parseWebhookEvent(
   event: string,
-  payload: any,
+  payload: GitHubWebhookPayload,
   repo: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
 ): WebhookEvent {
   if (event === "create" && payload.ref_type === "branch") {
@@ -80,7 +109,7 @@ function parseWebhookEvent(
       kind: "push",
       repositoryId: repo.repositoryId,
       projectId: repo.projectId,
-      commits: (payload.commits ?? []).map((c: any) => ({
+      commits: (payload.commits ?? []).map((c) => ({
         message: String(c.message ?? ""),
         sha: String(c.id ?? ""),
         url: String(c.url ?? ""),
@@ -88,7 +117,7 @@ function parseWebhookEvent(
     };
   }
   if (event === "pull_request") {
-    const pr = payload.pull_request ?? {};
+    const pr: PullRequestPayload = payload.pull_request ?? {};
     return {
       kind: "pull_request",
       repositoryId: repo.repositoryId,
@@ -150,7 +179,7 @@ http.route({
       return unverifiedResponse();
     }
 
-    let payload: any;
+    let payload: GitHubWebhookPayload;
     try {
       payload = JSON.parse(body);
     } catch {

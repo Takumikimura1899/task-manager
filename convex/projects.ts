@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { findProjectByKey } from "./lib/projects";
 import { isValidProjectKey } from "./lib/validators";
 
 /**
@@ -21,10 +22,7 @@ export const create = mutation({
       );
     }
 
-    const existing = await ctx.db
-      .query("projects")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .unique();
+    const existing = await findProjectByKey(ctx, args.key);
     if (existing !== null) {
       throw new ConvexError(
         `プロジェクトキー "${args.key}" は既に使用されています`,
@@ -45,10 +43,7 @@ export const create = mutation({
 export const getByKey = query({
   args: { key: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
-      .query("projects")
-      .withIndex("by_key", (q) => q.eq("key", args.key))
-      .unique();
+    return await findProjectByKey(ctx, args.key);
   },
 });
 
