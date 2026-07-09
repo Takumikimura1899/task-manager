@@ -1,0 +1,35 @@
+@layer components {
+  /*
+   * Issue / Task 共通のステータスバッジ。色はトークンから派生（color-mix）。
+   * 基底 .badge は未着手系（open / todo / backlog）の muted 表示を兼ね、
+   * 進行系ステータスのクラスが色を上書きする。
+   */
+  .badge {
+    padding: 2px var(--space-2);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    color: var(--color-text-muted);
+    background: var(--color-subtle);
+  }
+
+  .in_progress {
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+
+  .in_review {
+    color: var(--color-attention);
+    background: color-mix(in srgb, var(--color-attention) 12%, transparent);
+  }
+
+  .done {
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  }
+
+  .canceled {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  }
+}

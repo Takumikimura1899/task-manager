@@ -1,11 +1,9 @@
 import { useQuery } from "convex/react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
+import { Badge } from "../../components/Badge/Badge";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
-import {
-  type GitLinkItem,
-  GitLinkList,
-} from "../../components/GitLinkList/GitLinkList";
+import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { parseRefNumber } from "../../lib/routeParams";
 import { PRIORITY_LABELS, TASK_STATUS_LABELS } from "../../lib/taskMeta";
@@ -61,9 +59,7 @@ export function TaskDetail() {
           <span className={s.ref}>
             {task.projectKey}-{task.number}
           </span>
-          <span className={`${s.badge} ${s[task.status]}`}>
-            {TASK_STATUS_LABELS[task.status]}
-          </span>
+          <Badge status={task.status}>{TASK_STATUS_LABELS[task.status]}</Badge>
         </div>
         <h1 className={s.title}>{task.title}</h1>
       </header>
@@ -87,7 +83,7 @@ export function TaskDetail() {
 
       <section className={s.section}>
         <h2 className={s.sectionTitle}>Git 連携</h2>
-        <GitLinkList links={task.gitLinks as GitLinkItem[]} />
+        <GitLinkList links={task.gitLinks} />
       </section>
 
       <section className={s.section}>
