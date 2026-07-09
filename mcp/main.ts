@@ -41,16 +41,20 @@ const convex = new ConvexHttpClient(convexUrl);
 
 // --- アイデンティティ（§6: MVP はエージェント専用 Member を1つ運用）---------
 
+/** エージェントが動作する Member の email（mcp/README.md 参照）。 */
+const AGENT_EMAIL = process.env.MCP_AGENT_EMAIL ?? "agent@example.com";
+
 /** 呼び出し元エージェントに対応する Member を解決する（なければ作成）。 */
 async function ensureAgentMember(): Promise<Id<"members">> {
-  const email = process.env.MCP_AGENT_EMAIL ?? "agent@example.com";
   const name = process.env.MCP_AGENT_NAME ?? "AI Agent";
-  const existing = await convex.query(api.members.getByEmail, { email });
+  const existing = await convex.query(api.members.getByEmail, {
+    email: AGENT_EMAIL,
+  });
   if (existing !== null) return existing._id;
-  log(`エージェント Member を新規作成します: ${email}`);
+  log(`エージェント Member を新規作成します: ${AGENT_EMAIL}`);
   return await convex.mutation(api.members.create, {
     name,
-    email,
+    email: AGENT_EMAIL,
     role: "member",
   });
 }
@@ -164,7 +168,6 @@ const isActive = (t: Doc<"tasks">) =>
 
 async function main() {
   const agentMemberId = await ensureAgentMember();
-  const agentEmail = process.env.MCP_AGENT_EMAIL ?? "agent@example.com";
 
   const server = new McpServer({ name: "task-manager", version: "0.1.0" });
 
@@ -561,7 +564,7 @@ async function main() {
   );
 
   await server.connect(new StdioServerTransport());
-  log(`起動しました（agent=${agentEmail}, convex=${convexUrl}）`);
+  log(`起動しました（agent=${AGENT_EMAIL}, convex=${convexUrl}）`);
 }
 
 main().catch((e) => {

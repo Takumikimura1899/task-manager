@@ -12,6 +12,7 @@ import {
   extractTaskRefsFromCommit,
 } from "./lib/gitRef";
 import { type GitEventKind, transitionForGitEvent } from "./lib/gitAutomation";
+import { nextMeta } from "./lib/revision";
 import { lastRankInColumn } from "./tasks";
 import { upsertGitLink } from "./gitLinks";
 import { rankBetween } from "./lib/rank";
@@ -59,8 +60,7 @@ async function applyTransition(
   await ctx.db.patch(task._id, {
     status: to,
     rank: rankBetween(tail, null),
-    revision: task.revision + 1,
-    updatedAt: Date.now(),
+    ...nextMeta(task),
   });
 }
 

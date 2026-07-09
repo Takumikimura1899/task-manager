@@ -8,6 +8,8 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
+import { findProjectByKey } from "./lib/projects";
+import { assertRevision, nextMeta } from "./lib/revision";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
 import { rankBetween } from "./lib/rank";
 
@@ -35,15 +37,6 @@ async function getTaskOrThrow(
   return task;
 }
 
-/** 楽観ロック（INVARIANT-2）。revision 不一致は競合として明示的に失敗させる。 */
-function assertRevision(task: Doc<"tasks">, expectedRevision: number): void {
-  if (task.revision !== expectedRevision) {
-    throw new ConvexError(
-      "競合が発生しました。他の更新があったため最新を取得してください。",
-    );
-  }
-}
-
 async function assertMemberExists(
   ctx: QueryCtx,
   memberId: Id<"members">,
@@ -67,11 +60,6 @@ export async function lastRankInColumn(
     .order("desc")
     .first();
   return last === null ? null : last.rank;
-}
-
-/** 更新の共通後処理: revision をインクリメントし updatedAt を更新する。 */
-function nextMeta(task: Doc<"tasks">): { revision: number; updatedAt: number } {
-  return { revision: task.revision + 1, updatedAt: Date.now() };
 }
 
 /**
@@ -408,10 +396,7 @@ export const board = query({
 export const getByRef = query({
   args: { projectKey: v.string(), number: v.number() },
   handler: async (ctx, args) => {
-    const project = await ctx.db
-      .query("projects")
-      .withIndex("by_key", (q) => q.eq("key", args.projectKey))
-      .unique();
+    const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 
     return await ctx.db
@@ -434,10 +419,7 @@ export const getByRef = query({
 export const getDetail = query({
   args: { projectKey: v.string(), number: v.number() },
   handler: async (ctx, args) => {
-    const project = await ctx.db
-      .query("projects")
-      .withIndex("by_key", (q) => q.eq("key", args.projectKey))
-      .unique();
+    const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 
     const task = await ctx.db

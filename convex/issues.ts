@@ -3,6 +3,8 @@ import { type QueryCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
+import { findProjectByKey } from "./lib/projects";
+import { assertRevision } from "./lib/revision";
 import { taskPriority } from "./schema";
 import { insertTask } from "./tasks";
 
@@ -59,9 +61,9 @@ export const create = mutation({
     if (project === null) {
       throw new ConvexError("指定されたプロジェクトが存在しません");
     }
-    if ((await ctx.db.get(args.createdBy)) === null) {
-      throw new ConvexError("指定されたメンバーが存在しません");
-    }
+    // createdBy の実在確認（INVARIANT-3）は insertTask に集約されている。
+    // 検証に失敗した場合は mutation 全体がロールバックされるため、
+    // ここで先行チェックしなくても Issue が残ることはない。
 
     // 採番（INVARIANT-1）: Issue 連番を採番してカウンタを進める。
     const number = project.nextIssueNumber;
@@ -100,11 +102,7 @@ export const remove = mutation({
   args: { id: v.id("issues"), expectedRevision: v.number() },
   handler: async (ctx, args) => {
     const issue = await getIssueOrThrow(ctx, args.id);
-    if (issue.revision !== args.expectedRevision) {
-      throw new ConvexError(
-        "競合が発生しました。他の更新があったため最新を取得してください。",
-      );
-    }
+    assertRevision(issue, args.expectedRevision);
 
     for (const task of await tasksOfIssue(ctx, issue._id)) {
       const links = await ctx.db
@@ -169,10 +167,7 @@ export const list = query({
 export const getByRef = query({
   args: { projectKey: v.string(), number: v.number() },
   handler: async (ctx, args) => {
-    const project = await ctx.db
-      .query("projects")
-      .withIndex("by_key", (q) => q.eq("key", args.projectKey))
-      .unique();
+    const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 
     const issue = await ctx.db
