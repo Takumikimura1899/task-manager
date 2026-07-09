@@ -2,6 +2,11 @@
   // Cloudflare Workers 静的アセット配信（フロントSPAをホストする）。
   // ビルド成果物 dist/ をそのまま配信し、未知パスは index.html へフォールバック
   // することで BrowserRouter のディープリンク（/:projectKey/issues/:number 等）に対応する。
+  //
+  // 注: single-page-application では欠損アセット（例: 旧チャンクの /assets/*.js）にも
+  // index.html が 200 で返る。/assets/* をフォールバック対象外にする設定
+  // （assets.run_worker_first）は Worker スクリプト（main）が前提で、アセットのみの
+  // 本構成では利用できないため、Worker 追加のコストを避けて許容する（Issue #10 項目3）。
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "task-manager",
   "compatibility_date": "2025-06-01",
