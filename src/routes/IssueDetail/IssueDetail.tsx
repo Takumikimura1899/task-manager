@@ -1,6 +1,7 @@
 import { useQuery } from "convex/react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
+import { Badge } from "../../components/Badge/Badge";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
@@ -54,9 +55,7 @@ export function IssueDetail() {
           <span className={s.ref}>
             {issue.projectKey}#{issue.number}
           </span>
-          <span className={`${s.badge} ${s[status]}`}>
-            {ISSUE_STATUS_LABELS[status]}
-          </span>
+          <Badge status={status}>{ISSUE_STATUS_LABELS[status]}</Badge>
         </div>
         <h1 className={s.title}>{issue.title}</h1>
         <p className={s.progress}>

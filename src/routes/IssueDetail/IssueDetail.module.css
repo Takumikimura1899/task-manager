@@ -43,33 +43,6 @@
     color: var(--color-text-muted);
   }
 
-  .badge {
-    padding: 2px var(--space-2);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    border-radius: var(--radius-pill);
-  }
-
-  .open {
-    color: var(--color-text-muted);
-    background: var(--color-subtle);
-  }
-
-  .in_progress {
-    color: var(--color-accent);
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
-  }
-
-  .done {
-    color: var(--color-success);
-    background: color-mix(in srgb, var(--color-success) 12%, transparent);
-  }
-
-  .canceled {
-    color: var(--color-danger);
-    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
-  }
-
   .section {
     padding: var(--space-4);
     background: var(--color-surface);
