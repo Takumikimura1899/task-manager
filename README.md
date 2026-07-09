@@ -91,13 +91,17 @@ docs/            設計書
 公開環境は **Cloudflare Workers（フロント）+ Convex Cloud（バックエンド）** で構成する。
 
 ```sh
-bun run deploy   # = deploy:backend → deploy:web
+bun run deploy   # = deploy:backend（フロントビルド → Convex デプロイ）→ wrangler deploy
 ```
 
-- `deploy:backend` … `convex deploy` で Convex 本番デプロイメントへ関数をデプロイし、
-  その URL（`VITE_CONVEX_URL`）を注入して `vite build` を実行する。
-- `deploy:web` … `wrangler deploy` でビルド成果物 `dist/` を Cloudflare Workers の
-  静的アセットとして配信する。
+- `deploy:backend` … `convex deploy` が Convex 本番デプロイメントの URL
+  （`VITE_CONVEX_URL`）を注入して **先に `vite build` を実行**し、成功した場合のみ
+  関数をデプロイする。フロントのビルドが通らない限りバックエンドは更新されない。
+- `deploy` … `deploy:backend` の後、そこで生成済みの `dist/` を `wrangler deploy` で
+  配信する（二重ビルドはしない）。
+- `deploy:web` … 単体実行用。`vite build && wrangler deploy` で自己完結しており、
+  ビルドには [`.env.production`](./.env.production) の本番 Convex URL が使われる
+  （古い `dist/` や dev URL 焼き込み版を誤って配信しない）。
 - SPA 配信の設定は [`wrangler.jsonc`](./wrangler.jsonc)。未知パスは `index.html` へ
   フォールバックし、React Router のディープリンク（`/:projectKey/issues/:number` 等）に対応する。
 - docker-compose によるセルフホストは Phase 2 へ延期（[実装状況](#実装状況phase-1--mvp)を参照）。
