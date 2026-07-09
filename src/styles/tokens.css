@@ -12,6 +12,13 @@
     --color-chip: #d0d7de;
     --color-text: #1f2328;
     --color-text-muted: #57606a;
+    --color-text-inverse: #fff;
+
+    /* color: 意味色（リンク・ボタン・状態バッジ。淡色背景は color-mix で派生） */
+    --color-accent: #0969da;
+    --color-success: #1a7f37;
+    --color-attention: #9a6700;
+    --color-merged: #8250df;
     --color-danger: #cf222e;
 
     /* spacing（4pxグリッド） */

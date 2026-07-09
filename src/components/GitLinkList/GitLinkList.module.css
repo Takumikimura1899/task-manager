@@ -25,7 +25,7 @@
 
   .ref {
     font-size: var(--font-size-sm);
-    color: #0969da;
+    color: var(--color-accent);
     word-break: break-all;
   }
 
@@ -44,13 +44,13 @@
   }
 
   .open {
-    color: #1a7f37;
-    background: color-mix(in srgb, #1a7f37 12%, transparent);
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, transparent);
   }
 
   .merged {
-    color: #8250df;
-    background: color-mix(in srgb, #8250df 12%, transparent);
+    color: var(--color-merged);
+    background: color-mix(in srgb, var(--color-merged) 12%, transparent);
   }
 
   .closed {

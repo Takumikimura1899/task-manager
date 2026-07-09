@@ -33,8 +33,8 @@
     padding: 2px var(--space-3);
     font-size: var(--font-size-xs);
     font-weight: 600;
-    color: #fff;
-    background: #0969da;
+    color: var(--color-text-inverse);
+    background: var(--color-accent);
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     cursor: pointer;

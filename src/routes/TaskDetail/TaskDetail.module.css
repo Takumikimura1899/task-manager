@@ -52,18 +52,18 @@
   }
 
   .in_progress {
-    color: #0969da;
-    background: color-mix(in srgb, #0969da 12%, transparent);
+    color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
 
   .in_review {
-    color: #9a6700;
-    background: color-mix(in srgb, #9a6700 12%, transparent);
+    color: var(--color-attention);
+    background: color-mix(in srgb, var(--color-attention) 12%, transparent);
   }
 
   .done {
-    color: #1a7f37;
-    background: color-mix(in srgb, #1a7f37 12%, transparent);
+    color: var(--color-success);
+    background: color-mix(in srgb, var(--color-success) 12%, transparent);
   }
 
   .canceled {

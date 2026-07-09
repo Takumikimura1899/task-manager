@@ -52,7 +52,7 @@
     }
 
     & a {
-      color: #0969da;
+      color: var(--color-accent);
     }
 
     & table {
