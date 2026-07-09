@@ -1,0 +1,22 @@
+@layer components {
+  .skeleton {
+    display: block;
+    min-height: 1em;
+    background: color-mix(in srgb, var(--color-border) 55%, transparent);
+    border-radius: var(--radius-sm);
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+  }
+
+  /* 動きに敏感なユーザーには点滅を止め、静的なプレースホルダとして見せる */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton {
+      animation: none;
+    }
+  }
+
+  @keyframes skeleton-pulse {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}

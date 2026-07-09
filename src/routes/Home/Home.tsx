@@ -6,6 +6,7 @@ import { Board } from "../../components/Board/Board";
 import { IssueList } from "../../components/IssueList/IssueList";
 import { NewIssueForm } from "../../components/NewIssueForm/NewIssueForm";
 import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotice";
+import { Skeleton } from "../../components/Skeleton/Skeleton";
 import s from "./Home.module.css";
 
 // 選択中プロジェクトを session 内で保持するキー。
@@ -48,8 +49,21 @@ export function Home() {
   // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする。
   const currentMember = members?.[0] ?? null;
 
+  // 読み込み中もタイトルと画面枠を維持し、プロジェクト選択・Issue 一覧・
+  // ボードが入る領域をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
   if (projects === undefined) {
-    return <p className="hint">読み込み中…</p>;
+    return (
+      <main className={s.app}>
+        <header className={s.header}>
+          <h1 className={s.title}>Task Manager</h1>
+          <Skeleton className={s.skeletonPicker} />
+        </header>
+        <output aria-label="プロジェクトを読み込み中" className={s.loading}>
+          <Skeleton className={s.skeletonPanel} />
+          <Skeleton className={s.skeletonBoard} />
+        </output>
+      </main>
+    );
   }
 
   if (projects.length === 0) {

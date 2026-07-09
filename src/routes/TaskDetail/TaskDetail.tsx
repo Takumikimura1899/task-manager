@@ -5,6 +5,7 @@ import { Badge } from "../../components/Badge/Badge";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
 import { Markdown } from "../../components/Markdown/Markdown";
+import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { parseRefNumber } from "../../lib/routeParams";
 import { PRIORITY_LABELS, TASK_STATUS_LABELS } from "../../lib/taskMeta";
 import s from "./TaskDetail.module.css";
@@ -30,10 +31,20 @@ export function TaskDetail() {
     );
   }
 
+  // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
+  // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
   if (task === undefined) {
     return (
       <main className={s.page}>
-        <p className="hint">読み込み中…</p>
+        <Link className={s.back} to="/">
+          ← 一覧へ
+        </Link>
+        <output aria-label="タスクを読み込み中" className={s.loading}>
+          <Skeleton className={s.skeletonHeading} />
+          <Skeleton className={s.skeletonTitle} />
+          <Skeleton className={s.skeletonSection} />
+          <Skeleton className={s.skeletonSection} />
+        </output>
       </main>
     );
   }

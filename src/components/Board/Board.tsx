@@ -31,6 +31,7 @@ import {
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
 } from "../../lib/taskMeta";
+import { Skeleton } from "../Skeleton/Skeleton";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
 import { Column } from "./Column";
@@ -129,9 +130,25 @@ export function Board({
     return overlapping.length > 0 ? overlapping : closestCorners(args);
   }, []);
 
+  // 初期ロード中も全画面差し替えにせず、カンバンの列枠を維持したまま
+  // カード部分だけをスケルトンで示す（Issue #29）。
   if (board === null) {
-    return <p className="hint">読み込み中…</p>;
+    return (
+      <output aria-label="ボードを読み込み中" className={s.board}>
+        {TASK_STATUS_ORDER.map((status) => (
+          <span className={s.column} key={status}>
+            <span className={s.header}>{TASK_STATUS_LABELS[status]}</span>
+            <span className={s.body}>
+              <Skeleton className={s.skeletonCard} />
+              <Skeleton className={s.skeletonCard} />
+            </span>
+          </span>
+        ))}
+      </output>
+    );
   }
+
+  const boardIsEmpty = board.every((column) => column.tasks.length === 0);
 
   function findTask(id: string): BoardTask | null {
     for (const column of boardRef.current ?? []) {
@@ -252,6 +269,14 @@ export function Board({
       {error !== null && (
         <p className={s.error} role="alert">
           {error}
+        </p>
+      )}
+      {/* タスク皆無でも空列だけが並ぶと次の一手が分からないため案内を出す
+          （Issue #29）。列＝droppable は D&D 構造維持のためそのまま描画する。 */}
+      {boardIsEmpty && (
+        <p className={s.empty}>
+          タスクがありません。Issue 一覧の「＋ タスク」または「＋ 新規
+          Issue」から作成できます。
         </p>
       )}
       <div className={s.board}>

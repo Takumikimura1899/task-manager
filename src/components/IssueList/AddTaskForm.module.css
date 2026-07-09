@@ -59,4 +59,17 @@
     font-size: var(--font-size-sm);
     color: var(--color-danger);
   }
+
+  /* 狭幅（コンテナ=Home .app）ではフォームを行内に押し込まず全幅へ広げ、
+     タイトル入力も全幅にして折返し崩れを防ぐ（CSS規約§4）。 */
+  @container (width <= 700px) {
+    .form {
+      flex-basis: 100%;
+    }
+
+    .input {
+      flex: 1 1 100%;
+      min-inline-size: 0;
+    }
+  }
 }

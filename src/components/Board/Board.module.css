@@ -6,6 +6,14 @@
     overflow-x: auto;
   }
 
+  /* 狭幅（コンテナ=Home .app）では6列固定をやめて折り返す（CSS規約§4）。
+     列 DOM はそのままなので D&D の droppable 構造には影響しない。 */
+  @container (width <= 900px) {
+    .board {
+      grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+    }
+  }
+
   .column {
     display: flex;
     flex-direction: column;
@@ -47,6 +55,17 @@
   /* ドラッグ中、ドロップ対象の列をうっすら強調する。 */
   .bodyOver {
     background: color-mix(in srgb, var(--color-border) 35%, transparent);
+  }
+
+  /* ローディング中にカードの矩形を模すプレースホルダの寸法 */
+  .skeletonCard {
+    height: 64px;
+  }
+
+  .empty {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
   }
 
   .error {

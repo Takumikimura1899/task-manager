@@ -47,4 +47,28 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);
   }
+
+  .empty {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  /* ローディング中に Issue 行の矩形を模すプレースホルダの寸法 */
+  .skeletonRow {
+    height: 38px;
+  }
+
+  /* 狭幅（コンテナ=Home .app）では1行に収まらないため折り返しを許可し、
+     タイトルを1行占有させてインラインフォームの崩れを防ぐ（CSS規約§4）。 */
+  @container (width <= 700px) {
+    .item {
+      flex-wrap: wrap;
+      row-gap: var(--space-2);
+    }
+
+    .title {
+      flex: 1 1 100%;
+    }
+  }
 }

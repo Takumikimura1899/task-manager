@@ -4,6 +4,7 @@ import { api } from "../../../convex/_generated/api";
 import { Badge } from "../../components/Badge/Badge";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
+import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { parseRefNumber } from "../../lib/routeParams";
@@ -31,10 +32,20 @@ export function IssueDetail() {
     );
   }
 
+  // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
+  // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
   if (issue === undefined) {
     return (
       <main className={s.page}>
-        <p className="hint">読み込み中…</p>
+        <Link className={s.back} to="/">
+          ← 一覧へ
+        </Link>
+        <output aria-label="Issue を読み込み中" className={s.loading}>
+          <Skeleton className={s.skeletonHeading} />
+          <Skeleton className={s.skeletonTitle} />
+          <Skeleton className={s.skeletonSection} />
+          <Skeleton className={s.skeletonSection} />
+        </output>
       </main>
     );
   }
