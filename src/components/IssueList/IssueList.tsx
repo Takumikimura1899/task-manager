@@ -2,7 +2,7 @@ import { useQuery } from "convex/react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { type IssueStatus, ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
+import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { AddTaskForm } from "./AddTaskForm";
 import s from "./IssueList.module.css";
 
@@ -30,7 +30,7 @@ export function IssueList({
       <h2 className={s.heading}>Issue（{issues.length}）</h2>
       <div className={s.list}>
         {issues.map((issue) => {
-          const status = issue.status as IssueStatus;
+          const status = issue.status;
           return (
             <article className={s.item} key={issue._id}>
               <span className={s.ref}>Issue #{issue.number}</span>

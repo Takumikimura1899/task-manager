@@ -1,11 +1,10 @@
 import { useQuery } from "convex/react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
-import type { Doc } from "../../../convex/_generated/dataModel";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
-import { type IssueStatus, ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
+import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { parseRefNumber } from "../../lib/routeParams";
 import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
 import s from "./IssueDetail.module.css";
@@ -39,7 +38,7 @@ export function IssueDetail() {
     );
   }
 
-  const status = issue.status as IssueStatus;
+  const status = issue.status;
   // 進捗は canceled を除いた「実行対象」で集計する（派生ステータスと同基準・§5.1）。
   const activeTasks = issue.tasks.filter((t) => t.status !== "canceled");
   const doneCount = activeTasks.filter((t) => t.status === "done").length;
@@ -87,7 +86,7 @@ export function IssueDetail() {
                     assigneeName={task.assigneeName}
                     key={task._id}
                     projectKey={issue.projectKey}
-                    task={task as Doc<"tasks">}
+                    task={task}
                   />
                 ))}
               </div>

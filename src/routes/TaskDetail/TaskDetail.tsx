@@ -87,7 +87,7 @@ export function TaskDetail() {
 
       <section className={s.section}>
         <h2 className={s.sectionTitle}>Git 連携</h2>
-        <GitLinkList links={task.gitLinks as GitLinkItem[]} />
+        <GitLinkList links={task.gitLinks} />
       </section>
 
       <section className={s.section}>
