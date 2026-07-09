@@ -236,7 +236,11 @@ export function Board({
       onDragStart={handleDragStart}
       sensors={sensors}
     >
-      {error !== null && <p className={s.error}>{error}</p>}
+      {error !== null && (
+        <p className={s.error} role="alert">
+          {error}
+        </p>
+      )}
       <div className={s.board}>
         {board.map((column) => (
           <Column

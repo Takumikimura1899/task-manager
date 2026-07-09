@@ -1,4 +1,5 @@
 import { useMutation } from "convex/react";
+import { useId } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { useCreateForm } from "../../hooks/useCreateForm";
@@ -17,6 +18,7 @@ export function AddTaskForm({
   createdBy: Id<"members">;
 }) {
   const createTask = useMutation(api.tasks.create);
+  const errorId = useId();
   const form = useCreateForm({
     onSubmit: async ({ title, priority, assignee }) => {
       await createTask({
@@ -45,6 +47,8 @@ export function AddTaskForm({
   return (
     <form className={s.form} onSubmit={form.handleSubmit}>
       <input
+        aria-describedby={form.error !== null ? errorId : undefined}
+        aria-label="タスクのタイトル"
         className={s.input}
         onChange={(e) => form.setTitle(e.target.value)}
         placeholder="タスクのタイトル"
@@ -62,7 +66,11 @@ export function AddTaskForm({
       <button className={s.cancel} onClick={form.close} type="button">
         取消
       </button>
-      {form.error !== null && <span className={s.error}>{form.error}</span>}
+      {form.error !== null && (
+        <span className={s.error} id={errorId} role="alert">
+          {form.error}
+        </span>
+      )}
     </form>
   );
 }

@@ -1,5 +1,5 @@
 import { useMutation } from "convex/react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { useCreateForm } from "../../hooks/useCreateForm";
@@ -18,6 +18,7 @@ export function NewIssueForm({
   createdBy: Id<"members">;
 }) {
   const createIssue = useMutation(api.issues.create);
+  const errorId = useId();
   const [taskTitle, setTaskTitle] = useState("");
   const form = useCreateForm({
     onSubmit: async ({ title, priority, assignee }) => {
@@ -55,12 +56,16 @@ export function NewIssueForm({
     <div className={s.root}>
       <form className={s.form} onSubmit={form.handleSubmit}>
         <input
+          aria-describedby={form.error !== null ? errorId : undefined}
+          aria-label="Issue のタイトル"
           className={s.input}
           onChange={(e) => form.setTitle(e.target.value)}
           placeholder="Issue のタイトル（解決すべき課題）"
           value={form.title}
         />
         <input
+          aria-describedby={form.error !== null ? errorId : undefined}
+          aria-label="最初のタスクのタイトル"
           className={s.input}
           onChange={(e) => setTaskTitle(e.target.value)}
           placeholder="最初のタスクのタイトル"
@@ -72,7 +77,11 @@ export function NewIssueForm({
           onPriority={form.setPriority}
           priority={form.priority}
         />
-        {form.error !== null && <p className={s.error}>{form.error}</p>}
+        {form.error !== null && (
+          <p className={s.error} id={errorId} role="alert">
+            {form.error}
+          </p>
+        )}
         <div className={s.actions}>
           <button className={s.submit} disabled={!form.canSubmit} type="submit">
             作成

@@ -1,17 +1,30 @@
 @layer components {
-  /* D&D ラッパー。タッチ操作の誤スクロールを防ぐため touch-action を無効化。 */
-  .sortable {
-    touch-action: none;
-    cursor: grab;
-  }
-
-  .sortable:active {
-    cursor: grabbing;
-  }
-
   /* ドラッグ中、元の位置のカードは半透明にして移動元を示す。 */
   .dragging {
     opacity: 0.4;
+  }
+
+  /* D&D の起点となるドラッグハンドル。
+     タッチ操作の誤スクロールを防ぐ touch-action の無効化はハンドルに限定する。 */
+  .handle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-1);
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .handle:hover {
+    background: var(--color-subtle);
+  }
+
+  .handle:active {
+    cursor: grabbing;
   }
 
   .card {
@@ -42,6 +55,13 @@
     &:hover {
       text-decoration: underline;
     }
+  }
+
+  /* ヘッダー行の右端グループ（Issue バッジ＋ドラッグハンドル）。 */
+  .refEnd {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
   }
 
   /* 所属 Issue バッジ。Task ID と区別するため語付き「Issue #N」。 */

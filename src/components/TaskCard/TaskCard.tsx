@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import s from "./TaskCard.module.css";
@@ -15,11 +16,14 @@ export function TaskCard({
   projectKey,
   issueNumber = null,
   assigneeName = null,
+  dragHandle = null,
 }: {
   task: Doc<"tasks">;
   projectKey: string;
   issueNumber?: number | null;
   assigneeName?: string | null;
+  /** D&D 用のドラッグハンドル（SortableTaskCard が注入する）。表示位置だけをここで決める。 */
+  dragHandle?: ReactNode;
 }) {
   return (
     <article className={s.card}>
@@ -31,9 +35,12 @@ export function TaskCard({
         >
           {projectKey}-{task.number}
         </Link>
-        {issueNumber !== null && (
-          <span className={s.issue}>Issue #{issueNumber}</span>
-        )}
+        <span className={s.refEnd}>
+          {issueNumber !== null && (
+            <span className={s.issue}>Issue #{issueNumber}</span>
+          )}
+          {dragHandle}
+        </span>
       </span>
       <h3 className={s.title}>{task.title}</h3>
       <div className={s.meta}>

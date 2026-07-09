@@ -54,8 +54,9 @@
     cursor: pointer;
   }
 
+  /* エラーは読ませる本文情報のため xs でなく sm（NewIssueForm と揃える）。 */
   .error {
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
     color: var(--color-danger);
   }
 }

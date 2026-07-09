@@ -13,4 +13,11 @@
     color: inherit;
     text-decoration: none;
   }
+
+  /* キーボード操作の可視化。マウス操作では出ない（:focus-visible）ため、
+     リンク・ボタン・入力・ドラッグハンドルなど全インタラクティブ要素へ一律に適用する。 */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
