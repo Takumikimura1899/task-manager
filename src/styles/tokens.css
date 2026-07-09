@@ -9,7 +9,10 @@
     --color-surface: #fff;
     --color-subtle: #eaeef2;
     --color-border: #d0d7de;
-    --color-chip: #d0d7de;
+
+    /* chip 上の muted テキストが WCAG AA（4.5:1）を満たすよう border より一段淡い値。
+       #d0d7de では 4.40:1 で未達、#d8dee4 で 4.71:1（対 --color-text-muted）。 */
+    --color-chip: #d8dee4;
     --color-text: #1f2328;
     --color-text-muted: #57606a;
     --color-text-inverse: #fff;
