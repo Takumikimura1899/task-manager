@@ -16,13 +16,14 @@ import {
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
   type BoardTask,
   neighborRanks,
   pickCardFirstCollisions,
+  pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
 import {
@@ -38,26 +39,8 @@ type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
 
 const COLUMN_IDS: ReadonlySet<string> = new Set(TASK_STATUS_ORDER);
 
-/**
- * カードを列コンテナより優先する衝突検出。
- * closestCorners 単独では over がカードと列の間で揺れ、列へのドロップ＝末尾移動の
- * フォールバックが誤発動する（意図しない末尾移動・プレビューのちらつき）。
- * 列 body は列の全高を占めるため、ポインタが盤面内にある限り pointerWithin は
- * 列を返す——先頭段階の衝突有無で打ち切らず、重なり系の2段階
- * （pointerWithin → rectIntersection）からカードを優先して探す
- * （カード間の隙間へのドロップは rectIntersection が隣接カードを拾う）。
- * カードにもどの列にも重なっていないときだけ closestCorners で最寄りに解決する。
- * closestCorners は距離ベースで交差していなくても必ず候補を返すため、
- * カード優先の段階に含めると空列へのドロップが最寄りカード（ドラッグ中の
- * 自分自身など）に吸われて no-op になる——最終手段に限定すること。
- */
-const collisionDetection: CollisionDetection = (args) => {
-  const overlapping = pickCardFirstCollisions(
-    [pointerWithin(args), rectIntersection(args)],
-    COLUMN_IDS,
-  );
-  return overlapping.length > 0 ? overlapping : closestCorners(args);
-};
+// 衝突検出はポインタのいる列にスコープする必要があるため、
+// 列の所属を知る Board コンポーネント内で組み立てる（下記 collisionDetection）。
 
 /** server スナップショットをローカル編集可能な形へ複製する。 */
 function toLocal(columns: readonly BoardColumn[]): BoardColumn[] {
@@ -115,6 +98,36 @@ export function Board({
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
+
+  /**
+   * カードを列コンテナより優先しつつ、候補を「ポインタのいる列」にスコープした
+   * 衝突検出（#65）。ドラッグハンドルはカード右上にあり、ポインタが隣列に
+   * 入ってもカード矩形は元列に残るため、全列のカードを優先対象にすると
+   * rectIntersection が拾う元列のカードに over が吸われ、列またぎが同一列の
+   * 並べ替えに誤変換される。ポインタ座標が無い場合（KeyboardSensor）は
+   * 従来どおりカード優先→closestCorners のフォールバックで解決する。
+   * closestCorners は距離ベースで交差していなくても必ず候補を返すため、
+   * カード優先の段階に含めると空列へのドロップが最寄りカード（ドラッグ中の
+   * 自分自身など）に吸われて no-op になる——最終手段に限定すること。
+   */
+  const collisionDetection = useCallback<CollisionDetection>((args) => {
+    const pointerHits = pointerWithin(args);
+    const rectHits = rectIntersection(args);
+    const scoped = pickPointerScopedCollisions(
+      pointerHits,
+      rectHits,
+      COLUMN_IDS,
+      (cardId) => {
+        for (const column of boardRef.current ?? []) {
+          if (column.tasks.some((t) => t._id === cardId)) return column.status;
+        }
+        return null;
+      },
+    );
+    if (scoped) return scoped;
+    const overlapping = pickCardFirstCollisions([rectHits], COLUMN_IDS);
+    return overlapping.length > 0 ? overlapping : closestCorners(args);
+  }, []);
 
   if (board === null) {
     return <p className="hint">読み込み中…</p>;
