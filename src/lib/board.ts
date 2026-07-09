@@ -74,3 +74,41 @@ export function pickCardFirstCollisions<T extends { id: string | number }>(
   const fallback = stages.find((stage) => stage.length > 0);
   return fallback ? [...fallback] : [];
 }
+
+/**
+ * ポインタのいる列にスコープしたカード優先の衝突解決。
+ *
+ * ドラッグハンドルはカードの右上にあるため、ポインタが隣の列に入っても
+ * ドラッグ中のカード矩形（rectIntersection の対象）は元の列に大きく残る。
+ * カード優先を全列に適用すると rectIntersection が拾った**元の列のカード**に
+ * over が吸われ、列またぎのドロップが同一列の並べ替えに誤変換される（#65）。
+ *
+ * そこでカード優先の候補を「ポインタのいる列に属するカード」に限定する:
+ * - ポインタがカード上: そのカードを返す（最優先・列によらず一意）
+ * - ポインタが列内の余白・隙間: rectIntersection のカードのうち
+ *   その列に属するものだけを候補にし（カード間の隙間 #53 の挙動を維持）、
+ *   無ければ列コンテナを返す（末尾フォールバック #14 の挙動を維持）
+ * - ポインタ情報が無い（KeyboardSensor 等で pointerWithin が空）: null を返し、
+ *   呼び出し元が従来のフォールバックへ委ねる
+ */
+export function pickPointerScopedCollisions<T extends { id: string | number }>(
+  pointerHits: readonly T[],
+  rectHits: readonly T[],
+  columnIds: ReadonlySet<string>,
+  columnOfCard: (cardId: string) => string | null,
+): T[] | null {
+  const pointerCards = pointerHits.filter((c) => !columnIds.has(String(c.id)));
+  if (pointerCards.length > 0) return pointerCards;
+
+  const pointerColumn = pointerHits.find((c) => columnIds.has(String(c.id)));
+  if (!pointerColumn) return null;
+
+  const cardsInPointerColumn = rectHits.filter(
+    (c) =>
+      !columnIds.has(String(c.id)) &&
+      columnOfCard(String(c.id)) === String(pointerColumn.id),
+  );
+  return cardsInPointerColumn.length > 0
+    ? cardsInPointerColumn
+    : [pointerColumn];
+}

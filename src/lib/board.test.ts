@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   neighborRanks,
   pickCardFirstCollisions,
+  pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "./board";
 
@@ -81,5 +82,67 @@ describe("pickCardFirstCollisions", () => {
     expect(pickCardFirstCollisions(stages, columnIds)).toEqual(
       expected.map((id) => ({ id })),
     );
+  });
+});
+
+/**
+ * ポインタのいる列にスコープしたカード優先解決を検証する（#65）。
+ * ハンドルドラッグではポインタが隣列に入ってもカード矩形が元列に残るため、
+ * 元列のカード（rectIntersection のヒット）が over を奪わないことを確認する。
+ */
+describe("pickPointerScopedCollisions", () => {
+  const columnIds: ReadonlySet<string> = new Set(["in_progress", "in_review"]);
+  // task1/task2 は in_progress 列、task9 は in_review 列に属する
+  const columnOfCard = (id: string) =>
+    id === "task9" ? "in_review" : id.startsWith("task") ? "in_progress" : null;
+
+  it.each([
+    // [ケース, pointerHits, rectHits, 期待（null=フォールバック委譲）]
+    [
+      "ポインタがカード上ならそのカードを返す",
+      ["in_progress", "task1"],
+      ["task1", "task2", "in_progress"],
+      ["task1"],
+    ],
+    [
+      "ポインタが列内の隙間なら rect ヒットのうちその列のカードだけ返す（#53維持）",
+      ["in_progress"],
+      ["task1", "task2", "in_progress"],
+      ["task1", "task2"],
+    ],
+    [
+      "ポインタが移動先列にあれば元列カードの rect ヒットを無視して列を返す（#65）",
+      ["in_review"],
+      ["task1", "task2", "in_progress"],
+      ["in_review"],
+    ],
+    [
+      "ポインタが移動先列にあり、その列のカードが rect に含まれればカードを返す",
+      ["in_review"],
+      ["task1", "task9", "in_review"],
+      ["task9"],
+    ],
+    [
+      "ポインタが空列の余白にあれば列を返す（#14維持）",
+      ["in_review"],
+      ["in_review"],
+      ["in_review"],
+    ],
+    [
+      "ポインタ情報が無ければ null（キーボード操作のフォールバック委譲）",
+      [],
+      ["task1"],
+      null,
+    ],
+  ])("%s", (_case, pointerIds, rectIds, expected) => {
+    const wrap = (ids: readonly string[]) => ids.map((id) => ({ id }));
+    expect(
+      pickPointerScopedCollisions(
+        wrap(pointerIds),
+        wrap(rectIds),
+        columnIds,
+        columnOfCard,
+      ),
+    ).toEqual(expected === null ? null : wrap(expected));
   });
 });
