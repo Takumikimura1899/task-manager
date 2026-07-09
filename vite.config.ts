@@ -10,6 +10,7 @@ export default defineConfig({
   // Vitest 実行環境の分離（environmentMatchGlobs は v4 で廃止のため projects を使用）:
   // - convex/**: convex-test 用の edge-runtime（各ファイル冒頭の
   //   `@vitest-environment edge-runtime` docblock とも一致）
+  // - mcp/**:   MCP サーバーの純粋ロジック用の node
   // - src/**:   コンポーネント/純粋関数テスト用の jsdom + testing-library
   test: {
     // カバレッジ設定は projects 構成ではルートレベルにのみ置ける
@@ -18,7 +19,7 @@ export default defineConfig({
       provider: "v8",
       // テスト対象の実装コードのみ計測（生成コード・テスト・型定義は除外）。
       // 拡張子で絞らないと convex/tsconfig.json 等の非ソースまで拾われる。
-      include: ["convex/**/*.ts", "src/**/*.{ts,tsx}"],
+      include: ["convex/**/*.ts", "mcp/**/*.ts", "src/**/*.{ts,tsx}"],
       exclude: ["convex/_generated/**", "**/*.test.{ts,tsx}", "**/*.d.ts"],
       // CI ログでの現状把握が目的のため text レポータのみ（外部連携なし）
       reporter: ["text"],
@@ -30,6 +31,14 @@ export default defineConfig({
           name: "convex",
           environment: "edge-runtime",
           include: ["convex/**/*.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "mcp",
+          environment: "node",
+          include: ["mcp/**/*.test.ts"],
         },
       },
       {

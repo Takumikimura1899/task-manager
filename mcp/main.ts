@@ -22,7 +22,9 @@ import {
   checkDeleteApproval,
   checkTransitionApproval,
 } from "../convex/lib/approval.js";
+import { ISSUE_STATUSES } from "../convex/lib/issueStatus.js";
 import { TASK_STATUSES } from "../convex/lib/taskStatus.js";
+import { isActiveStatus, parseIssueRef, parseTaskRef } from "./lib/refs.js";
 
 const PRIORITY_VALUES = ["none", "low", "medium", "high", "urgent"] as const;
 const GIT_LINK_TYPES = ["branch", "commit", "pull_request"] as const;
@@ -78,17 +80,6 @@ const fail = (e: unknown) => {
   };
 };
 
-const TASK_REF_PATTERN = /^([A-Z]+)-(\d+)$/;
-
-/** "TASK-123" 形式の参照を {key, number} に分解する。 */
-function parseTaskRef(ref: string): { key: string; number: number } {
-  const m = TASK_REF_PATTERN.exec(ref.trim());
-  if (m === null) {
-    throw new Error(`タスク参照の形式が不正です: "${ref}"（例: TASK-123）`);
-  }
-  return { key: m[1], number: Number(m[2]) };
-}
-
 async function resolveTask(ref: string): Promise<Doc<"tasks">> {
   const { key, number } = parseTaskRef(ref);
   const task = await convex.query(api.tasks.getByRef, {
@@ -105,25 +96,21 @@ async function resolveProject(key: string): Promise<Doc<"projects">> {
   return project;
 }
 
-const ISSUE_REF_PATTERN = /^([A-Z]+)#(\d+)$/;
-
-/** "TASK#1" 形式の Issue 参照を {key, number} に分解する。 */
-function parseIssueRef(ref: string): { key: string; number: number } {
-  const m = ISSUE_REF_PATTERN.exec(ref.trim());
-  if (m === null) {
-    throw new Error(`Issue 参照の形式が不正です: "${ref}"（例: TASK#1）`);
-  }
-  return { key: m[1], number: Number(m[2]) };
-}
-
-async function resolveIssueId(ref: string): Promise<Id<"issues">> {
+/**
+ * "TASK#1" 形式の参照から Issue を解決する（派生ステータス・配下 Task 付き）。
+ */
+async function resolveIssue(ref: string) {
   const { key, number } = parseIssueRef(ref);
   const issue = await convex.query(api.issues.getByRef, {
     projectKey: key,
     number,
   });
   if (issue === null) throw new Error(`Issue が見つかりません: ${ref}`);
-  return issue._id;
+  return issue;
+}
+
+async function resolveIssueId(ref: string): Promise<Id<"issues">> {
+  return (await resolveIssue(ref))._id;
 }
 
 async function resolveMemberId(email: string): Promise<Id<"members">> {
@@ -161,9 +148,6 @@ async function resolveRepositoryId(
   return repos[0]._id;
 }
 
-const isActive = (t: Doc<"tasks">) =>
-  t.status !== "done" && t.status !== "canceled";
-
 // --- サーバー構築 -----------------------------------------------------------
 
 async function main() {
@@ -178,14 +162,15 @@ async function main() {
     new ResourceTemplate("project://{key}", { list: undefined }),
     {
       title: "プロジェクト概要",
-      description: "プロジェクトの基本情報・メンバー・アクティブタスク一覧",
+      description:
+        "プロジェクトの基本情報・メンバー・アクティブ Issue 一覧（各 Issue の派生ステータス付き）",
       mimeType: "application/json",
     },
     async (uri, { key }) => {
       const project = await resolveProject(String(key));
-      const [members, tasks] = await Promise.all([
+      const [members, issues] = await Promise.all([
         convex.query(api.members.list, {}),
-        convex.query(api.tasks.listByProject, { project: project._id }),
+        convex.query(api.issues.list, { project: project._id }),
       ]);
       return {
         contents: [
@@ -193,10 +178,46 @@ async function main() {
             uri: uri.href,
             mimeType: "application/json",
             text: JSON.stringify(
-              { project, members, activeTasks: tasks.filter(isActive) },
+              {
+                project,
+                members,
+                activeIssues: issues.filter((i) => isActiveStatus(i.status)),
+              },
               null,
               2,
             ),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerResource(
+    "issue",
+    new ResourceTemplate("issue://{key}/{number}", { list: undefined }),
+    {
+      title: "Issue 詳細",
+      description:
+        "Issue 全文（タイトル・説明・派生ステータス）と配下 Task 一覧",
+      mimeType: "application/json",
+    },
+    async (uri, { key, number }) => {
+      const n = Number(number);
+      if (!Number.isInteger(n)) {
+        throw new Error(`Issue 番号が不正です: ${String(number)}`);
+      }
+      const issue = await convex.query(api.issues.getByRef, {
+        projectKey: String(key),
+        number: n,
+      });
+      if (issue === null)
+        throw new Error(`Issue が見つかりません: ${key}#${number}`);
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(issue, null, 2),
           },
         ],
       };
@@ -248,7 +269,7 @@ async function main() {
         project: project._id,
       });
       const mine = tasks.filter(
-        (t) => t.assignee === agentMemberId && isActive(t),
+        (t) => t.assignee === agentMemberId && isActiveStatus(t.status),
       );
       return {
         contents: [
@@ -308,6 +329,55 @@ async function main() {
     async ({ task_ref }) => {
       try {
         return ok(await resolveTask(task_ref));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_issues",
+    {
+      title: "Issue一覧",
+      description:
+        "プロジェクトの Issue を派生ステータスで絞り込んで取得する（Task 数・完了数付き）",
+      inputSchema: {
+        project_key: z.string().describe("プロジェクトキー（例: TASK）"),
+        status: z.enum(ISSUE_STATUSES).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ project_key, status }) => {
+      try {
+        const project = await resolveProject(project_key);
+        const issues = await convex.query(api.issues.list, {
+          project: project._id,
+        });
+        // Issue ステータスは子 Task 群からの派生値（§5.1）で索引を張れないため、
+        // issues.list が返す派生済みステータスに対してここで絞り込む。
+        return ok(
+          status === undefined
+            ? issues
+            : issues.filter((i) => i.status === status),
+        );
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_issue",
+    {
+      title: "Issue取得",
+      description:
+        "Issue 参照（例: TASK#1）から Issue 全文（派生ステータス）と配下 Task 一覧を取得する",
+      inputSchema: { issue_ref: z.string().describe("例: TASK#1") },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ issue_ref }) => {
+      try {
+        return ok(await resolveIssue(issue_ref));
       } catch (e) {
         return fail(e);
       }
@@ -514,6 +584,38 @@ async function main() {
           expectedRevision: version,
         });
         return ok({ message: "削除しました" });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_issue",
+    {
+      title: "Issue削除",
+      description:
+        "Issue を削除する。破壊的操作のため人間の承認が必須：ユーザーの明示的な承認を得た上で approved: true を指定すること（無ければサーバーが拒否する）。配下の Task と関連 GitLink も併せて削除される。version には get_issue で得た revision を渡す",
+      inputSchema: {
+        issue_ref: z.string().describe("例: TASK#1"),
+        version: z.number().describe("楽観ロック用 revision"),
+        approved: z
+          .boolean()
+          .optional()
+          .describe("必須。人間の承認を得た場合のみ true を指定する"),
+      },
+      annotations: { destructiveHint: true },
+    },
+    async ({ issue_ref, version, approved }) => {
+      try {
+        const decision = checkDeleteApproval(approved, "Issue");
+        if (!decision.allowed) return fail(new Error(decision.reason));
+        const issue = await resolveIssue(issue_ref);
+        await convex.mutation(api.issues.remove, {
+          id: issue._id,
+          expectedRevision: version,
+        });
+        return ok({ message: "Issue を削除しました" });
       } catch (e) {
         return fail(e);
       }
