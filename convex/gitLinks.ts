@@ -6,11 +6,13 @@ import { gitLinkType, prState } from "./schema";
 /**
  * GitLink の Core API（基本設計書 §3 / §7）。
  * タスクと Git アーティファクト（branch/commit/pull_request）の関連を管理する。
- * Webhook からの繰り返し受信に備え、(repository, type, externalRef) で冪等化する。
+ * Webhook からの繰り返し受信に備え、(task, repository, type, externalRef) で冪等化する。
  */
 
 /**
- * GitLink の冪等 upsert。(repository, type, externalRef) で同定し、あれば更新する。
+ * GitLink の冪等 upsert。(task, repository, type, externalRef) で同定し、あれば更新する。
+ * task を同定キーに含めるため、1つの Git アーティファクトを複数タスクへ
+ * 独立にリンクできる（Issue #38: 1コミットが複数タスクを参照するケース）。
  * MCP（link mutation）と Webhook 自動処理の両方から再利用する共有ヘルパー。
  * 参照整合性の確認は呼び出し側の責務（Webhook 側は解決済みの id を渡す）。
  */
@@ -27,11 +29,12 @@ export async function upsertGitLink(
 ): Promise<Id<"gitLinks">> {
   const existing = await ctx.db
     .query("gitLinks")
-    .withIndex("by_ref", (q) =>
+    .withIndex("by_ref_and_task", (q) =>
       q
         .eq("repository", args.repository)
         .eq("type", args.type)
-        .eq("externalRef", args.externalRef),
+        .eq("externalRef", args.externalRef)
+        .eq("task", args.task),
     )
     .unique();
   if (existing !== null) {
