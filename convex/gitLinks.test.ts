@@ -19,9 +19,8 @@ import {
  * GitLink Core API の結合テスト（基本設計書 §3 / §7 / Issue #22）。
  *
  * upsertGitLink（共有ヘルパー）は公開ミューテーション link 経由で検証する。
- * 冪等 upsert の同定キーは (repository, type, externalRef) で task を含まない。
- * これは既知の制限（Issue #38）だが、仕様変更は #38 で行うため、
- * ここでは現行仕様のままテストで固定する。
+ * 冪等 upsert の同定キーは (task, repository, type, externalRef)。
+ * 1つの Git アーティファクトが複数タスクに紐づくことを許容する（Issue #38）。
  */
 
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
@@ -68,7 +67,7 @@ const createLinkArgs = (
 });
 
 describe("gitLinks.link（冪等 upsert）", () => {
-  it("新規の (repository, type, externalRef) は GitLink を insert する", async () => {
+  it("新規の (task, repository, type, externalRef) は GitLink を insert する", async () => {
     const t = setup();
     const { task, repository } = await seedScenario(t);
 
@@ -150,9 +149,9 @@ describe("gitLinks.link（冪等 upsert）", () => {
     expect(await listTaskGitLinks(t, task)).toHaveLength(2);
   });
 
-  it("同一キーなら別タスクを指定しても既存リンクを patch し、task は付け替わらない（現行仕様・Issue #38）", async () => {
-    // 同定キーに task が含まれないため、2つ目のタスクへのリンクは作られず
-    // 既存リンク（最初のタスク）への patch になる。仕様変更は #38 で行う。
+  it("同一 (repository, type, externalRef) でも task が異なれば別リンクとして insert する（Issue #38）", async () => {
+    // 同定キーに task を含むため、同じ Git アーティファクトを
+    // 複数タスクへ独立にリンクできる（既存リンクの task は付け替わらない）。
     const t = setup();
     const { member, issue, task, repository } = await seedScenario(t);
     const second = await t.mutation(api.tasks.create, {
@@ -170,11 +169,13 @@ describe("gitLinks.link（冪等 upsert）", () => {
       createLinkArgs({ task: second, repository }, { prState: "merged" }),
     );
 
-    expect(result).toBe(first);
-    expect(await listTaskGitLinks(t, second)).toHaveLength(0); // 2つ目には付かない
-    const links = await listTaskGitLinks(t, task);
-    expect(links).toHaveLength(1);
-    expect(links[0]).toMatchObject({ task, prState: "merged" });
+    expect(result).not.toBe(first);
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { task, prState: "open" },
+    ]);
+    expect(await listTaskGitLinks(t, second)).toMatchObject([
+      { task: second, prState: "merged" },
+    ]);
   });
 });
 

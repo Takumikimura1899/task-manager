@@ -138,8 +138,10 @@ export default defineSchema({
   })
     .index("by_task", ["task"])
     .index("by_repository", ["repository"])
-    // 既存リンク検索・upsert 用（repository × type × ref で同定）
-    .index("by_ref", ["repository", "type", "externalRef"]),
+    // 既存リンク検索・upsert 用（task × repository × type × ref で同定・Issue #38）。
+    // task を末尾に置くことで、同一 Git アーティファクトの全リンク検索
+    // （repository × type × ref の前方一致）にも使える
+    .index("by_ref_and_task", ["repository", "type", "externalRef", "task"]),
 
   // Webhook 配信の冪等化（§7: X-GitHub-Delivery で重複処理を防ぐ）
   webhookDeliveries: defineTable({

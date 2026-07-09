@@ -250,10 +250,9 @@ describe("webhooks.handlePush", () => {
     ]);
   });
 
-  it("1コミットに複数の参照があっても GitLink が付くのは最初の参照のタスクのみ（現行仕様）", async () => {
-    // upsertGitLink は (repository, type, externalRef=sha) で同定するため、
-    // 同一 sha の2つ目以降の参照は既存リンクへの patch になり、別タスクへは付かない。
-    // 「1コミットで複数タスクへリンクしたい」なら同定キーの見直しが必要（要 Issue 化）。
+  it("1コミットに複数の参照があれば、参照された各タスクに GitLink を追加する（Issue #38）", async () => {
+    // upsertGitLink は (task, repository, type, externalRef=sha) で同定するため、
+    // 同一 sha でも参照されたタスクごとに独立したリンクが作られる。
     const t = setup();
     const { project, member, issue, task, repository } = await seedScenario(t);
     const second = await addTask(t, issue, member); // TASK-2
@@ -264,8 +263,29 @@ describe("webhooks.handlePush", () => {
       commits: [createCommit({ message: "[TASK-1][TASK-2] refactor" })],
     });
 
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "commit", externalRef: "abc123" },
+    ]);
+    expect(await listTaskGitLinks(t, second)).toMatchObject([
+      { type: "commit", externalRef: "abc123" },
+    ]);
+  });
+
+  it("複数タスク参照コミットの再送は各タスクのリンクを増やさない（upsert）", async () => {
+    const t = setup();
+    const { project, member, issue, task, repository } = await seedScenario(t);
+    const second = await addTask(t, issue, member); // TASK-2
+    const args = {
+      repositoryId: repository,
+      projectId: project,
+      commits: [createCommit({ message: "[TASK-1][TASK-2] refactor" })],
+    };
+    await t.mutation(internal.webhooks.handlePush, args);
+
+    await t.mutation(internal.webhooks.handlePush, args);
+
     expect(await listTaskGitLinks(t, task)).toHaveLength(1);
-    expect(await listTaskGitLinks(t, second)).toHaveLength(0);
+    expect(await listTaskGitLinks(t, second)).toHaveLength(1);
   });
 
   it.each([
@@ -609,7 +629,7 @@ describe("webhooks.processEvent", () => {
   it("イベント処理が失敗するとマーカーごとロールバックし、同一 delivery の再送で処理できる", async () => {
     const t = setup();
     const { project, task, repository } = await seedScenario(t);
-    // 同一 (repository, type, externalRef) の GitLink を2件用意し、
+    // 同一 (task, repository, type, externalRef) の GitLink を2件用意し、
     // upsertGitLink の .unique() を実際の経路で失敗させる（データ不整合の注入）
     await seedGitLink(
       t,

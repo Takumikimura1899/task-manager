@@ -360,7 +360,7 @@ describe("POST /webhooks/github の重複配信", () => {
   it("処理に失敗した配信は 500 を返し、マーカーが残らないため再送で処理される", async () => {
     const t = setup();
     const { task, repository } = await seedScenario(t);
-    // 同一 (repository, type, externalRef) の GitLink を2件用意し、
+    // 同一 (task, repository, type, externalRef) の GitLink を2件用意し、
     // upsertGitLink の .unique() を実際の経路で失敗させる（データ不整合の注入）
     await seedGitLink(
       t,
