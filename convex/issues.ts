@@ -4,7 +4,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
-import { assertRevision } from "./lib/revision";
+import { assertRevision, nextMeta } from "./lib/revision";
 import { taskPriority } from "./schema";
 import { insertTask } from "./tasks";
 
@@ -91,6 +91,29 @@ export const create = mutation({
     });
 
     return { issue, task };
+  },
+});
+
+/**
+ * タイトル・説明の更新（revision 楽観ロック・INVARIANT-2）。
+ * status は子 Task 群からの派生（§5.1）のためここでは扱わない。
+ */
+export const update = mutation({
+  args: {
+    id: v.id("issues"),
+    expectedRevision: v.number(),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const issue = await getIssueOrThrow(ctx, args.id);
+    assertRevision(issue, args.expectedRevision);
+
+    const patch: Partial<Doc<"issues">> = nextMeta(issue);
+    if (args.title !== undefined) patch.title = args.title;
+    if (args.description !== undefined) patch.description = args.description;
+
+    await ctx.db.patch(issue._id, patch);
   },
 });
 

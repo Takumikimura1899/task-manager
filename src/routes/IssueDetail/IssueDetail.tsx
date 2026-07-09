@@ -1,15 +1,20 @@
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { Badge } from "../../components/Badge/Badge";
+import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
+import { useEditForm } from "../../hooks/useEditForm";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { parseRefNumber } from "../../lib/routeParams";
 import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
 import s from "./IssueDetail.module.css";
+
+/** 編集フォームの下書き（タイトル・説明）。 */
+type IssueDraft = { title: string; description: string };
 
 export function IssueDetail() {
   const params = useParams();
@@ -20,6 +25,20 @@ export function IssueDetail() {
     api.issues.getByRef,
     number !== null ? { projectKey, number } : "skip",
   );
+
+  const updateIssue = useMutation(api.issues.update);
+  // 保存時の expectedRevision は最新の購読値から取る（INVARIANT-2）。
+  const edit = useEditForm<IssueDraft>({
+    save: async (draft) => {
+      if (issue === null || issue === undefined) return;
+      await updateIssue({
+        id: issue._id,
+        expectedRevision: issue.revision,
+        title: draft.title.trim(),
+        description: draft.description,
+      });
+    },
+  });
 
   if (number === null || issue === null) {
     return (
@@ -55,6 +74,12 @@ export function IssueDetail() {
   const activeTasks = issue.tasks.filter((t) => t.status !== "canceled");
   const doneCount = activeTasks.filter((t) => t.status === "done").length;
 
+  // 編集の初期値・競合後の再読込は常に最新の購読値から作る。
+  const toDraft = (): IssueDraft => ({
+    title: issue.title,
+    description: issue.description ?? "",
+  });
+
   return (
     <main className={s.page}>
       <Link className={s.back} to="/">
@@ -67,17 +92,49 @@ export function IssueDetail() {
             {issue.projectKey}#{issue.number}
           </span>
           <Badge status={status}>{ISSUE_STATUS_LABELS[status]}</Badge>
+          {!edit.editing && (
+            <button
+              className={s.edit}
+              onClick={() => edit.open(toDraft())}
+              type="button"
+            >
+              編集
+            </button>
+          )}
         </div>
-        <h1 className={s.title}>{issue.title}</h1>
-        <p className={s.progress}>
-          タスク {doneCount}/{activeTasks.length} 完了
-        </p>
+        {!edit.editing && (
+          <>
+            <h1 className={s.title}>{issue.title}</h1>
+            <p className={s.progress}>
+              タスク {doneCount}/{activeTasks.length} 完了
+            </p>
+          </>
+        )}
       </header>
 
-      {issue.description !== undefined && issue.description !== "" && (
+      {edit.editing && edit.draft !== null ? (
         <section className={s.section}>
-          <Markdown>{issue.description}</Markdown>
+          <DetailEditForm
+            conflict={edit.conflict}
+            description={edit.draft.description}
+            error={edit.error}
+            formLabel="Issue を編集"
+            onCancel={edit.close}
+            onDescription={(description) => edit.update({ description })}
+            onReload={() => edit.open(toDraft())}
+            onSubmit={edit.submit}
+            onTitle={(title) => edit.update({ title })}
+            saving={edit.saving}
+            title={edit.draft.title}
+          />
         </section>
+      ) : (
+        issue.description !== undefined &&
+        issue.description !== "" && (
+          <section className={s.section}>
+            <Markdown>{issue.description}</Markdown>
+          </section>
+        )
       )}
 
       <section className={s.section}>

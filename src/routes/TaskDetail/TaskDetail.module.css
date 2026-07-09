@@ -40,9 +40,44 @@
     font-variant-numeric: tabular-nums;
   }
 
+  .edit {
+    margin-inline-start: auto;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .edit:hover {
+    background: var(--color-subtle);
+  }
+
   .title {
     margin: 0;
     font-size: var(--font-size-lg);
+  }
+
+  /* 編集フォームに差し込む優先度フィールド（DetailEditForm の field と同調） */
+  .editField {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  .editSelect {
+    align-self: flex-start;
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--font-size-md);
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
   }
 
   .section {
@@ -74,6 +109,132 @@
   .value {
     margin: 0;
     color: var(--color-text);
+  }
+
+  /* 現在ステータス＋遷移ボタン群（§5 状態機械の遷移可能先のみ提示） */
+  .statusRow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .transition {
+    padding: 0 var(--space-2);
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+  }
+
+  .transition:hover {
+    background: var(--color-subtle);
+  }
+
+  .assigneeSelect {
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
+  .actionError {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+  }
+
+  /* 破壊的操作の確認パネル（削除・done/canceled への遷移） */
+  .confirmPanel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: color-mix(
+      in srgb,
+      var(--color-danger) 5%,
+      var(--color-surface)
+    );
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-md);
+  }
+
+  .confirmMessage {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+  }
+
+  .confirmActions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .danger {
+    padding: var(--space-1) var(--space-4);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-inverse);
+    background: var(--color-danger);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .cancel {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* 破壊的操作セクション（削除導線） */
+  .dangerSection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-md);
+  }
+
+  .dangerSection .sectionTitle {
+    margin: 0;
+  }
+
+  .dangerOutline {
+    align-self: flex-start;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-danger);
+    background: var(--color-surface);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .dangerOutline:hover {
+    background: color-mix(
+      in srgb,
+      var(--color-danger) 8%,
+      var(--color-surface)
+    );
+  }
+
+  .dangerHint {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
   }
 
   /* ローディング中のプレースホルダ寸法（参照行・タイトル・セクション） */
