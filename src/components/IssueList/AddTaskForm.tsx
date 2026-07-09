@@ -1,9 +1,7 @@
 import { useMutation } from "convex/react";
-import { ConvexError } from "convex/values";
-import { type FormEvent, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { type Priority } from "../../lib/taskMeta";
+import { useCreateForm } from "../../hooks/useCreateForm";
 import { TaskMetaFields } from "../forms/TaskMetaFields";
 import s from "./AddTaskForm.module.css";
 
@@ -19,75 +17,52 @@ export function AddTaskForm({
   createdBy: Id<"members">;
 }) {
   const createTask = useMutation(api.tasks.create);
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [priority, setPriority] = useState<Priority>("none");
-  const [assignee, setAssignee] = useState<Id<"members"> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  const canSubmit = title.trim() !== "" && !submitting;
-
-  function close() {
-    setOpen(false);
-    setTitle("");
-    setPriority("none");
-    setAssignee(null);
-    setError(null);
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!canSubmit) return;
-    setSubmitting(true);
-    setError(null);
-    try {
+  const form = useCreateForm({
+    onSubmit: async ({ title, priority, assignee }) => {
       await createTask({
         issue,
-        title: title.trim(),
+        title,
         priority,
         assignee: assignee ?? undefined,
         createdBy,
       });
-      close();
-    } catch (err) {
-      setError(
-        err instanceof ConvexError ? String(err.data) : "追加に失敗しました",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }
+    },
+    submitErrorMessage: "追加に失敗しました",
+  });
 
-  if (!open) {
+  if (!form.open) {
     return (
-      <button className={s.toggle} onClick={() => setOpen(true)} type="button">
+      <button
+        className={s.toggle}
+        onClick={() => form.setOpen(true)}
+        type="button"
+      >
         ＋ タスク
       </button>
     );
   }
 
   return (
-    <form className={s.form} onSubmit={handleSubmit}>
+    <form className={s.form} onSubmit={form.handleSubmit}>
       <input
         className={s.input}
-        onChange={(e) => setTitle(e.target.value)}
+        onChange={(e) => form.setTitle(e.target.value)}
         placeholder="タスクのタイトル"
-        value={title}
+        value={form.title}
       />
       <TaskMetaFields
-        assignee={assignee}
-        onAssignee={setAssignee}
-        onPriority={setPriority}
-        priority={priority}
+        assignee={form.assignee}
+        onAssignee={form.setAssignee}
+        onPriority={form.setPriority}
+        priority={form.priority}
       />
-      <button className={s.submit} disabled={!canSubmit} type="submit">
+      <button className={s.submit} disabled={!form.canSubmit} type="submit">
         追加
       </button>
-      <button className={s.cancel} onClick={close} type="button">
+      <button className={s.cancel} onClick={form.close} type="button">
         取消
       </button>
-      {error !== null && <span className={s.error}>{error}</span>}
+      {form.error !== null && <span className={s.error}>{form.error}</span>}
     </form>
   );
 }
