@@ -72,5 +72,18 @@ describe("承認ゲート", () => {
     it("approved: true なら許可する", () => {
       expect(checkDeleteApproval(true)).toEqual({ allowed: true });
     });
+
+    it("subject を指定すると拒否メッセージの対象名が変わる（Issue 削除）", () => {
+      const decision = checkDeleteApproval(undefined, "Issue");
+      expect(decision).toMatchObject({ allowed: false });
+      expect(decision).toHaveProperty(
+        "reason",
+        expect.stringContaining("Issueの削除は破壊的操作のため"),
+      );
+    });
+
+    it("subject を指定しても approved: true なら許可する", () => {
+      expect(checkDeleteApproval(true, "Issue")).toEqual({ allowed: true });
+    });
   });
 });

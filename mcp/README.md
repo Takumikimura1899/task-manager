@@ -16,23 +16,27 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
 
 | URI | 内容 |
 |---|---|
-| `project://{key}` | プロジェクト概要・メンバー・アクティブタスク一覧 |
+| `project://{key}` | プロジェクト概要・メンバー・アクティブ Issue 一覧（派生ステータス付き） |
+| `issue://{key}/{number}` | Issue 全文（派生ステータス）＋ 配下 Task 一覧 |
 | `task://{key}/{number}` | タスク全文 |
 | `task://{key}/mine` | エージェントに割り当てられた未完了タスク |
 
 ### Tools（実行）
 
-`list_tasks` / `get_task` / `create_issue` / `create_task` / `update_task` /
-`transition_status` / `assign_task` / `delete_task` / `link_git`
+`list_issues` / `get_issue` / `create_issue` / `list_tasks` / `get_task` /
+`create_task` / `update_task` / `transition_status` / `assign_task` /
+`delete_task` / `delete_issue` / `link_git`
 
 - `create_issue` は最初の Task を必ず伴う（Issue は常に ≥1 Task、INVARIANT-5）。
   引数は `project_key` / `title` / `description?` / `first_task_title` / `first_task_priority?`。
-- `delete_task` と `transition_status`（done/canceled 遷移）は破壊的操作のため
-  **サーバー側で人間の承認を強制する**（Human-in-the-Loop, §6）。人間の承認を得た上で
-  `approved: true` を指定しない限り操作は拒否される（`delete_task` は常に、
+- `delete_task` / `delete_issue` と `transition_status`（done/canceled 遷移）は破壊的
+  操作のため**サーバー側で人間の承認を強制する**（Human-in-the-Loop, §6）。人間の承認を
+  得た上で `approved: true` を指定しない限り操作は拒否される（削除系は常に、
   `transition_status` は遷移先が done / canceled の場合）。`destructiveHint` も付与
   しているため、対応ホスト（Claude Code 等）では承認プロンプトも表示される。
-- 更新系ツールの `version` 引数には `get_task` で得た `revision` を渡す（楽観ロック）。
+- `delete_issue` は配下の Task と関連 GitLink も併せて削除する（カスケード）。
+- 更新系ツールの `version` 引数には `get_task` / `get_issue` で得た `revision` を渡す
+  （楽観ロック）。
 - `link_git` はタスクの所属プロジェクトからリポジトリを解決する（複数ある場合は
   `repository_url` を指定）。`(repository, type, ref)` で冪等。
 
