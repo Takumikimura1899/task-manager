@@ -2,7 +2,9 @@
   .page {
     max-width: var(--layout-max);
     margin-inline: auto;
-    padding: var(--space-6);
+
+    /* 狭幅では余白を縮めて内容の幅を確保する（4vw ≒ 画面幅連動） */
+    padding: clamp(var(--space-3), 4vw, var(--space-6));
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
@@ -27,6 +29,7 @@
 
   .heading {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
   }
@@ -71,5 +74,26 @@
   .value {
     margin: 0;
     color: var(--color-text);
+  }
+
+  /* ローディング中のプレースホルダ寸法（参照行・タイトル・セクション） */
+  .loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .skeletonHeading {
+    width: min(160px, 50%);
+    height: 20px;
+  }
+
+  .skeletonTitle {
+    width: min(420px, 90%);
+    height: 28px;
+  }
+
+  .skeletonSection {
+    height: 120px;
   }
 }
