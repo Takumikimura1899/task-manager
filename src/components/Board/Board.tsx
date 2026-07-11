@@ -178,12 +178,20 @@ export function Board({
       const movingIdx = prev[from].tasks.findIndex((t) => t._id === activeId);
       if (movingIdx === -1) return prev;
 
-      const next = toLocal(prev);
-      const [moving] = next[from].tasks.splice(movingIdx, 1);
-      const overIdx = next[to].tasks.findIndex((t) => t._id === overId);
-      const insertAt = overIdx === -1 ? next[to].tasks.length : overIdx;
-      next[to].tasks.splice(insertAt, 0, moving);
-      return next;
+      // 変化した from / to の2列だけ複製し、他列は同一参照を保つ（#80）。
+      // ポインタ移動のたびに呼ばれるため、全列複製だと memo 化した
+      // Column の再レンダリング抑止が効かずフレーム落ちの原因になる。
+      const fromTasks = [...prev[from].tasks];
+      const [moving] = fromTasks.splice(movingIdx, 1);
+      const toTasks = [...prev[to].tasks];
+      const overIdx = toTasks.findIndex((t) => t._id === overId);
+      const insertAt = overIdx === -1 ? toTasks.length : overIdx;
+      toTasks.splice(insertAt, 0, moving);
+      return prev.map((column, i) => {
+        if (i === from) return { ...column, tasks: fromTasks };
+        if (i === to) return { ...column, tasks: toTasks };
+        return column;
+      });
     });
   }
 

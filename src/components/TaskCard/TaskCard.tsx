@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import s from "./TaskCard.module.css";
@@ -11,7 +11,12 @@ const PRIORITY_LABELS: Record<Doc<"tasks">["priority"], string> = {
   urgent: "緊急",
 };
 
-export function TaskCard({
+/**
+ * memo: props が全て不変ならスキップする（#80）。dragHandle は
+ * SortableTaskCard が毎レンダーで生成するため、効果は dragHandle 無しの
+ * 利用（DragOverlay 等）に限られる。
+ */
+export const TaskCard = memo(function TaskCard({
   task,
   projectKey,
   issueNumber = null,
@@ -53,4 +58,4 @@ export function TaskCard({
       </div>
     </article>
   );
-}
+});
