@@ -1,6 +1,7 @@
 import type {
   DndContextProps,
   DragCancelEvent,
+  DragEndEvent,
   DragOverEvent,
   DragStartEvent,
 } from "@dnd-kit/core";
@@ -16,6 +17,7 @@ import {
 } from "../../lib/taskMeta";
 import skeletonStyles from "../Skeleton/Skeleton.module.css";
 import { Board } from "./Board";
+import boardStyles from "./Board.module.css";
 
 /**
  * ボードのローディング表示と空状態（Issue #29）を検証する。
@@ -184,5 +186,52 @@ describe("Board のドラッグキャンセル（Issue #78）", () => {
     ).not.toBeInTheDocument();
     // キャンセルなので move / transitionStatus はどちらも呼ばれない
     expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("Board のドラッグ中アニメーション抑止（Issue #79）", () => {
+  const startDrag = () => {
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+    });
+    return handlers;
+  };
+
+  it("ドラッグ開始で抑止クラスが付き、ドロップで外れる", () => {
+    boardQuery.mockReturnValue(createColumns({ todo: [createTask()] }));
+    const { container } = renderBoard();
+    const boardEl = container.querySelector(`.${boardStyles.board}`);
+
+    expect(boardEl).not.toHaveClass(boardStyles.boardDragging);
+    const handlers = startDrag();
+    expect(boardEl).toHaveClass(boardStyles.boardDragging);
+
+    act(() => {
+      // over: null は既存挙動どおり no-op（mutation なし）で終了する
+      handlers.onDragEnd?.({
+        active: { id: "task_1" },
+        over: null,
+      } as DragEndEvent);
+    });
+    expect(boardEl).not.toHaveClass(boardStyles.boardDragging);
+  });
+
+  it("キャンセルでも抑止クラスが外れる", () => {
+    boardQuery.mockReturnValue(createColumns({ todo: [createTask()] }));
+    const { container } = renderBoard();
+    const boardEl = container.querySelector(`.${boardStyles.board}`);
+
+    const handlers = startDrag();
+    expect(boardEl).toHaveClass(boardStyles.boardDragging);
+
+    act(() => {
+      handlers.onDragCancel?.({
+        active: { id: "task_1" },
+        over: null,
+      } as DragCancelEvent);
+    });
+    expect(boardEl).not.toHaveClass(boardStyles.boardDragging);
   });
 });

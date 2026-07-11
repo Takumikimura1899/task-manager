@@ -292,7 +292,9 @@ export function Board({
           Issue」から作成できます。
         </p>
       )}
-      <div className={s.board}>
+      {/* ドラッグ中は列またぎの再マウントでカードの出現フェード（card-in）が
+          再生されチラつくため、コンテナ単位でアニメーションを抑止する（#79） */}
+      <div className={`${s.board} ${activeTask ? s.boardDragging : ""}`}>
         {board.map((column) => (
           <Column
             key={column.status}
