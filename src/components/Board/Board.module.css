@@ -14,6 +14,13 @@
     }
   }
 
+  /* ドラッグ中はカードの出現フェードを止める。列またぎの dragOver でカードが
+     再マウントされるたびに card-in が再生されてチラつくため（Issue #79）。
+     カスタムプロパティ経由なので CSS Modules のハッシュ越し参照が不要 */
+  .boardDragging {
+    --card-anim: none;
+  }
+
   /* 半透明のガラス風パネル。地のアンビエント光をわずかに透かす */
   .column {
     display: flex;

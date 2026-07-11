@@ -43,7 +43,10 @@
     /* 上端の発光ライン（::before）をカード内に収める */
     position: relative;
     overflow: hidden;
-    animation: card-in var(--duration-base) var(--ease-out);
+
+    /* 出現フェード。ドラッグ中は列またぎの再マウントで再生されチラつくため、
+       Board 側が --card-anim: none で一時停止できるようにする（Issue #79） */
+    animation: var(--card-anim, card-in var(--duration-base) var(--ease-out));
     transition:
       border-color var(--duration-fast) var(--ease-out),
       box-shadow var(--duration-fast) var(--ease-out),
