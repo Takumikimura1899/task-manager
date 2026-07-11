@@ -13,8 +13,13 @@ import { parseRefNumber } from "../../lib/routeParams";
 import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
 import s from "./IssueDetail.module.css";
 
-/** 編集フォームの下書き（タイトル・説明）。 */
-type IssueDraft = { title: string; description: string };
+/**
+ * 編集フォームの下書き（タイトル・説明）。
+ * revision は編集開始時点の値を保持し、保存時の expectedRevision に使う。
+ * 購読中の最新値を使うと、編集中の他者更新で expectedRevision も追従して
+ * しまい競合を検知できないため（Issue #73）。
+ */
+type IssueDraft = { title: string; description: string; revision: number };
 
 export function IssueDetail() {
   const params = useParams();
@@ -27,13 +32,14 @@ export function IssueDetail() {
   );
 
   const updateIssue = useMutation(api.issues.update);
-  // 保存時の expectedRevision は最新の購読値から取る（INVARIANT-2）。
+  // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
+  // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
   const edit = useEditForm<IssueDraft>({
     save: async (draft) => {
       if (issue === null || issue === undefined) return;
       await updateIssue({
         id: issue._id,
-        expectedRevision: issue.revision,
+        expectedRevision: draft.revision,
         title: draft.title.trim(),
         description: draft.description,
       });
@@ -78,6 +84,7 @@ export function IssueDetail() {
   const toDraft = (): IssueDraft => ({
     title: issue.title,
     description: issue.description ?? "",
+    revision: issue.revision,
   });
 
   return (
