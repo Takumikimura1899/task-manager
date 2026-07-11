@@ -25,8 +25,18 @@ import {
 } from "../../lib/taskMeta";
 import s from "./TaskDetail.module.css";
 
-/** 編集フォームの下書き（タイトル・説明・優先度）。 */
-type TaskDraft = { title: string; description: string; priority: Priority };
+/**
+ * 編集フォームの下書き（タイトル・説明・優先度）。
+ * revision は編集開始時点の値を保持し、保存時の expectedRevision に使う。
+ * 購読中の最新値を使うと、編集中の他者更新で expectedRevision も追従して
+ * しまい競合を検知できないため（Issue #73）。
+ */
+type TaskDraft = {
+  title: string;
+  description: string;
+  priority: Priority;
+  revision: number;
+};
 
 /** 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。 */
 type PendingConfirm = {
@@ -54,13 +64,14 @@ export function TaskDetail() {
   const assignTask = useMutation(api.tasks.assign);
   const deleteTask = useMutation(api.tasks.deleteTask);
 
-  // 保存時の expectedRevision は最新の購読値から取る（INVARIANT-2）。
+  // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
+  // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
   const edit = useEditForm<TaskDraft>({
     save: async (draft) => {
       if (task === null || task === undefined) return;
       await updateFields({
         id: task._id,
-        expectedRevision: task.revision,
+        expectedRevision: draft.revision,
         title: draft.title.trim(),
         description: draft.description,
         priority: draft.priority,
@@ -107,6 +118,7 @@ export function TaskDetail() {
     title: task.title,
     description: task.description ?? "",
     priority: task.priority,
+    revision: task.revision,
   });
 
   const runAction = async (action: () => Promise<void>) => {

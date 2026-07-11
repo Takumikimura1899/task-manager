@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IssueDetail } from "./IssueDetail";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -35,14 +36,17 @@ const createIssue = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const renderIssueDetail = () =>
-  render(
-    <MemoryRouter initialEntries={["/TASK/issues/34"]}>
-      <Routes>
-        <Route element={<IssueDetail />} path="/:projectKey/issues/:number" />
-      </Routes>
-    </MemoryRouter>,
-  );
+// rerender で購読値（mocks.issue）の更新を反映できるよう UI を毎回生成する
+// （同一の要素参照を渡すと React が再レンダーを省略するため）
+const issueDetailUi = () => (
+  <MemoryRouter initialEntries={["/TASK/issues/34"]}>
+    <Routes>
+      <Route element={<IssueDetail />} path="/:projectKey/issues/:number" />
+    </Routes>
+  </MemoryRouter>
+);
+
+const renderIssueDetail = () => render(issueDetailUi());
 
 beforeEach(() => {
   mocks.issue = undefined;
@@ -90,7 +94,7 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
 
-  it("保存すると最新 revision を expectedRevision に添えて更新を呼び、閲覧表示へ戻る", async () => {
+  it("保存すると編集開始時点の revision を expectedRevision に添えて更新を呼び、閲覧表示へ戻る", async () => {
     const user = userEvent.setup();
     mocks.issue = createIssue({ revision: 7 });
     renderIssueDetail();
@@ -136,5 +140,75 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
       "ログイン機能を実装する",
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("IssueDetail の楽観ロック（Issue #73）", () => {
+  const conflictMessage =
+    "競合が発生しました。他の更新があったため最新を取得してください。";
+
+  /** サーバー側の楽観ロックを模す: 購読中の最新 revision と不一致なら競合。 */
+  const mockOptimisticLockServer = () => {
+    mocks.mutate.mockImplementation(async (args) => {
+      const current = mocks.issue as { revision: number };
+      if (args.expectedRevision !== current.revision) {
+        throw new ConvexError(conflictMessage);
+      }
+      return undefined;
+    });
+  };
+
+  it("編集開始後に他者の更新で購読値の revision が進んだ場合、保存すると競合 UI を表示する", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ revision: 3 });
+    mockOptimisticLockServer();
+    const { rerender } = renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+
+    // 編集中に他者が更新し、購読値が revision 4 へ自動更新される
+    mocks.issue = createIssue({ revision: 4, title: "他者による更新" });
+    rerender(issueDetailUi());
+
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    // 編集開始時点の revision を送るため競合が検知され、再取得導線が出る
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedRevision: 3 }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent(conflictMessage);
+    expect(
+      screen.getByRole("button", { name: "最新の内容を読み込んで編集し直す" }),
+    ).toBeVisible();
+  });
+
+  it("保存成功後に revision が進んでも、再編集して再保存できる", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ revision: 3 });
+    mockOptimisticLockServer();
+    const { rerender } = renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(mocks.mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ expectedRevision: 3 }),
+    );
+
+    // 保存の反映で購読値の revision が進む
+    mocks.issue = createIssue({ revision: 4 });
+    rerender(issueDetailUi());
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    // 再編集の draft が新しい revision を持つため、競合にならず保存が完了する
+    expect(mocks.mutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ expectedRevision: 4 }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("form", { name: "Issue を編集" }),
+    ).not.toBeInTheDocument();
   });
 });
