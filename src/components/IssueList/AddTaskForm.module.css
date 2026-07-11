@@ -8,10 +8,19 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     white-space: nowrap;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
   }
 
   .toggle:hover {
+    color: var(--color-accent);
     background: var(--color-subtle);
+    border-color: color-mix(
+      in srgb,
+      var(--color-accent) 45%,
+      var(--color-border)
+    );
   }
 
   .form {
@@ -27,6 +36,14 @@
     background: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .input:focus {
+    border-color: var(--color-accent);
+    box-shadow: var(--glow-accent-sm);
   }
 
   .submit {
@@ -34,15 +51,20 @@
     font-size: var(--font-size-xs);
     font-weight: 600;
     color: var(--color-text-inverse);
-    background: var(--color-accent);
+    background: var(--gradient-accent);
     border: 1px solid transparent;
     border-radius: var(--radius-sm);
     cursor: pointer;
+    transition: box-shadow var(--duration-fast) var(--ease-out);
   }
 
   .submit:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .submit:hover:not(:disabled) {
+    box-shadow: var(--glow-accent-sm);
   }
 
   .cancel {

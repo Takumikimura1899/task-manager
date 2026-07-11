@@ -6,6 +6,9 @@
     color: var(--color-text-muted);
     background: var(--color-surface);
     border: 1px solid var(--color-border);
+
+    /* 注意喚起の性格をアクセントバーで示す */
+    border-inline-start: 3px solid var(--color-attention);
     border-radius: var(--radius-md);
   }
 }
