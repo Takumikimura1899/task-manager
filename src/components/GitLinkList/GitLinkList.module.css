@@ -24,16 +24,19 @@
   }
 
   .ref {
+    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-accent);
     word-break: break-all;
   }
 
-  /* PR 状態バッジ。色はトークンから派生（color-mix）。 */
+  /* PR 状態バッジ。色はトークンから派生（color-mix）。
+     淡い地に currentcolor 由来のボーダーで縁取る（Badge と同語彙） */
   .state {
     padding: 0 var(--space-2);
     font-size: var(--font-size-xs);
     font-weight: 600;
+    border: 1px solid color-mix(in srgb, currentcolor 30%, transparent);
     border-radius: var(--radius-pill);
     white-space: nowrap;
   }
