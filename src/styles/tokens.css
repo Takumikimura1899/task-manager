@@ -1,28 +1,86 @@
 /**
- * デザイントークン。色・余白・角丸・タイポを一元管理する。
+ * デザイントークン。色・余白・角丸・タイポ・グロー・モーションを一元管理する。
  * 値の直書きは禁止し、コンポーネントは必ず var(--*) を参照する。
+ *
+ * テーマはダーク固定（近未来ダーク+ネオン）。ライトテーマは提供しない。
  */
 @layer tokens {
   :root {
-    /* color */
-    --color-bg: #f6f8fa;
-    --color-surface: #fff;
-    --color-subtle: #eaeef2;
-    --color-border: #d0d7de;
+    /* color: 背景階調（bg → surface → subtle → chip → border の順に明るい紺黒） */
+    --color-bg: #0a0e1a;
+    --color-surface: #111726;
+    --color-subtle: #1a2236;
 
-    /* chip 上の muted テキストが WCAG AA（4.5:1）を満たすよう border より一段淡い値。
-       #d0d7de では 4.40:1 で未達、#d8dee4 で 4.71:1（対 --color-text-muted）。 */
-    --color-chip: #d8dee4;
-    --color-text: #1f2328;
-    --color-text-muted: #57606a;
-    --color-text-inverse: #fff;
+    /* chip 上の muted テキストが WCAG AA（4.5:1）を満たす明度に留める。
+       #9aa8c2 on #232d47 で 5.69:1（対 --color-text-muted、getComputedStyle 実測）。
+       全意味色も surface 上で AA を満たす（最小は danger 6.46:1）。 */
+    --color-chip: #232d47;
+    --color-border: #283350;
+    --color-text: #e8edf8;
+    --color-text-muted: #9aa8c2;
 
-    /* color: 意味色（リンク・ボタン・状態バッジ。淡色背景は color-mix で派生） */
-    --color-accent: #0969da;
-    --color-success: #1a7f37;
-    --color-attention: #9a6700;
-    --color-merged: #8250df;
-    --color-danger: #cf222e;
+    /* ネオン塗りボタン上の文字。明るいアクセント地に載せるため暗色に反転する。 */
+    --color-text-inverse: #0a0e1a;
+
+    /* color: 意味色（リンク・ボタン・状態バッジ。淡色背景は color-mix で派生）。
+       ダーク地で AA を満たす 400 系明度に揃える。accent はネオンシアン、
+       accent-alt はグラデーション終端・アンビエント光に使う副色の紫。 */
+    --color-accent: #22d3ee;
+    --color-accent-alt: #a78bfa;
+    --color-success: #4ade80;
+    --color-attention: #fbbf24;
+    --color-merged: #c084fc;
+    --color-danger: #f87171;
+
+    /* glow: ネオン発光。輪郭1px + 拡散光の組。hover・focus・ドラッグ演出用 */
+    --glow-accent-sm:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
+      0 0 12px color-mix(in srgb, var(--color-accent) 18%, transparent);
+    --glow-accent-md:
+      0 0 0 1px color-mix(in srgb, var(--color-accent) 45%, transparent),
+      0 0 20px color-mix(in srgb, var(--color-accent) 28%, transparent),
+      0 0 48px color-mix(in srgb, var(--color-accent-alt) 12%, transparent);
+    --glow-danger:
+      0 0 0 1px color-mix(in srgb, var(--color-danger) 30%, transparent),
+      0 0 12px color-mix(in srgb, var(--color-danger) 18%, transparent);
+
+    /* shadow: ダーク地では光でなく暗さで奥行きを出す。カード・パネルの既定影 */
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 50%), 0 4px 16px rgb(0 0 0 / 35%);
+
+    /* gradient */
+    --gradient-accent: linear-gradient(
+      135deg,
+      var(--color-accent),
+      var(--color-accent-alt)
+    );
+
+    /* 画面の隅に置くアンビエント光。右上=紫、左下=シアン。body 背景専用 */
+    --gradient-ambient:
+      radial-gradient(
+        80rem 60rem at 100% 0%,
+        color-mix(in srgb, var(--color-accent-alt) 9%, transparent),
+        transparent 60%
+      ),
+      radial-gradient(
+        70rem 50rem at 0% 100%,
+        color-mix(in srgb, var(--color-accent) 7%, transparent),
+        transparent 60%
+      );
+
+    /* カード上端などに敷く1pxの発光ライン（両端フェード） */
+    --gradient-edge: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--color-accent) 55%, transparent),
+      transparent
+    );
+
+    /* motion: transition/animation の時間は必ずこのトークンを参照する。
+       prefers-reduced-motion 時は下の media query で一括 0ms に落ちる */
+    --duration-fast: 120ms;
+    --duration-base: 200ms;
+    --duration-slow: 360ms;
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
     /* spacing（4pxグリッド） */
     --space-1: 4px;
@@ -38,12 +96,25 @@
 
     /* typography */
     --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-display: "Space Grotesk Variable", var(--font-sans);
+    --font-mono:
+      ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", "Menlo",
+      monospace;
     --font-size-xs: 11px;
     --font-size-sm: 13px;
     --font-size-md: 14px;
     --font-size-lg: 20px;
+    --tracking-wide: 0.08em;
 
     /* layout */
     --layout-max: 1200px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --duration-fast: 0ms;
+      --duration-base: 0ms;
+      --duration-slow: 0ms;
+    }
   }
 }
