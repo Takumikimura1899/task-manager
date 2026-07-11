@@ -187,6 +187,18 @@ export function Board({
     });
   }
 
+  // ESC などでドラッグがキャンセルされたとき、handleDragOver でのローカル
+  // 移動を破棄して server の真実へ戻す。ドラッグ中は購読同期が停止している
+  // （上記 useEffect が activeTask で早期 return）ため、columns はドラッグ
+  // 開始前のスナップショットであり復元元として正しい。
+  function handleDragCancel() {
+    setActiveTask(null);
+    if (columns) {
+      syncedRef.current = columns;
+      setBoard(toLocal(columns));
+    }
+  }
+
   async function handleDragEnd({ active, over }: DragEndEvent) {
     const dragged = activeTask;
     setActiveTask(null);
@@ -261,6 +273,7 @@ export function Board({
   return (
     <DndContext
       collisionDetection={collisionDetection}
+      onDragCancel={handleDragCancel}
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDragStart={handleDragStart}
