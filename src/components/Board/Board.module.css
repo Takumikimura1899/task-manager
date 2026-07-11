@@ -14,12 +14,14 @@
     }
   }
 
+  /* 半透明のガラス風パネル。地のアンビエント光をわずかに透かす */
   .column {
     display: flex;
     flex-direction: column;
     min-height: 120px;
     padding: var(--space-2);
-    background: var(--color-subtle);
+    background: color-mix(in srgb, var(--color-subtle) 60%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
     border-radius: var(--radius-md);
   }
 
@@ -30,11 +32,15 @@
     padding: var(--space-1) var(--space-1) var(--space-2);
     font-size: var(--font-size-sm);
     font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    color: var(--color-text-muted);
   }
 
   .count {
     padding-inline: var(--space-2);
+    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
     color: var(--color-text-muted);
     background: var(--color-chip);
     border-radius: var(--radius-pill);
@@ -50,11 +56,24 @@
        （ポインタ基準の衝突検出は droppable の矩形内にポインタが無いと反応しない） */
     min-height: var(--space-6);
     border-radius: var(--radius-sm);
+    transition:
+      background-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
   }
 
-  /* ドラッグ中、ドロップ対象の列をうっすら強調する。 */
+  /* ドラッグ中、ドロップ対象の列をネオンで強調する。 */
   .bodyOver {
-    background: color-mix(in srgb, var(--color-border) 35%, transparent);
+    background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--color-accent) 30%, transparent);
+  }
+
+  /* ドラッグ中に持ち上げたカード（DragOverlay）。発光と微傾きで浮遊感を出す */
+  .overlay {
+    border-radius: var(--radius-sm);
+    box-shadow: var(--glow-accent-md), var(--shadow-card);
+    rotate: 2deg;
+    scale: 1.02;
   }
 
   /* ローディング中にカードの矩形を模すプレースホルダの寸法 */

@@ -292,12 +292,14 @@ export function Board({
       </div>
       <DragOverlay>
         {activeTask ? (
-          <TaskCard
-            assigneeName={activeTask.assigneeName}
-            issueNumber={activeTask.issueNumber}
-            projectKey={projectKey}
-            task={activeTask}
-          />
+          <div className={s.overlay}>
+            <TaskCard
+              assigneeName={activeTask.assigneeName}
+              issueNumber={activeTask.issueNumber}
+              projectKey={projectKey}
+              task={activeTask}
+            />
+          </div>
         ) : null}
       </DragOverlay>
     </DndContext>

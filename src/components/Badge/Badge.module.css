@@ -11,11 +11,21 @@
     border-radius: var(--radius-pill);
     color: var(--color-text-muted);
     background: var(--color-subtle);
+
+    /* 12% mix の淡い地は輪郭が沈むため currentcolor 由来のボーダーで縁取る。
+       transition はステータス変化時の色遷移の演出を兼ねる */
+    border: 1px solid color-mix(in srgb, currentcolor 30%, transparent);
+    transition:
+      color var(--duration-base) var(--ease-out),
+      background-color var(--duration-base) var(--ease-out),
+      border-color var(--duration-base) var(--ease-out);
   }
 
+  /* 「進行中」だけが光る（今動いているものへ視線を集める） */
   .in_progress {
     color: var(--color-accent);
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    box-shadow: 0 0 10px color-mix(in srgb, currentcolor 25%, transparent);
   }
 
   .in_review {
