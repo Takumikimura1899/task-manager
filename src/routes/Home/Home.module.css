@@ -39,9 +39,11 @@
     color: var(--color-accent);
   }
 
-  @supports (background-clip: text) {
+  @supports (background-clip: text) or (-webkit-background-clip: text) {
     .title {
       background: var(--gradient-accent);
+      /* stylelint-disable-next-line property-no-vendor-prefix */
+      -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
     }
