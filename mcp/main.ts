@@ -23,7 +23,7 @@ import {
   checkTransitionApproval,
 } from "../convex/lib/approval.js";
 import { ISSUE_STATUSES } from "../convex/lib/issueStatus.js";
-import { TASK_STATUSES } from "../convex/lib/taskStatus.js";
+import { TASK_STATUSES, canTransition } from "../convex/lib/taskStatus.js";
 import { isActiveStatus, parseIssueRef, parseTaskRef } from "./lib/refs.js";
 
 const PRIORITY_VALUES = ["none", "low", "medium", "high", "urgent"] as const;
@@ -512,9 +512,12 @@ async function main() {
     },
     async ({ task_ref, to_status, version, approved }) => {
       try {
-        const decision = checkTransitionApproval(to_status, approved);
-        if (!decision.allowed) return fail(new Error(decision.reason));
         const task = await resolveTask(task_ref);
+        if (!canTransition(task.status, to_status)) {
+          return fail(`状態遷移できません: ${task.status} → ${to_status}`);
+        }
+        const decision = checkTransitionApproval(to_status, approved);
+        if (!decision.allowed) return fail(decision.reason);
         await convex.mutation(api.tasks.transitionStatus, {
           id: task._id,
           to: to_status,
@@ -576,9 +579,9 @@ async function main() {
     },
     async ({ task_ref, version, approved }) => {
       try {
-        const decision = checkDeleteApproval(approved);
-        if (!decision.allowed) return fail(new Error(decision.reason));
         const task = await resolveTask(task_ref);
+        const decision = checkDeleteApproval(approved);
+        if (!decision.allowed) return fail(decision.reason);
         await convex.mutation(api.tasks.deleteTask, {
           id: task._id,
           expectedRevision: version,
@@ -608,9 +611,9 @@ async function main() {
     },
     async ({ issue_ref, version, approved }) => {
       try {
-        const decision = checkDeleteApproval(approved, "Issue");
-        if (!decision.allowed) return fail(new Error(decision.reason));
         const issue = await resolveIssue(issue_ref);
+        const decision = checkDeleteApproval(approved, "Issue");
+        if (!decision.allowed) return fail(decision.reason);
         await convex.mutation(api.issues.remove, {
           id: issue._id,
           expectedRevision: version,
