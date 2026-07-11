@@ -46,8 +46,49 @@
   カスタムプロパティに**一元化**する。
 - コンポーネントでの**値の直書きを禁止**する。必ず `var(--*)` を参照する。
 - 余白は4pxグリッド（`--space-1`=4px 〜 `--space-6`=24px）。
-- テーマ切替（ダークモード等）が必要になったら `light-dark()` とトークンの
-  差し替えで対応する（コンポーネント側は無改修で済む）。
+
+### 2.1 テーマ（ダーク固定）
+
+**テーマは近未来ダーク+ネオンの1本のみ**とし、ライトテーマは提供しない
+（ターゲットがエンジニアであること、演出をダーク前提で設計していることによる決定）。
+
+- `base.css` で `color-scheme: dark` を宣言し、ネイティブUI（select・
+  スクロールバー等）もダーク描画に揃える。
+- 文字に使う色は WCAG AA（4.5:1）を満たす明度に保つ。根拠となる実測値は
+  `tokens.css` のコメントに残す。
+- 将来ライト対応する場合は `light-dark()` とトークン差し替えで行う
+  （コンポーネント側は無改修で済む）。
+
+### 2.2 演出トークン（glow / gradient / shadow）
+
+ネオン演出も**トークン経由でのみ**使う（stylelint が hex 直書きを禁止しており、
+影・グラデーションの色も例外ではない）:
+
+- `--glow-accent-sm` — hover・focus の微発光。`--glow-accent-md` — ドラッグ中
+  など強調時の発光。`--glow-danger` — 破壊的操作の hover。
+- `--shadow-card` — カード・パネルの既定影（ダーク地では暗さで奥行きを出す）。
+- `--gradient-accent` — 主ボタンの塗り・見出しのグラデ文字。
+  `--gradient-edge` — カード上端などの1px発光ライン。
+  `--gradient-ambient` — body 背景専用のアンビエント光。
+- 演出は**操作フィードバック中心**に留める。背景の常時アニメーション・
+  無限ループ発光は追加しない。
+
+### 2.3 モーショントークン
+
+- `transition` / `animation` の時間は必ず `--duration-fast|base|slow` を参照する。
+  `prefers-reduced-motion: reduce` 時に `tokens.css` が一括で 0ms に落とすため、
+  コンポーネント側の個別対応は不要（無限アニメーションだけは Skeleton のように
+  個別に `animation: none` で止める）。
+- イージングは `--ease-out` を既定とする。
+
+### 2.4 タイポグラフィの使い分け
+
+- `--font-sans` — 本文・UIの既定。
+- `--font-display`（Space Grotesk Variable、self-host） — 見出し・タイトル。
+- `--font-mono` — ID（`PROJ-12` / `Issue #N`）・カウンタ・日時など
+  「データ然とした文字」。`font-variant-numeric: tabular-nums` と併用する。
+- セクション見出しの強調は `text-transform: uppercase` +
+  `letter-spacing: var(--tracking-wide)` で行う。
 
 ---
 

@@ -2,6 +2,7 @@ import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import "@fontsource-variable/space-grotesk/index.css";
 import "./styles/index.css";
 import { App } from "./App";
 

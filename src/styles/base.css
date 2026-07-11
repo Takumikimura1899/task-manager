@@ -3,10 +3,25 @@
  * クラスを持たない素の要素にだけ適用する。
  */
 @layer base {
+  /* ダーク固定テーマ。ネイティブ UI（select・スクロールバー等）もダーク描画にする */
+  :root {
+    color-scheme: dark;
+  }
+
   body {
     font-family: var(--font-sans);
     color: var(--color-text);
-    background: var(--color-bg);
+
+    /* 地色の上に隅のアンビエント光（右上=紫 / 左下=シアン）を重ねる。
+       fixed でスクロールしても光源が動かないようにする */
+    background:
+      var(--gradient-ambient) no-repeat fixed,
+      var(--color-bg);
+    scrollbar-color: var(--color-border) transparent;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 30%, transparent);
   }
 
   a {
@@ -15,9 +30,11 @@
   }
 
   /* キーボード操作の可視化。マウス操作では出ない（:focus-visible）ため、
-     リンク・ボタン・入力・ドラッグハンドルなど全インタラクティブ要素へ一律に適用する。 */
+     リンク・ボタン・入力・ドラッグハンドルなど全インタラクティブ要素へ一律に適用する。
+     outline は強制カラーモードでも生き残る本体、box-shadow はネオン発光の装飾。 */
   :focus-visible {
     outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+    box-shadow: var(--glow-accent-sm);
   }
 }
