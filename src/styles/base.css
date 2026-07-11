@@ -11,13 +11,22 @@
   body {
     font-family: var(--font-sans);
     color: var(--color-text);
-
-    /* 地色の上に隅のアンビエント光（右上=紫 / 左下=シアン）を重ねる。
-       fixed でスクロールしても光源が動かないようにする */
-    background:
-      var(--gradient-ambient) no-repeat fixed,
-      var(--color-bg);
+    background-color: var(--color-bg);
     scrollbar-color: var(--color-border) transparent;
+  }
+
+  /* 地色の上に隅のアンビエント光（右上=紫 / 左下=シアン）を重ねる。
+     body の background-attachment: fixed はスクロール毎の再ペイントコストが
+     大きいため、position: fixed の擬似要素に分離する。これで「スクロールしても
+     光源が動かない」意図を満たしつつ、ペイントは初回1回+合成のみになる */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: var(--gradient-ambient);
+    background-repeat: no-repeat;
   }
 
   ::selection {
