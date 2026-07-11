@@ -111,7 +111,14 @@ export function Home() {
         project={selected._id}
         projectKey={selected.key}
       />
-      <Board project={selected._id} projectKey={selected.key} />
+      {/* プロジェクト切替時に Board を再生成してローカル state（board /
+          syncedRef）を初期化する。key が無いと新データのロード中に旧プロジェクト
+          のカードが新しい projectKey で表示され、不正な URL へ遷移する（Issue #74）。 */}
+      <Board
+        key={selected._id}
+        project={selected._id}
+        projectKey={selected.key}
+      />
     </main>
   );
 }
