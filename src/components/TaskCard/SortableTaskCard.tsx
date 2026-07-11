@@ -1,5 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { memo } from "react";
 import type { BoardTask } from "../../lib/board";
 import { TaskCard } from "./TaskCard";
 import s from "./TaskCard.module.css";
@@ -15,8 +16,13 @@ import s from "./TaskCard.module.css";
  * ため（Issue #27）。KeyboardSensor もハンドルをアクティベータとして機能する。
  *
  * transform はドラッグ追従のため動的値であり、インラインstyleが正となる。
+ *
+ * memo: ドラッグ中は dragOver のたびに Board が再レンダリングされるため、
+ * props（task 参照 / projectKey）が不変のカードはスキップする（#80）。
+ * useSortable のコンテキスト更新による再レンダリングは transform 追従に
+ * 必要なので残る。
  */
-export function SortableTaskCard({
+export const SortableTaskCard = memo(function SortableTaskCard({
   task,
   projectKey,
 }: {
@@ -72,4 +78,4 @@ export function SortableTaskCard({
       />
     </div>
   );
-}
+});

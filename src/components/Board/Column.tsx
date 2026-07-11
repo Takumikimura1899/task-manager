@@ -3,6 +3,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { memo } from "react";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import type { BoardTask } from "../../lib/board";
 import { SortableTaskCard } from "../TaskCard/SortableTaskCard";
@@ -11,8 +12,11 @@ import s from "./Board.module.css";
 /**
  * カンバンの1列。列全体を droppable にし（空列でもドロップ可能）、
  * 中身は縦方向の SortableContext として並べる。
+ *
+ * memo: dragOver では変化した列以外の tasks 配列参照が維持される（Board 側）
+ * ため、未変更列の再レンダリングをスキップできる（#80）。
  */
-export function Column({
+export const Column = memo(function Column({
   status,
   label,
   tasks,
@@ -50,4 +54,4 @@ export function Column({
       </SortableContext>
     </section>
   );
-}
+});
