@@ -133,7 +133,12 @@
     cursor: pointer;
     transition: box-shadow var(--duration-fast) var(--ease-out);
 
-    &:hover {
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    &:hover:not(:disabled) {
       background: color-mix(
         in srgb,
         var(--color-danger) 8%,
@@ -185,7 +190,12 @@
     cursor: pointer;
     transition: box-shadow var(--duration-fast) var(--ease-out);
 
-    &:hover {
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    &:hover:not(:disabled) {
       box-shadow: var(--glow-danger);
     }
   }
@@ -197,6 +207,11 @@
     background: none;
     border: none;
     cursor: pointer;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
   }
 
   .error {

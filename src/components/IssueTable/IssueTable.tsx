@@ -25,6 +25,9 @@ export function IssueTable({
 }) {
   const removeIssue = useMutation(api.issues.remove);
   const [pending, setPending] = useState<PendingDelete | null>(null);
+  // エラー再試行のためパネルを開いたまま await するので、実行中の
+  // 二重確定や他行への pending 切替を防ぐ実行中フラグを持つ。
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const requestDelete = (issue: IssueSummary) => {
@@ -33,8 +36,9 @@ export function IssueTable({
   };
 
   const confirmDelete = async () => {
-    if (pending === null) return;
+    if (pending === null || deleting) return;
     setError(null);
+    setDeleting(true);
     try {
       await removeIssue({
         id: pending.id,
@@ -45,6 +49,8 @@ export function IssueTable({
       setError(
         err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
       );
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -141,8 +147,11 @@ export function IssueTable({
                       {issue.actualTotal === 0 ? "—" : `${issue.actualTotal}h`}
                     </td>
                     <td className={s.td}>
+                      {/* 確認フロー進行中は他行の削除を受け付けない（実行中の
+                          pending 切替で別行のパネルが閉じる競合を防ぐ）。 */}
                       <button
                         className={s.deleteButton}
+                        disabled={pending !== null}
                         onClick={() => requestDelete(issue)}
                         type="button"
                       >
@@ -161,6 +170,7 @@ export function IssueTable({
                           <div className={s.confirmActions}>
                             <button
                               className={s.danger}
+                              disabled={deleting}
                               onClick={() => void confirmDelete()}
                               type="button"
                             >
@@ -168,6 +178,7 @@ export function IssueTable({
                             </button>
                             <button
                               className={s.cancel}
+                              disabled={deleting}
                               onClick={() => setPending(null)}
                               type="button"
                             >

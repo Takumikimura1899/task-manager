@@ -170,6 +170,47 @@ describe("IssueTable の削除確認フロー", () => {
     expect(screen.queryByText("削除する")).not.toBeInTheDocument();
   });
 
+  it("確認パネル表示中は全行の削除ボタンを無効化する（pending 切替の競合防止）", async () => {
+    const user = userEvent.setup();
+    renderTable([
+      createIssueSummary({ _id: "issue_1" as Id<"issues">, number: 1 }),
+      createIssueSummary({ _id: "issue_2" as Id<"issues">, number: 2 }),
+    ]);
+
+    const deleteButtons = screen.getAllByRole("button", { name: "削除" });
+    await user.click(deleteButtons[0]);
+
+    for (const button of deleteButtons) {
+      expect(button).toBeDisabled();
+    }
+  });
+
+  it("削除の実行中は確定・キャンセルを無効化し、二重確定しても remove は1回だけ呼ぶ", async () => {
+    // 未解決の Promise で「実行中」の状態を固定する
+    let resolveRemove = () => {};
+    removeIssue.mockImplementationOnce(
+      () =>
+        new Promise<unknown>((resolve) => {
+          resolveRemove = () => resolve(undefined);
+        }),
+    );
+    const user = userEvent.setup();
+    renderTable([createIssueSummary()]);
+
+    await user.click(screen.getByRole("button", { name: "削除" }));
+    const confirmButton = screen.getByRole("button", { name: "削除する" });
+    await user.click(confirmButton);
+    await user.click(confirmButton); // 実行中の二重クリック
+
+    expect(removeIssue).toHaveBeenCalledTimes(1);
+    expect(confirmButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "キャンセル" })).toBeDisabled();
+
+    resolveRemove();
+    // 完了後はパネルが閉じ、削除ボタンが再度有効になる
+    expect(await screen.findByRole("button", { name: "削除" })).toBeEnabled();
+  });
+
   it("削除が失敗したら role=alert でエラーを表示し、確認パネルを維持する", async () => {
     removeIssue.mockRejectedValueOnce(new ConvexError("削除に失敗しました"));
     const user = userEvent.setup();
