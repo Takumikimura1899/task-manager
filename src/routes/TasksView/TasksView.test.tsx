@@ -99,8 +99,10 @@ describe("TasksView のプロジェクト切替（Issue #74）", () => {
       createQueryDispatcher({
         "projects:list": projects,
         "members:list": members,
-        // ActiveIssueStrip の購読。切替の検証には無関係のため空で固定する。
-        "issues:list": issues,
+        // ActiveIssueStrip の購読（issues.listInProgress）。切替の検証には
+        // 無関係のため空で固定し、帯が0件案内まで描画されること（配線の
+        // 生存確認）だけ下でアサートする。
+        "issues:listInProgress": issues,
         // 旧プロジェクトのみデータ済み。新プロジェクトはロード中（undefined）
         "tasks:board": (args: Record<string, unknown> | undefined) =>
           args?.project === projectA._id ? columnsA : undefined,
@@ -110,6 +112,11 @@ describe("TasksView のプロジェクト切替（Issue #74）", () => {
 
     // 切替前：旧プロジェクトのカードが表示されている
     expect(screen.getByRole("link", { name: "TASK-12" })).toBeInTheDocument();
+    // ActiveIssueStrip が listInProgress に接続され、ローディングではなく
+    // 0件案内まで描画されている（クエリ名の配線切れをここで検知する）
+    expect(
+      screen.getByText("進行中の Issue はありません。"),
+    ).toBeInTheDocument();
 
     await user.selectOptions(
       screen.getByRole("combobox", { name: "プロジェクト" }),

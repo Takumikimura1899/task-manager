@@ -1,6 +1,6 @@
 import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -33,14 +33,6 @@ export function IssueTable({
   // 二重確定や他行への pending 切替を防ぐ実行中フラグを持つ。
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // confirmDelete の完了ハンドラは in-flight 中に取得した pending の
-  // 最新値を必要とする（クロージャの pending は呼び出し時点のまま更新
-  // されない）。ref で常に最新値を追随させ、対象が完了時点でも pending の
-  // ままかを判定する。
-  const pendingRef = useRef(pending);
-  useEffect(() => {
-    pendingRef.current = pending;
-  }, [pending]);
 
   const pendingIssue =
     pending !== null ? (issues.find((i) => i._id === pending) ?? null) : null;
@@ -67,14 +59,9 @@ export function IssueTable({
       // 別行のパネルが開いていれば、それを誤って閉じない。
       setPending((p) => (p === targetId ? null : p));
     } catch (err) {
-      // pending が targetId のままの場合のみエラーを表示する。削除ボタンの
-      // disabled（deleting 併用）で通常は到達しないが、状態誤帰属を
-      // 構造的に不可能にする防御。
-      if (pendingRef.current === targetId) {
-        setError(
-          err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
-        );
-      }
+      setError(
+        err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
+      );
     } finally {
       setDeleting(false);
     }
