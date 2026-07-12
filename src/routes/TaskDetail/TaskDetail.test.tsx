@@ -96,6 +96,16 @@ describe("TaskDetail のローディング表示", () => {
   });
 });
 
+describe("TaskDetail の工数表示", () => {
+  it("二進浮動小数点の加算誤差を丸めて表示する（formatHours）", () => {
+    mocks.task = createTask({ estimate: 1.1 + 2.2, actual: 0.1 + 0.2 });
+    renderTaskDetail();
+
+    expect(screen.getByText("3.3h")).toBeInTheDocument();
+    expect(screen.getByText("0.3h")).toBeInTheDocument();
+  });
+});
+
 describe("TaskDetail の編集操作（Issue #32）", () => {
   it("編集ボタンで現在値（優先度含む）が入ったフォームを開き、保存で編集開始時点の revision を添えて更新する", async () => {
     const user = userEvent.setup();

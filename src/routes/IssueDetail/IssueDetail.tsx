@@ -7,8 +7,10 @@ import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { ISSUE_TEMPLATES } from "../../components/MarkdownEditor/templates";
+import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotice";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
+import { useCurrentMember } from "../../hooks/useCurrentMember";
 import { useEditForm } from "../../hooks/useEditForm";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { parseRefNumber } from "../../lib/routeParams";
@@ -32,10 +34,7 @@ export function IssueDetail() {
     api.issues.getByRef,
     number !== null ? { projectKey, number } : "skip",
   );
-  const members = useQuery(api.members.list);
-  // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする
-  // （AppLayout.tsx と同方針）。
-  const currentMember = members?.[0] ?? null;
+  const { members, currentMember } = useCurrentMember();
 
   const updateIssue = useMutation(api.issues.update);
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
@@ -174,8 +173,13 @@ export function IssueDetail() {
             </div>
           );
         })}
-        {currentMember !== null && (
+        {currentMember !== null ? (
           <AddTaskForm createdBy={currentMember._id} issue={issue._id} />
+        ) : (
+          // メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
+          // （Issue #16、AppLayout.tsx と同方針）。members 読み込み中（undefined）は
+          // 判定できないため何も出さない。
+          members !== undefined && <NoMembersNotice />
         )}
       </section>
 

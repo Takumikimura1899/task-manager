@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -9,6 +9,7 @@ import {
   requiresApproval,
 } from "../../../convex/lib/taskStatus";
 import { Badge } from "../../components/Badge/Badge";
+import { ConfirmPanel } from "../../components/ConfirmPanel/ConfirmPanel";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
@@ -16,6 +17,7 @@ import { Markdown } from "../../components/Markdown/Markdown";
 import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useEditForm } from "../../hooks/useEditForm";
+import { formatHours } from "../../lib/formatHours";
 import { parseRefNumber } from "../../lib/routeParams";
 import {
   PRIORITY_LABELS,
@@ -49,6 +51,11 @@ type TaskDraft = {
  * 未設定のつもりが 0h として登録されてしまう。
  * 不正値は ConvexError として投げ、useEditForm の既存エラー表示（role=alert）に
  * 乗せて画面に伝える（サイレント失敗を避ける・送信もしない）。
+ *
+ * 前提: 呼び出し元が badInput（例: Firefox で type="number" に非数値文字を
+ * 入力すると、テキストは見えたまま DOM の value だけが空文字になる状態）を
+ * 事前にガードしていること。ここでは badInput の空文字と「本当に未入力」の
+ * 空文字を区別できないため、区別を保つガードは呼び出し元の責務とする。
  */
 function parseHoursDraft(label: string, raw: string): number | null {
   const trimmed = raw.trim();
@@ -86,11 +93,26 @@ export function TaskDetail() {
   const assignTask = useMutation(api.tasks.assign);
   const deleteTask = useMutation(api.tasks.deleteTask);
 
+  // badInput（例: Firefox で type="number" に「8h」等の非数値文字を入力すると、
+  // テキストは表示されたまま DOM の value だけが空文字になる状態）を保存前に
+  // 検知するための参照。value の空文字だけでは「未入力」と区別できないため、
+  // input 自身の validity を見る必要がある（parseHoursDraft の docstring参照）。
+  const estimateInputRef = useRef<HTMLInputElement | null>(null);
+  const actualInputRef = useRef<HTMLInputElement | null>(null);
+
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
   // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
   const edit = useEditForm<TaskDraft>({
     save: async (draft) => {
       if (task === null || task === undefined) return;
+      // badInput のまま parseHoursDraft に通すと空文字＝未設定と誤解釈され、
+      // 既存の見積がサイレントにクリアされて保存されてしまうため先に弾く。
+      if (estimateInputRef.current?.validity.badInput) {
+        throw new ConvexError("予想工数は数値で入力してください");
+      }
+      if (actualInputRef.current?.validity.badInput) {
+        throw new ConvexError("実績工数は数値で入力してください");
+      }
       const estimate = parseHoursDraft("予想工数", draft.estimate);
       const actual = parseHoursDraft("実績工数", draft.actual);
       await updateFields({
@@ -203,21 +225,12 @@ export function TaskDetail() {
 
   // 破壊的操作の確認パネル。操作した場所（遷移ボタン／削除ボタン）の直下に出す。
   const confirmPanel = confirm !== null && (
-    <div className={s.confirmPanel}>
-      <p className={s.confirmMessage}>{confirm.message}</p>
-      <div className={s.confirmActions}>
-        <button className={s.danger} onClick={runConfirmed} type="button">
-          {confirm.label}
-        </button>
-        <button
-          className={s.cancel}
-          onClick={() => setConfirm(null)}
-          type="button"
-        >
-          キャンセル
-        </button>
-      </div>
-    </div>
+    <ConfirmPanel
+      confirmLabel={confirm.label}
+      message={confirm.message}
+      onCancel={() => setConfirm(null)}
+      onConfirm={runConfirmed}
+    />
   );
 
   return (
@@ -293,6 +306,7 @@ export function TaskDetail() {
                 className={s.editInput}
                 min="0"
                 onChange={(e) => edit.update({ estimate: e.target.value })}
+                ref={estimateInputRef}
                 step="0.5"
                 type="number"
                 value={edit.draft.estimate}
@@ -304,6 +318,7 @@ export function TaskDetail() {
                 className={s.editInput}
                 min="0"
                 onChange={(e) => edit.update({ actual: e.target.value })}
+                ref={actualInputRef}
                 step="0.5"
                 type="number"
                 value={edit.draft.actual}
@@ -369,11 +384,11 @@ export function TaskDetail() {
           </dd>
           <dt className={s.term}>予想工数</dt>
           <dd className={`${s.value} ${s.hours}`}>
-            {task.estimate === undefined ? "—" : `${task.estimate}h`}
+            {task.estimate === undefined ? "—" : formatHours(task.estimate)}
           </dd>
           <dt className={s.term}>実績工数</dt>
           <dd className={`${s.value} ${s.hours}`}>
-            {task.actual === undefined ? "—" : `${task.actual}h`}
+            {task.actual === undefined ? "—" : formatHours(task.actual)}
           </dd>
         </dl>
         {actionError !== null && (

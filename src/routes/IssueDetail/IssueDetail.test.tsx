@@ -170,7 +170,7 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
 });
 
 describe("IssueDetail の AddTaskForm 表示", () => {
-  it("メンバーがいる場合はタスク一覧末尾に AddTaskForm を表示する", () => {
+  it("メンバーがいる場合はタスク一覧末尾に AddTaskForm を表示し、NoMembersNotice は出さない", () => {
     mocks.issue = createIssue();
     mocks.members = [{ _id: "member_1", name: "Alice" }];
     renderIssueDetail();
@@ -178,9 +178,10 @@ describe("IssueDetail の AddTaskForm 表示", () => {
     expect(
       screen.getByRole("button", { name: "＋ タスク" }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
-  it("メンバーが0件の場合は AddTaskForm を表示しない", () => {
+  it("メンバーが0件（ロード完了）の場合は AddTaskForm の代わりに NoMembersNotice を表示する（Issue #16）", () => {
     mocks.issue = createIssue();
     mocks.members = [];
     renderIssueDetail();
@@ -188,6 +189,20 @@ describe("IssueDetail の AddTaskForm 表示", () => {
     expect(
       screen.queryByRole("button", { name: "＋ タスク" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "メンバーが登録されていない",
+    );
+  });
+
+  it("メンバーがロード中（undefined）は AddTaskForm も NoMembersNotice も出さない", () => {
+    mocks.issue = createIssue();
+    mocks.members = undefined;
+    renderIssueDetail();
+
+    expect(
+      screen.queryByRole("button", { name: "＋ タスク" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 });
 

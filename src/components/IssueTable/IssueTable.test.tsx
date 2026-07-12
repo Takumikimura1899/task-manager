@@ -110,6 +110,7 @@ describe("IssueTable の行内容", () => {
   });
 
   // 合計 0 は「未入力」と区別できないため、予想・実績とも "—" 表示に統一。
+  // 合計は浮動小数点の生値で届くため、表示は formatHours で丸める。
   it.each([
     { estimateTotal: 8, actualTotal: 0, estimateText: "8h", actualText: "—" },
     {
@@ -117,6 +118,12 @@ describe("IssueTable の行内容", () => {
       actualTotal: 5,
       estimateText: "—",
       actualText: "5h",
+    },
+    {
+      estimateTotal: 1.1 + 2.2, // 3.3000000000000003
+      actualTotal: 0.1 + 0.2, // 0.30000000000000004
+      estimateText: "3.3h",
+      actualText: "0.3h",
     },
   ])(
     "予想 $estimateTotal / 実績 $actualTotal 時間を表示する",
@@ -187,7 +194,7 @@ describe("IssueTable の削除確認フロー", () => {
 
   it("削除の実行中は確定・キャンセルを無効化し、二重確定しても remove は1回だけ呼ぶ", async () => {
     // 未解決の Promise で「実行中」の状態を固定する
-    let resolveRemove = () => {};
+    let resolveRemove: (() => void) | undefined;
     removeIssue.mockImplementationOnce(
       () =>
         new Promise<unknown>((resolve) => {
@@ -206,7 +213,7 @@ describe("IssueTable の削除確認フロー", () => {
     expect(confirmButton).toBeDisabled();
     expect(screen.getByRole("button", { name: "キャンセル" })).toBeDisabled();
 
-    resolveRemove();
+    resolveRemove?.();
     // 完了後はパネルが閉じ、削除ボタンが再度有効になる
     expect(await screen.findByRole("button", { name: "削除" })).toBeEnabled();
   });
@@ -226,5 +233,63 @@ describe("IssueTable の削除確認フロー", () => {
     expect(
       screen.getByRole("button", { name: "削除する" }),
     ).toBeInTheDocument();
+  });
+
+  it("確認パネル表示中に対象 Issue が外部で削除されると、パネルが消え全行の削除ボタンが有効に戻る", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderTable([
+      createIssueSummary({ _id: "issue_1" as Id<"issues">, number: 1 }),
+      createIssueSummary({ _id: "issue_2" as Id<"issues">, number: 2 }),
+    ]);
+
+    const deleteButtons = screen.getAllByRole("button", { name: "削除" });
+    await user.click(deleteButtons[0]);
+    expect(screen.getByText("削除する")).toBeInTheDocument();
+
+    // 別タブ・MCP・他ユーザーによる外部削除を購読更新（props 更新）で再現する
+    rerender(
+      <MemoryRouter>
+        <IssueTable
+          issues={[
+            createIssueSummary({ _id: "issue_2" as Id<"issues">, number: 2 }),
+          ]}
+          projectKey="TASK"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.queryByText("削除する")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "削除" })).toBeEnabled();
+  });
+
+  it("パネル表示中に対象 Issue の revision が進むと、確定は最新の revision で remove を呼ぶ", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderTable([
+      createIssueSummary({ _id: "issue_9" as Id<"issues">, revision: 4 }),
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "削除" }));
+
+    // パネルを開いている間に別更新で revision が進んだ状態を再現する
+    rerender(
+      <MemoryRouter>
+        <IssueTable
+          issues={[
+            createIssueSummary({
+              _id: "issue_9" as Id<"issues">,
+              revision: 7,
+            }),
+          ]}
+          projectKey="TASK"
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    expect(removeIssue).toHaveBeenCalledWith({
+      id: "issue_9",
+      expectedRevision: 7,
+    });
   });
 });

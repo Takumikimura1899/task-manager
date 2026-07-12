@@ -7,8 +7,11 @@ import { IssuesView } from "./IssuesView";
 
 /**
  * IssuesView は issues.list をこの1箇所だけで購読し、IssueStats /
- * NewIssueForm（または NoMembersNotice）/ IssueTable へ props で配る。
- * ローディング表示・購読値の反映・メンバー0件時の分岐を検証する。
+ * NewIssueForm / IssueTable へ props で配る。ローディング表示・購読値の反映・
+ * NewIssueForm の表示条件を検証する。
+ * NoMembersNotice（currentMember が null のときの案内）は AppLayout 側に
+ * 責務が一元化されているため、ここでは「IssuesView 自身は出さない」ことのみ
+ * 確認する（表示内容自体の検証は AppLayout.test.tsx / NoMembersNotice.test.tsx）。
  * Convex（useQuery / useMutation）は外部依存のためモックし、
  * useAppOutletContext（useOutletContext）は実物の <Outlet context> 経由で
  * 値を注入する（AppLayout 自体の実装には依存しない）。
@@ -106,6 +109,14 @@ describe("IssuesView のローディング表示", () => {
       screen.queryByRole("heading", { name: /Issue 一覧/ }),
     ).not.toBeInTheDocument();
   });
+
+  it("issues ロード中でも currentMember がいれば NewIssueForm を表示する", () => {
+    renderIssuesView();
+
+    expect(
+      screen.getByRole("button", { name: "＋ 新規 Issue" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("IssuesView の購読値の反映", () => {
@@ -139,26 +150,24 @@ describe("IssuesView の購読値の反映", () => {
   });
 });
 
-describe("IssuesView のメンバー0件分岐", () => {
-  it("currentMember が null かつ members 取得済みなら NoMembersNotice を表示する", () => {
+describe("IssuesView の NewIssueForm 表示条件", () => {
+  it("currentMember が null の場合は NewIssueForm を表示しない（NoMembersNotice も出さない）", () => {
     mocks.issues = [];
     renderIssuesView({ currentMember: null, members: [] });
 
-    expect(screen.getByRole("note")).toHaveTextContent(
-      "メンバーが登録されていない",
-    );
     expect(
       screen.queryByRole("button", { name: "＋ 新規 Issue" }),
     ).not.toBeInTheDocument();
+    // NoMembersNotice は AppLayout 側に責務が一元化されたため、IssuesView 自身は出さない
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
-  it("currentMember がいる場合は NewIssueForm を表示し、NoMembersNotice は出さない", () => {
+  it("currentMember がいる場合は NewIssueForm を表示する", () => {
     mocks.issues = [];
     renderIssuesView();
 
     expect(
       screen.getByRole("button", { name: "＋ 新規 Issue" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 });

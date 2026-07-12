@@ -3,6 +3,8 @@ import { useState } from "react";
 import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import { useCurrentMember } from "../../hooks/useCurrentMember";
+import { NoMembersNotice } from "../NoMembersNotice/NoMembersNotice";
 import { Skeleton } from "../Skeleton/Skeleton";
 import s from "./AppLayout.module.css";
 
@@ -12,13 +14,18 @@ import s from "./AppLayout.module.css";
 const SELECTED_PROJECT_KEY = "selectedProjectId";
 
 // sessionStorage はプライベートブラウジングやストレージ無効環境で例外を投げうる。
-// 選択保持は補助機能のため、失敗時はクラッシュさせず黙ってデグレードする。
+// 選択保持は補助機能のため、失敗時はクラッシュさせずログを残した上でデグレードする
+// （CLAUDE.md「サイレント失敗の回避」）。
 function readSelectedProject(): Id<"projects"> | null {
   try {
     return sessionStorage.getItem(
       SELECTED_PROJECT_KEY,
     ) as Id<"projects"> | null;
-  } catch {
+  } catch (err) {
+    console.warn(
+      "プロジェクト選択の復元に失敗しました（sessionStorage 不可）",
+      err,
+    );
     return null;
   }
 }
@@ -26,8 +33,12 @@ function readSelectedProject(): Id<"projects"> | null {
 function writeSelectedProject(id: Id<"projects">): void {
   try {
     sessionStorage.setItem(SELECTED_PROJECT_KEY, id);
-  } catch {
+  } catch (err) {
     // 保存できなくても遷移自体は機能する（次回復元できないだけ）。
+    console.warn(
+      "プロジェクト選択の保存に失敗しました（sessionStorage 不可）",
+      err,
+    );
   }
 }
 
@@ -45,7 +56,7 @@ export function useAppOutletContext(): AppOutletContext {
 
 export function AppLayout() {
   const projects = useQuery(api.projects.list);
-  const members = useQuery(api.members.list);
+  const { members, currentMember } = useCurrentMember();
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
@@ -54,9 +65,6 @@ export function AppLayout() {
     setSelectedId(id);
     writeSelectedProject(id);
   }
-
-  // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする。
-  const currentMember = members?.[0] ?? null;
 
   // 読み込み中もタイトルと画面枠を維持し、プロジェクト選択・Issue 一覧・
   // ボードが入る領域をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
@@ -116,6 +124,10 @@ export function AppLayout() {
           </select>
         </label>
       </header>
+      {/* メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
+          （Issue #16）。/ と /issues の両方をここで一元的にカバーする。
+          members 読み込み中（undefined）は判定できないため何も出さない。 */}
+      {currentMember === null && members !== undefined && <NoMembersNotice />}
       {/* 画面本体（タスク一覧 / Issue 一覧）は子ルートが描画する。main
           ランドマークは各子ルート（TasksView / IssuesView）側が持つため、
           ここでは main にしない（Issue #17 の ErrorBoundary フォールバックも

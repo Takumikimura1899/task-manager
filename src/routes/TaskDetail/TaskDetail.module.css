@@ -230,58 +230,6 @@
     color: var(--color-danger);
   }
 
-  /* 破壊的操作の確認パネル（削除・done/canceled への遷移） */
-  .confirmPanel {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    background: color-mix(
-      in srgb,
-      var(--color-danger) 5%,
-      var(--color-surface)
-    );
-    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
-    border-radius: var(--radius-md);
-  }
-
-  .confirmMessage {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-text);
-  }
-
-  .confirmActions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .danger {
-    padding: var(--space-1) var(--space-4);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    color: var(--color-text-inverse);
-    background: var(--color-danger);
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: box-shadow var(--duration-fast) var(--ease-out);
-  }
-
-  .danger:hover {
-    box-shadow: var(--glow-danger);
-  }
-
-  .cancel {
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    background: none;
-    border: none;
-    cursor: pointer;
-  }
-
   /* 破壊的操作セクション（削除導線） */
   .dangerSection {
     display: flex;

@@ -141,6 +141,97 @@ describe("AppLayout のタブナビ", () => {
   );
 });
 
+describe("AppLayout のメンバー0件案内（Issue #16）", () => {
+  it("メンバーが0件（ロード完了）なら NoMembersNotice を表示する", () => {
+    const project = createProject();
+    useQueryMock.mockImplementation((name) => {
+      switch (name) {
+        case "projects:list":
+          return [project];
+        case "members:list":
+          return [];
+        default:
+          return undefined;
+      }
+    });
+    renderAppLayout();
+
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "メンバーが登録されていない",
+    );
+  });
+
+  it("メンバーがロード中（undefined）は NoMembersNotice を表示しない", () => {
+    const project = createProject();
+    useQueryMock.mockImplementation((name) =>
+      name === "projects:list" ? [project] : undefined,
+    );
+    renderAppLayout();
+
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("メンバーがいる場合は NoMembersNotice を表示しない", () => {
+    const project = createProject();
+    const member = createMember();
+    useQueryMock.mockImplementation((name) => {
+      switch (name) {
+        case "projects:list":
+          return [project];
+        case "members:list":
+          return [member];
+        default:
+          return undefined;
+      }
+    });
+    renderAppLayout();
+
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppLayout の sessionStorage 例外時のデグレード", () => {
+  it("復元時に sessionStorage が例外を投げても console.warn を出し、既定（先頭プロジェクト）へデグレードする", () => {
+    const projectA = createProject();
+    const projectB = createProject({
+      _id: "project_2" as Id<"projects">,
+      key: "WEB",
+      name: "Web サイト",
+    });
+    useQueryMock.mockImplementation((name) => {
+      switch (name) {
+        case "projects:list":
+          return [projectA, projectB];
+        case "members:list":
+          return [createMember()];
+        default:
+          return undefined;
+      }
+    });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const getItemSpy = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("sessionStorage disabled");
+      });
+
+    try {
+      renderAppLayout();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        "プロジェクト選択の復元に失敗しました（sessionStorage 不可）",
+        expect.any(Error),
+      );
+      expect(
+        screen.getByRole("combobox", { name: "プロジェクト" }),
+      ).toHaveValue(projectA._id);
+    } finally {
+      getItemSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+});
+
 describe("AppLayout のプロジェクト select", () => {
   it("プロジェクト一覧を選択肢に表示し、先頭プロジェクトを選択値にする", () => {
     const projectA = createProject();
