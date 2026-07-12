@@ -7,7 +7,29 @@ import { DetailEditForm } from "./DetailEditForm";
  * 詳細画面共通の編集フォームの表示（ラベル付き入力・保存可否・
  * エラーの SR 通知・競合時の再読込導線）を検証する。
  * 状態は呼び出し側が持つため、props 経由のコールバック発火を確認する。
+ *
+ * MarkdownEditor（@uiw/react-md-editor）は jsdom で不安定な API に依存する
+ * 重量ライブラリのため、同じ contract（value/onChange/ariaLabel）を持つ
+ * textarea スタブへ差し替える。エディタ自体の振る舞いはライブラリ責務。
  */
+
+vi.mock("../MarkdownEditor/MarkdownEditor", () => ({
+  MarkdownEditor: ({
+    value,
+    onChange,
+    ariaLabel,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    ariaLabel: string;
+  }) => (
+    <textarea
+      aria-label={ariaLabel}
+      onChange={(e) => onChange(e.target.value)}
+      value={value}
+    />
+  ),
+}));
 
 type Props = Parameters<typeof DetailEditForm>[0];
 
@@ -23,16 +45,18 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   conflict: false,
   onReload: vi.fn<Props["onReload"]>(),
   saving: false,
+  templates: [],
   ...overrides,
 });
 
 describe("DetailEditForm", () => {
-  it("ラベル付きのタイトル・説明入力に現在値を表示する", () => {
+  it("ラベル付きのタイトル・説明入力に現在値を表示する", async () => {
     render(<DetailEditForm {...createProps()} />);
 
     expect(screen.getByRole("form", { name: "Issue を編集" })).toBeVisible();
     expect(screen.getByLabelText("タイトル")).toHaveValue("元のタイトル");
-    expect(screen.getByLabelText("説明")).toHaveValue("元の説明");
+    // 説明エディタは lazy ロードのため findBy で解決を待つ
+    expect(await screen.findByLabelText("説明")).toHaveValue("元の説明");
   });
 
   it("入力の変更がコールバックへ伝わる", async () => {
@@ -41,7 +65,7 @@ describe("DetailEditForm", () => {
     render(<DetailEditForm {...props} />);
 
     await user.type(screen.getByLabelText("タイトル"), "あ");
-    await user.type(screen.getByLabelText("説明"), "い");
+    await user.type(await screen.findByLabelText("説明"), "い");
 
     expect(props.onTitle).toHaveBeenCalledWith("元のタイトルあ");
     expect(props.onDescription).toHaveBeenCalledWith("元の説明い");

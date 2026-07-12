@@ -24,6 +24,25 @@ vi.mock("convex/react", () => ({
   useMutation: () => mocks.mutate,
 }));
 
+// Markdown エディタは jsdom で不安定な重量ライブラリのため textarea スタブへ差し替える
+vi.mock("../../components/MarkdownEditor/MarkdownEditor", () => ({
+  MarkdownEditor: ({
+    value,
+    onChange,
+    ariaLabel,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    ariaLabel: string;
+  }) => (
+    <textarea
+      aria-label={ariaLabel}
+      onChange={(e) => onChange(e.target.value)}
+      value={value}
+    />
+  ),
+}));
+
 const createTask = (overrides: Record<string, unknown> = {}) => ({
   _id: "task1",
   _creationTime: 1751900000000,

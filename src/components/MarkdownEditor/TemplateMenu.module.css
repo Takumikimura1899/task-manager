@@ -1,0 +1,25 @@
+@layer components {
+  .menu {
+    display: flex;
+    flex-direction: column;
+    min-width: 10rem;
+    padding: var(--space-1);
+  }
+
+  .item {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    text-align: start;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+
+  .item:hover {
+    color: var(--color-accent);
+    background: var(--color-subtle);
+  }
+}

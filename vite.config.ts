@@ -1,9 +1,34 @@
 import react from "@vitejs/plugin-react";
+import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+
+/**
+ * @uiw/react-md-editor 等が JS から副作用 import するベンダー CSS を空にする。
+ * そのままだとカスケードレイヤー外の CSS として注入され、@layer components の
+ * 上書きが効かなくなるため、src/styles/index.css で layer(vendor) として
+ * 一元 import する（フロントエンドCSS規約 参照）。
+ *
+ * dev では依存の事前バンドル（.vite/deps）経由になり importer が
+ * node_modules を指さないため、解決対象の id 側でも判定する（dev/prod パリティ）。
+ */
+function stripVendorCss(): Plugin {
+  const EMPTY = "\0vendor-empty-css";
+  return {
+    name: "strip-vendor-css",
+    enforce: "pre",
+    resolveId: (id, importer) =>
+      id.endsWith(".css") &&
+      (importer?.includes("/node_modules/@uiw/") ||
+        id.includes("/node_modules/@uiw/"))
+        ? EMPTY
+        : undefined,
+    load: (id) => (id === EMPTY ? "export {}" : undefined),
+  };
+}
 
 // フロントエンド（SPA）のビルド設定。Convex 関数(convex/)とは独立。
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), stripVendorCss()],
   server: {
     port: 5173,
   },

@@ -25,7 +25,7 @@
 排除するのが目的。順序は `src/styles/index.css` で一度だけ宣言する:
 
 ```css
-@layer reset, tokens, base, components, utilities;
+@layer reset, tokens, base, vendor, components, utilities;
 ```
 
 | レイヤー | 役割 | 例 |
@@ -33,10 +33,23 @@
 | `reset` | 要素の素の挙動を整える最小リセット | `box-sizing`, `margin: 0` |
 | `tokens` | デザイントークン（`:root` のカスタムプロパティ） | `--color-*`, `--space-*` |
 | `base` | クラスを持たない素の要素の地の装飾 | `body`, `a` |
+| `vendor` | サードパーティ CSS（レイヤー付き import で取り込む） | `@uiw/react-md-editor` |
 | `components` | コンポーネント単位のスタイル（`*.module.css`） | `.card`, `.board` |
 | `utilities` | 横断的な単機能クラス（最強・濫用禁止） | `.hint` |
 
 各CSSファイルは**自分の属するレイヤーで中身をラップする**（例: `@layer components { … }`）。
+
+### vendor レイヤー（サードパーティ CSS）
+
+レイヤー外の CSS はすべてのレイヤーより強く、`components` の上書きを破壊する。
+そのためサードパーティ CSS は次の手順で必ず `vendor` レイヤーに取り込む:
+
+1. ライブラリ JS からの副作用 import（`import "xxx.css"`）は `vite.config.ts` の
+   `stripVendorCss` プラグインで空モジュール化する。
+2. `src/styles/index.css` から `@import "…" layer(vendor);` で一元 import する。
+3. テーマ調整はトークンへの橋渡しファイル（例: `src/styles/markdown-theme.css`、
+   `@layer components`）で行う。ベンダーのクラスは CSS Modules の管轄外のため、
+   `:global` は使わずこの橋渡しファイルに集約する。
 
 ---
 
@@ -149,11 +162,12 @@ import s from "./TaskCard.module.css";
 ```
 src/
   styles/
-    index.css       # @layer宣言 + 基盤のimportエントリ（main.tsxで最初に読む）
-    reset.css       # @layer reset
-    tokens.css      # @layer tokens
-    base.css        # @layer base
-    utilities.css   # @layer utilities
+    index.css          # @layer宣言 + 基盤のimportエントリ（main.tsxで最初に読む）
+    reset.css          # @layer reset
+    tokens.css         # @layer tokens
+    base.css           # @layer base
+    markdown-theme.css # @layer components（vendor CSSへのトークン橋渡し）
+    utilities.css      # @layer utilities
   components/
     <Component>/
       <Component>.tsx

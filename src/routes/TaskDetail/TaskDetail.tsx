@@ -13,6 +13,7 @@ import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
 import { Markdown } from "../../components/Markdown/Markdown";
+import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useEditForm } from "../../hooks/useEditForm";
 import { parseRefNumber } from "../../lib/routeParams";
@@ -240,6 +241,7 @@ export function TaskDetail() {
             onSubmit={edit.submit}
             onTitle={(title) => edit.update({ title })}
             saving={edit.saving}
+            templates={TASK_TEMPLATES}
             title={edit.draft.title}
           >
             <label className={s.editField}>

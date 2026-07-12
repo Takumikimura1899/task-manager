@@ -21,6 +21,25 @@ vi.mock("convex/react", () => ({
   useMutation: () => mocks.mutate,
 }));
 
+// Markdown エディタは jsdom で不安定な重量ライブラリのため textarea スタブへ差し替える
+vi.mock("../../components/MarkdownEditor/MarkdownEditor", () => ({
+  MarkdownEditor: ({
+    value,
+    onChange,
+    ariaLabel,
+  }: {
+    value: string;
+    onChange: (value: string) => void;
+    ariaLabel: string;
+  }) => (
+    <textarea
+      aria-label={ariaLabel}
+      onChange={(e) => onChange(e.target.value)}
+      value={value}
+    />
+  ),
+}));
+
 const createIssue = (overrides: Record<string, unknown> = {}) => ({
   _id: "issue1",
   _creationTime: 1751900000000,
@@ -80,7 +99,10 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
     expect(screen.getByLabelText("タイトル")).toHaveValue(
       "ログイン機能を実装する",
     );
-    expect(screen.getByLabelText("説明")).toHaveValue("認証まわりの説明");
+    // 説明エディタは lazy ロードのため findBy で解決を待つ
+    expect(await screen.findByLabelText("説明")).toHaveValue(
+      "認証まわりの説明",
+    );
     // 編集中は閲覧用の見出しを隠す
     expect(
       screen.queryByRole("heading", { name: "ログイン機能を実装する" }),

@@ -5,6 +5,7 @@ import { Badge } from "../../components/Badge/Badge";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
+import { ISSUE_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
 import { useEditForm } from "../../hooks/useEditForm";
@@ -132,6 +133,7 @@ export function IssueDetail() {
             onSubmit={edit.submit}
             onTitle={(title) => edit.update({ title })}
             saving={edit.saving}
+            templates={ISSUE_TEMPLATES}
             title={edit.draft.title}
           />
         </section>

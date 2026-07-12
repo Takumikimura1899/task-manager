@@ -1,10 +1,19 @@
-import type { FormEvent, ReactNode } from "react";
+import { lazy, Suspense, type FormEvent, type ReactNode } from "react";
+import type { MarkdownTemplate } from "../MarkdownEditor/templates";
 import s from "./DetailEditForm.module.css";
+
+// Markdown エディタはバンドルが重いため、編集モードに入ったときだけ読み込む。
+const MarkdownEditor = lazy(() =>
+  import("../MarkdownEditor/MarkdownEditor").then((m) => ({
+    default: m.MarkdownEditor,
+  })),
+);
 
 /**
  * 詳細画面（Issue / Task）共通のタイトル・説明編集フォーム。
  * 状態は useEditForm（呼び出し側）が持ち、本コンポーネントは表示に徹する。
  * 追加フィールド（Task の優先度など）は children として説明の下に差し込む。
+ * 説明は Markdown エディタ（ツールバー・プレビュー・テンプレート挿入付き）で編集する。
  *
  * 楽観ロック競合時（conflict）は role="alert" のエラーに加えて
  * 「最新の内容を読み込んで編集し直す」導線を表示する。useQuery が最新へ
@@ -22,6 +31,7 @@ export function DetailEditForm({
   conflict,
   onReload,
   saving,
+  templates,
   children,
 }: {
   formLabel: string;
@@ -35,6 +45,7 @@ export function DetailEditForm({
   conflict: boolean;
   onReload: () => void;
   saving: boolean;
+  templates: MarkdownTemplate[];
   children?: ReactNode;
 }) {
   return (
@@ -47,15 +58,27 @@ export function DetailEditForm({
           value={title}
         />
       </label>
-      <label className={s.field}>
-        説明
-        <textarea
-          className={s.textarea}
-          onChange={(e) => onDescription(e.target.value)}
-          rows={8}
-          value={description}
-        />
-      </label>
+      <div className={s.field}>
+        <span>説明</span>
+        <Suspense
+          fallback={
+            <textarea
+              aria-label="説明"
+              className={s.textarea}
+              readOnly
+              rows={8}
+              value={description}
+            />
+          }
+        >
+          <MarkdownEditor
+            ariaLabel="説明"
+            onChange={onDescription}
+            templates={templates}
+            value={description}
+          />
+        </Suspense>
+      </div>
       {children}
       {error !== null && (
         <div className={s.errorRow}>

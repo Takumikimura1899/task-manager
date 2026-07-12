@@ -1,0 +1,57 @@
+/**
+ * @uiw/react-md-editor / react-markdown-preview（vendor レイヤー）へのテーマ適用。
+ * ベンダーのクラス（.w-md-editor / .wmde-markdown）は CSS Modules の管轄外のため、
+ * トークンへの橋渡しと外観調整をここに集約する。components レイヤーなので
+ * vendor に必ず勝つ。prism のシンタックス色（--color-prettylights-syntax-*）は
+ * ベンダーのダーク既定値を温存する（トークン化は過剰なため）。
+ */
+@layer components {
+  .w-md-editor,
+  .wmde-markdown,
+  .wmde-markdown-var {
+    --md-editor-background-color: var(--color-surface);
+    --md-editor-font-family: var(--font-sans);
+    --color-canvas-default: var(--color-surface);
+    --color-canvas-subtle: var(--color-subtle);
+    --color-fg-default: var(--color-text);
+    --color-fg-muted: var(--color-text-muted);
+    --color-fg-subtle: var(--color-text-muted);
+    --color-border-default: var(--color-border);
+    --color-border-muted: var(--color-border);
+    --color-neutral-muted: var(--color-subtle);
+    --color-accent-fg: var(--color-accent);
+    --color-accent-emphasis: var(--color-accent);
+    --color-danger-fg: var(--color-danger);
+  }
+
+  /* エディタ枠を既存フォームの .input / .textarea と揃える */
+  .w-md-editor {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    box-shadow: none;
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+
+    &:focus-within {
+      border-color: var(--color-accent);
+      box-shadow: var(--glow-accent-sm);
+    }
+  }
+
+  /* Markdown 本文のタイポグラフィ（旧 Markdown.module.css から移管） */
+  .wmde-markdown {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-md);
+    line-height: 1.7;
+    background: transparent;
+
+    & > :first-child {
+      margin-block-start: 0;
+    }
+
+    & > :last-child {
+      margin-block-end: 0;
+    }
+  }
+}
