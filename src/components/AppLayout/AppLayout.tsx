@@ -1,27 +1,34 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
+import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
-import { Board } from "../../components/Board/Board";
-import { IssueList } from "../../components/IssueList/IssueList";
-import { NewIssueForm } from "../../components/NewIssueForm/NewIssueForm";
-import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotice";
-import { Skeleton } from "../../components/Skeleton/Skeleton";
-import s from "./Home.module.css";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import {
+  type MemberSummary,
+  useCurrentMember,
+} from "../../hooks/useCurrentMember";
+import { NoMembersNotice } from "../NoMembersNotice/NoMembersNotice";
+import { Skeleton } from "../Skeleton/Skeleton";
+import s from "./AppLayout.module.css";
 
 // 選択中プロジェクトを session 内で保持するキー。
-// 詳細画面へ遷移すると Home はアンマウントされ useState が失われるため、
+// 詳細画面へ遷移すると AppLayout はアンマウントされ useState が失われるため、
 // 「← 一覧へ」で戻った際に選択を復元できるよう sessionStorage に退避する。
 const SELECTED_PROJECT_KEY = "selectedProjectId";
 
 // sessionStorage はプライベートブラウジングやストレージ無効環境で例外を投げうる。
-// 選択保持は補助機能のため、失敗時はクラッシュさせず黙ってデグレードする。
+// 選択保持は補助機能のため、失敗時はクラッシュさせずログを残した上でデグレードする
+// （CLAUDE.md「サイレント失敗の回避」）。
 function readSelectedProject(): Id<"projects"> | null {
   try {
     return sessionStorage.getItem(
       SELECTED_PROJECT_KEY,
     ) as Id<"projects"> | null;
-  } catch {
+  } catch (err) {
+    console.warn(
+      "プロジェクト選択の復元に失敗しました（sessionStorage 不可）",
+      err,
+    );
     return null;
   }
 }
@@ -29,14 +36,30 @@ function readSelectedProject(): Id<"projects"> | null {
 function writeSelectedProject(id: Id<"projects">): void {
   try {
     sessionStorage.setItem(SELECTED_PROJECT_KEY, id);
-  } catch {
+  } catch (err) {
     // 保存できなくても遷移自体は機能する（次回復元できないだけ）。
+    console.warn(
+      "プロジェクト選択の保存に失敗しました（sessionStorage 不可）",
+      err,
+    );
   }
 }
 
-export function Home() {
+type AppOutletContext = {
+  projects: Doc<"projects">[];
+  selected: Doc<"projects">;
+  members: MemberSummary[] | undefined;
+  currentMember: MemberSummary | null;
+};
+
+/** 子ルート（TasksView / IssuesView）から選択中プロジェクトと購読済みメンバーを取り出す。 */
+export function useAppOutletContext(): AppOutletContext {
+  return useOutletContext<AppOutletContext>();
+}
+
+export function AppLayout() {
   const projects = useQuery(api.projects.list);
-  const members = useQuery(api.members.list);
+  const { members, currentMember } = useCurrentMember();
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
@@ -45,9 +68,6 @@ export function Home() {
     setSelectedId(id);
     writeSelectedProject(id);
   }
-
-  // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする。
-  const currentMember = members?.[0] ?? null;
 
   // 読み込み中もタイトルと画面枠を維持し、プロジェクト選択・Issue 一覧・
   // ボードが入る領域をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
@@ -81,9 +101,17 @@ export function Home() {
   const selected = projects.find((p) => p._id === selectedId) ?? projects[0];
 
   return (
-    <main className={s.app}>
+    <div className={s.app}>
       <header className={s.header}>
         <h1 className={s.title}>Task Manager</h1>
+        <nav className={s.nav}>
+          <NavLink className={s.navLink} end to="/">
+            タスク
+          </NavLink>
+          <NavLink className={s.navLink} to="/issues">
+            Issue
+          </NavLink>
+        </nav>
         <label className={s.picker}>
           プロジェクト
           <select
@@ -99,26 +127,15 @@ export function Home() {
           </select>
         </label>
       </header>
-      {currentMember !== null ? (
-        <NewIssueForm createdBy={currentMember._id} project={selected._id} />
-      ) : (
-        // メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
-        // （Issue #16）。members 読み込み中（undefined）は判定できないため何も出さない。
-        members !== undefined && <NoMembersNotice />
-      )}
-      <IssueList
-        createdBy={currentMember?._id ?? null}
-        project={selected._id}
-        projectKey={selected.key}
-      />
-      {/* プロジェクト切替時に Board を再生成してローカル state（board /
-          syncedRef）を初期化する。key が無いと新データのロード中に旧プロジェクト
-          のカードが新しい projectKey で表示され、不正な URL へ遷移する（Issue #74）。 */}
-      <Board
-        key={selected._id}
-        project={selected._id}
-        projectKey={selected.key}
-      />
-    </main>
+      {/* メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
+          （Issue #16）。/ と /issues の両方をここで一元的にカバーする。
+          members 読み込み中（undefined）は判定できないため何も出さない。 */}
+      {currentMember === null && members !== undefined && <NoMembersNotice />}
+      {/* 画面本体（タスク一覧 / Issue 一覧）は子ルートが描画する。main
+          ランドマークは各子ルート（TasksView / IssuesView）側が持つため、
+          ここでは main にしない（Issue #17 の ErrorBoundary フォールバックも
+          main を持つため、二重にしない）。 */}
+      <Outlet context={{ projects, selected, members, currentMember }} />
+    </div>
   );
 }

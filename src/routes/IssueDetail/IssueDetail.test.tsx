@@ -8,16 +8,19 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 /**
  * Issue 詳細のローディング表示（Issue #29）と編集フロー（Issue #32）を検証する。
  * Convex は外部依存のためモックし、購読値（issue）とミューテーション呼び出しを
- * テストごとに差し替える。
+ * テストごとに差し替える。getByRef は引数付き・members.list は引数なしで
+ * 呼ばれる性質を使って購読値を出し分ける（TaskDetail.test.tsx と同方式）。
  */
 
 const mocks = vi.hoisted(() => ({
   issue: undefined as unknown,
+  members: [] as unknown,
   mutate: vi.fn<(args: Record<string, unknown>) => Promise<unknown>>(),
 }));
 
 vi.mock("convex/react", () => ({
-  useQuery: () => mocks.issue,
+  useQuery: (_query: unknown, args?: unknown) =>
+    args === undefined ? mocks.members : mocks.issue,
   useMutation: () => mocks.mutate,
 }));
 
@@ -49,6 +52,7 @@ const createIssue = (overrides: Record<string, unknown> = {}) => ({
   title: "ログイン機能を実装する",
   description: "認証まわりの説明",
   status: "in_progress",
+  priority: "none",
   tasks: [],
   createdByName: "木村",
   updatedAt: 1751900000000,
@@ -69,6 +73,7 @@ const renderIssueDetail = () => render(issueDetailUi());
 
 beforeEach(() => {
   mocks.issue = undefined;
+  mocks.members = [];
   mocks.mutate.mockReset();
   mocks.mutate.mockResolvedValue(undefined);
 });
@@ -132,10 +137,35 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
       expectedRevision: 7,
       title: "ログイン機能（改）",
       description: "認証まわりの説明",
+      priority: "none",
     });
     expect(
       screen.queryByRole("form", { name: "Issue を編集" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("編集フォームに優先度 select が現在値入りで表示される", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ priority: "high" });
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+
+    expect(screen.getByLabelText("優先度")).toHaveValue("high");
+  });
+
+  it("優先度を変更して保存すると update に新しい priority が渡る", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ priority: "none" });
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+    await user.selectOptions(screen.getByLabelText("優先度"), "urgent");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: "urgent" }),
+    );
   });
 
   it("楽観ロック競合時はエラーと再取得導線を表示し、再読込で最新値から編集し直せる", async () => {
@@ -162,6 +192,43 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
       "ログイン機能を実装する",
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("IssueDetail の AddTaskForm 表示", () => {
+  it("メンバーがいる場合はタスク一覧末尾に AddTaskForm を表示し、NoMembersNotice は出さない", () => {
+    mocks.issue = createIssue();
+    mocks.members = [{ _id: "member_1", name: "Alice" }];
+    renderIssueDetail();
+
+    expect(
+      screen.getByRole("button", { name: "＋ タスク" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+
+  it("メンバーが0件（ロード完了）の場合は AddTaskForm の代わりに NoMembersNotice を表示する（Issue #16）", () => {
+    mocks.issue = createIssue();
+    mocks.members = [];
+    renderIssueDetail();
+
+    expect(
+      screen.queryByRole("button", { name: "＋ タスク" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(
+      "メンバーが登録されていない",
+    );
+  });
+
+  it("メンバーがロード中（undefined）は AddTaskForm も NoMembersNotice も出さない", () => {
+    mocks.issue = createIssue();
+    mocks.members = undefined;
+    renderIssueDetail();
+
+    expect(
+      screen.queryByRole("button", { name: "＋ タスク" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 });
 

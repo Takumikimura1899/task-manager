@@ -6,7 +6,7 @@
     /* 狭幅では余白を縮めて内容の幅を確保する（4vw ≒ 画面幅連動） */
     padding: clamp(var(--space-3), 4vw, var(--space-6));
 
-    /* 配下（IssueList / AddTaskForm / Board）のコンテナクエリ基準（CSS規約§4） */
+    /* 配下（IssueTable / AddTaskForm / Board）のコンテナクエリ基準（CSS規約§4） */
     container-type: inline-size;
   }
 
@@ -46,6 +46,37 @@
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
+    }
+  }
+
+  /* タブナビ（/ タスク・/issues Issue）。picker と並ぶため gap で余白調整。 */
+  .nav {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .navLink {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    border-bottom: 2px solid transparent;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      background-color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+
+    &:hover {
+      color: var(--color-text);
+      background: var(--color-subtle);
+    }
+
+    /* アクティブなタブは NavLink が付与する aria-current="page" で判定する */
+    &[aria-current="page"] {
+      color: var(--color-accent);
+      border-color: var(--color-accent);
     }
   }
 

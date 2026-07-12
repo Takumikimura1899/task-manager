@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -9,6 +9,7 @@ import {
   requiresApproval,
 } from "../../../convex/lib/taskStatus";
 import { Badge } from "../../components/Badge/Badge";
+import { ConfirmPanel } from "../../components/ConfirmPanel/ConfirmPanel";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
@@ -16,6 +17,7 @@ import { Markdown } from "../../components/Markdown/Markdown";
 import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useEditForm } from "../../hooks/useEditForm";
+import { formatHours } from "../../lib/formatHours";
 import { parseRefNumber } from "../../lib/routeParams";
 import {
   PRIORITY_LABELS,
@@ -27,26 +29,55 @@ import {
 import s from "./TaskDetail.module.css";
 
 /**
- * 編集フォームの下書き（タイトル・説明・優先度）。
+ * 編集フォームの下書き（タイトル・説明・優先度・予想/実績工数）。
  * revision は編集開始時点の値を保持し、保存時の expectedRevision に使う。
  * 購読中の最新値を使うと、編集中の他者更新で expectedRevision も追従して
  * しまい競合を検知できないため（Issue #73）。
+ * estimate / actual は input の値を文字列で保持する（空文字 = 未設定）。
  */
 type TaskDraft = {
   title: string;
   description: string;
   priority: Priority;
+  estimate: string;
+  actual: string;
   revision: number;
 };
 
-/** 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。 */
-type PendingConfirm = {
-  /** 確認パネルの表示位置（操作した場所の直下に出す）。 */
-  kind: "transition" | "delete";
-  message: string;
-  label: string;
-  run: () => Promise<void>;
-};
+/**
+ * 工数 input の文字列値を送信用の値へ変換する。
+ * 空文字（空白のみ含む）は未設定への変更（null）、非空なら 0 以上の
+ * 有限数のみ許容する。trim しないと空白のみが Number() で 0 になり、
+ * 未設定のつもりが 0h として登録されてしまう。
+ * 不正値は ConvexError として投げ、useEditForm の既存エラー表示（role=alert）に
+ * 乗せて画面に伝える（サイレント失敗を避ける・送信もしない）。
+ *
+ * 前提: 呼び出し元が badInput（例: Firefox で type="number" に非数値文字を
+ * 入力すると、テキストは見えたまま DOM の value だけが空文字になる状態）を
+ * 事前にガードしていること。ここでは badInput の空文字と「本当に未入力」の
+ * 空文字を区別できないため、区別を保つガードは呼び出し元の責務とする。
+ */
+function parseHoursDraft(label: string, raw: string): number | null {
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new ConvexError(`${label}は 0 以上の数値で指定してください`);
+  }
+  return n;
+}
+
+/**
+ * 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。
+ * 「実行内容のクロージャ」ではなく意図の宣言として持つ。run() クロージャに
+ * 確定時点の task._id / revision を固定すると、パネル表示中に他クライアントが
+ * 同タスクを更新した際 stale な expectedRevision を送ってしまう。確定処理
+ * （runConfirmed）は kind/to から必要な値を導出し、実行時点の購読値
+ * （task）から revision を読む（IssueTable の削除確認と同方式）。
+ */
+type PendingConfirm =
+  | { kind: "transition"; to: TaskStatus }
+  | { kind: "delete" };
 
 export function TaskDetail() {
   const params = useParams();
@@ -65,17 +96,40 @@ export function TaskDetail() {
   const assignTask = useMutation(api.tasks.assign);
   const deleteTask = useMutation(api.tasks.deleteTask);
 
+  // badInput（例: Firefox で type="number" に「8h」等の非数値文字を入力すると、
+  // テキストは表示されたまま DOM の value だけが空文字になる状態）を保存前に
+  // 検知するための参照。実ブラウザ・現状の noValidate なしの構成では
+  // ネイティブの constraint validation が先に submit をブロックするため
+  // 通常はここに到達しないが、検証が効かない環境（jsdom 等のテスト）や
+  // 将来 noValidate 化した場合に備える防御層として残す。value の空文字
+  // だけでは「未入力」と区別できないため、input 自身の validity を見る
+  // 必要がある（parseHoursDraft の docstring参照）。
+  const estimateInputRef = useRef<HTMLInputElement | null>(null);
+  const actualInputRef = useRef<HTMLInputElement | null>(null);
+
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
   // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
   const edit = useEditForm<TaskDraft>({
     save: async (draft) => {
       if (task === null || task === undefined) return;
+      // badInput のまま parseHoursDraft に通すと空文字＝未設定と誤解釈され、
+      // 既存の見積がサイレントにクリアされて保存されてしまうため先に弾く。
+      if (estimateInputRef.current?.validity.badInput) {
+        throw new ConvexError("予想工数は数値で入力してください");
+      }
+      if (actualInputRef.current?.validity.badInput) {
+        throw new ConvexError("実績工数は数値で入力してください");
+      }
+      const estimate = parseHoursDraft("予想工数", draft.estimate);
+      const actual = parseHoursDraft("実績工数", draft.actual);
       await updateFields({
         id: task._id,
         expectedRevision: draft.revision,
         title: draft.title.trim(),
         description: draft.description,
         priority: draft.priority,
+        estimate,
+        actual,
       });
     },
   });
@@ -119,6 +173,8 @@ export function TaskDetail() {
     title: task.title,
     description: task.description ?? "",
     priority: task.priority,
+    estimate: task.estimate?.toString() ?? "",
+    actual: task.actual?.toString() ?? "",
     revision: task.revision,
   });
 
@@ -134,63 +190,64 @@ export function TaskDetail() {
   };
 
   const requestTransition = (to: TaskStatus) => {
-    const run = async () => {
-      await transitionStatus({
-        id: task._id,
-        to,
-        expectedRevision: task.revision,
-      });
-    };
     // 破壊的遷移（done/canceled）は確認を挟む（§6 Human-in-the-Loop）。
     if (requiresApproval(to)) {
-      setConfirm({
-        kind: "transition",
-        message: `「${TASK_STATUS_LABELS[to]}」へ遷移します。この操作は取り消せません。`,
-        label: `${TASK_STATUS_LABELS[to]}にする`,
-        run,
-      });
+      setConfirm({ kind: "transition", to });
     } else {
-      void runAction(run);
+      void runAction(async () => {
+        await transitionStatus({
+          id: task._id,
+          to,
+          expectedRevision: task.revision,
+        });
+      });
     }
   };
 
   const requestDelete = () => {
-    setConfirm({
-      kind: "delete",
-      message:
-        "このタスクを削除しますか？関連する Git 連携も併せて削除されます。",
-      label: "削除する",
-      run: async () => {
+    setConfirm({ kind: "delete" });
+  };
+
+  // 確定時点の購読値（task）の revision を expectedRevision に使う。編集
+  // フォームが draft.revision（編集開始時点、Issue #73）を使うのとは対照的
+  // ――確認パネルは開いてから確定までが短い即時操作なので、パネル表示中に
+  // 他クライアントが更新していれば最新値を送るほうが自然に成功する
+  // （IssueTable の削除確認と同方式）。
+  const runConfirmed = () => {
+    if (confirm === null) return;
+    const pending = confirm;
+    setConfirm(null);
+    void runAction(async () => {
+      if (pending.kind === "transition") {
+        await transitionStatus({
+          id: task._id,
+          to: pending.to,
+          expectedRevision: task.revision,
+        });
+      } else {
         await deleteTask({ id: task._id, expectedRevision: task.revision });
         navigate("/"); // 削除後は一覧へ戻る
-      },
+      }
     });
   };
 
-  const runConfirmed = () => {
-    if (confirm === null) return;
-    const { run } = confirm;
-    setConfirm(null);
-    void runAction(run);
-  };
-
   // 破壊的操作の確認パネル。操作した場所（遷移ボタン／削除ボタン）の直下に出す。
+  // message/label は現行文言を維持したまま kind/to から都度導出する。
   const confirmPanel = confirm !== null && (
-    <div className={s.confirmPanel}>
-      <p className={s.confirmMessage}>{confirm.message}</p>
-      <div className={s.confirmActions}>
-        <button className={s.danger} onClick={runConfirmed} type="button">
-          {confirm.label}
-        </button>
-        <button
-          className={s.cancel}
-          onClick={() => setConfirm(null)}
-          type="button"
-        >
-          キャンセル
-        </button>
-      </div>
-    </div>
+    <ConfirmPanel
+      confirmLabel={
+        confirm.kind === "transition"
+          ? `${TASK_STATUS_LABELS[confirm.to]}にする`
+          : "削除する"
+      }
+      message={
+        confirm.kind === "transition"
+          ? `「${TASK_STATUS_LABELS[confirm.to]}」へ遷移します。この操作は取り消せません。`
+          : "このタスクを削除しますか？関連する Git 連携も併せて削除されます。"
+      }
+      onCancel={() => setConfirm(null)}
+      onConfirm={runConfirmed}
+    />
   );
 
   return (
@@ -260,6 +317,30 @@ export function TaskDetail() {
                 ))}
               </select>
             </label>
+            <label className={s.editField}>
+              予想工数 (h)
+              <input
+                className={s.editInput}
+                min="0"
+                onChange={(e) => edit.update({ estimate: e.target.value })}
+                ref={estimateInputRef}
+                step="any"
+                type="number"
+                value={edit.draft.estimate}
+              />
+            </label>
+            <label className={s.editField}>
+              実績工数 (h)
+              <input
+                className={s.editInput}
+                min="0"
+                onChange={(e) => edit.update({ actual: e.target.value })}
+                ref={actualInputRef}
+                step="any"
+                type="number"
+                value={edit.draft.actual}
+              />
+            </label>
           </DetailEditForm>
         </section>
       ) : (
@@ -317,6 +398,14 @@ export function TaskDetail() {
                 </option>
               ))}
             </select>
+          </dd>
+          <dt className={s.term}>予想工数</dt>
+          <dd className={`${s.value} ${s.hours}`}>
+            {task.estimate === undefined ? "—" : formatHours(task.estimate)}
+          </dd>
+          <dt className={s.term}>実績工数</dt>
+          <dd className={`${s.value} ${s.hours}`}>
+            {task.actual === undefined ? "—" : formatHours(task.actual)}
           </dd>
         </dl>
         {actionError !== null && (

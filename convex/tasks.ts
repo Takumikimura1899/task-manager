@@ -12,6 +12,7 @@ import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
 import { rankBetween } from "./lib/rank";
+import { assertHours } from "./lib/validators";
 
 /**
  * Task の Core API（基本設計書 §3 / §4 / §5）。
@@ -141,7 +142,7 @@ export const create = mutation({
   },
 });
 
-/** タイトル・説明・優先度の更新（status/assignee/rank は専用 mutation を使う）。 */
+/** タイトル・説明・優先度・見積/実績工数の更新（status/assignee/rank は専用 mutation を使う）。 */
 export const updateFields = mutation({
   args: {
     id: v.id("tasks"),
@@ -149,15 +150,24 @@ export const updateFields = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
+    // null はクリア（見積/実績なし状態へ戻す）を表す。
+    estimate: v.optional(v.union(v.number(), v.null())),
+    actual: v.optional(v.union(v.number(), v.null())),
   },
   handler: async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
+    assertHours("見積工数", args.estimate);
+    assertHours("実績工数", args.actual);
+
     const patch: Partial<Doc<"tasks">> = nextMeta(task);
     if (args.title !== undefined) patch.title = args.title;
     if (args.description !== undefined) patch.description = args.description;
     if (args.priority !== undefined) patch.priority = args.priority;
+    if (args.estimate !== undefined)
+      patch.estimate = args.estimate ?? undefined;
+    if (args.actual !== undefined) patch.actual = args.actual ?? undefined;
 
     await ctx.db.patch(task._id, patch);
   },

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isValidEmail, isValidProjectKey, normalizeEmail } from "./validators";
+import {
+  assertHours,
+  isValidEmail,
+  isValidHours,
+  isValidProjectKey,
+  normalizeEmail,
+} from "./validators";
 
 /**
  * 入力バリデーション・正規化（純粋関数）の振る舞いを検証する。モック不要。
@@ -43,5 +49,42 @@ describe("入力バリデーション", () => {
     ])("$email の妥当性は $expected", ({ email, expected }) => {
       expect(isValidEmail(email)).toBe(expected);
     });
+  });
+
+  describe("isValidHours", () => {
+    it.each([
+      { n: 0, expected: true }, // 下限（0 は許容）
+      { n: 8, expected: true }, // 正数
+      { n: 2.5, expected: true }, // 小数
+      { n: -1, expected: false }, // 負数
+      { n: Number.NaN, expected: false }, // NaN
+      { n: Number.POSITIVE_INFINITY, expected: false }, // Infinity
+      { n: Number.NEGATIVE_INFINITY, expected: false }, // -Infinity
+    ])("$n の妥当性は $expected", ({ n, expected }) => {
+      expect(isValidHours(n)).toBe(expected);
+    });
+  });
+
+  describe("assertHours", () => {
+    it.each([
+      { value: undefined }, // 未指定は素通し
+      { value: null }, // クリアは素通し
+      { value: 0 },
+      { value: 8 },
+    ])("$value のときは何も起きない", ({ value }) => {
+      expect(() => assertHours("見積工数", value)).not.toThrow();
+    });
+
+    it.each([
+      { label: "見積工数", value: -1 },
+      { label: "実績工数", value: Number.NaN },
+    ])(
+      "$label が不正な値（$value）なら「$label は0以上の数値で」という ConvexError を投げる",
+      ({ label, value }) => {
+        expect(() => assertHours(label, value)).toThrowError(
+          `${label}は 0 以上の数値で指定してください`,
+        );
+      },
+    );
   });
 });

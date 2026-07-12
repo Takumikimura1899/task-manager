@@ -96,6 +96,16 @@ describe("TaskDetail のローディング表示", () => {
   });
 });
 
+describe("TaskDetail の工数表示", () => {
+  it("二進浮動小数点の加算誤差を丸めて表示する（formatHours）", () => {
+    mocks.task = createTask({ estimate: 1.1 + 2.2, actual: 0.1 + 0.2 });
+    renderTaskDetail();
+
+    expect(screen.getByText("3.3h")).toBeInTheDocument();
+    expect(screen.getByText("0.3h")).toBeInTheDocument();
+  });
+});
+
 describe("TaskDetail の編集操作（Issue #32）", () => {
   it("編集ボタンで現在値（優先度含む）が入ったフォームを開き、保存で編集開始時点の revision を添えて更新する", async () => {
     const user = userEvent.setup();
@@ -115,6 +125,8 @@ describe("TaskDetail の編集操作（Issue #32）", () => {
       title: "認証APIの実装",
       description: "JWT の発行と検証",
       priority: "high",
+      estimate: null,
+      actual: null,
     });
   });
 
@@ -269,5 +281,27 @@ describe("TaskDetail の楽観ロック（Issue #73）", () => {
     expect(
       screen.queryByRole("form", { name: "タスクを編集" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("TaskDetail の確認パネル revision", () => {
+  it("削除確認パネル表示中に購読値の revision が進んだ場合、確定時は最新の revision を送る", async () => {
+    const user = userEvent.setup();
+    mocks.task = createTask({ revision: 5 });
+    const { rerender } = renderTaskDetail();
+
+    await user.click(screen.getByRole("button", { name: "タスクを削除" }));
+
+    // パネル表示中に他クライアントが更新し、購読値の revision が進む
+    mocks.task = createTask({ revision: 6 });
+    rerender(taskDetailUi());
+
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    // パネルを開いた時点（5）ではなく、確定時点の最新値（6）を送る
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      id: "task1",
+      expectedRevision: 6,
+    });
   });
 });

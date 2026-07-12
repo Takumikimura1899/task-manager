@@ -80,6 +80,8 @@ export default defineSchema({
     title: v.string(),
     description: v.optional(v.string()), // Markdown
     createdBy: v.id("members"),
+    // 未設定は読み出し時に "none" へ正規化する（既存 taskPriority validator を流用）。
+    priority: v.optional(taskPriority),
     revision: v.number(), // 並行更新検出（楽観ロック）
     updatedAt: v.number(),
   })
@@ -100,6 +102,10 @@ export default defineSchema({
     status: taskStatus,
     priority: taskPriority,
     assignee: v.optional(v.id("members")),
+    // 見積工数（単位: 時間）
+    estimate: v.optional(v.number()),
+    // 実績工数（単位: 時間）
+    actual: v.optional(v.number()),
     // カンバン並び順（LexoRank 等の比較可能な値）
     rank: v.string(),
     createdBy: v.id("members"), // 人間／AIエージェントいずれも Member
