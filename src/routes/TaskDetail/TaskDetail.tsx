@@ -44,13 +44,16 @@ type TaskDraft = {
 
 /**
  * 工数 input の文字列値を送信用の値へ変換する。
- * 空文字は未設定への変更（null）、非空なら 0 以上の有限数のみ許容する。
+ * 空文字（空白のみ含む）は未設定への変更（null）、非空なら 0 以上の
+ * 有限数のみ許容する。trim しないと空白のみが Number() で 0 になり、
+ * 未設定のつもりが 0h として登録されてしまう。
  * 不正値は ConvexError として投げ、useEditForm の既存エラー表示（role=alert）に
  * 乗せて画面に伝える（サイレント失敗を避ける・送信もしない）。
  */
 function parseHoursDraft(label: string, raw: string): number | null {
-  if (raw === "") return null;
-  const n = Number(raw);
+  const trimmed = raw.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
   if (!Number.isFinite(n) || n < 0) {
     throw new ConvexError(`${label}は 0 以上の数値で指定してください`);
   }
