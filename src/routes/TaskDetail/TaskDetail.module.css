@@ -100,6 +100,27 @@
     box-shadow: var(--glow-accent-sm);
   }
 
+  /* 予想/実績工数の数値入力（優先度セレクトと同じ枠線・フォーカス演出） */
+  .editInput {
+    align-self: flex-start;
+    width: 8em;
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--font-size-md);
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .editInput:focus {
+    border-color: var(--color-accent);
+    box-shadow: var(--glow-accent-sm);
+  }
+
   /* セクションはカードと同語彙（surface + 影 + 上端の発光ライン） */
   .section {
     padding: var(--space-4);
@@ -144,6 +165,12 @@
   .value {
     margin: 0;
     color: var(--color-text);
+  }
+
+  /* 工数（予想/実績）は ID・カウンタと同様「データ然とした文字」として等幅で表示する */
+  .hours {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
   }
 
   /* 現在ステータス＋遷移ボタン群（§5 状態機械の遷移可能先のみ提示） */

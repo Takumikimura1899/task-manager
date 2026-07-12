@@ -49,6 +49,7 @@ export const create = mutation({
     title: v.string(),
     description: v.optional(v.string()),
     createdBy: v.id("members"),
+    priority: v.optional(taskPriority),
     firstTask: v.object({
       title: v.string(),
       description: v.optional(v.string()),
@@ -75,6 +76,7 @@ export const create = mutation({
       title: args.title,
       description: args.description,
       createdBy: args.createdBy,
+      priority: args.priority,
       revision: 0,
       updatedAt: Date.now(),
     });
@@ -104,6 +106,7 @@ export const update = mutation({
     expectedRevision: v.number(),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
+    priority: v.optional(taskPriority),
   },
   handler: async (ctx, args) => {
     const issue = await getIssueOrThrow(ctx, args.id);
@@ -112,6 +115,7 @@ export const update = mutation({
     const patch: Partial<Doc<"issues">> = nextMeta(issue);
     if (args.title !== undefined) patch.title = args.title;
     if (args.description !== undefined) patch.description = args.description;
+    if (args.priority !== undefined) patch.priority = args.priority;
 
     await ctx.db.patch(issue._id, patch);
   },
@@ -174,9 +178,12 @@ export const list = query({
       const active = tasks.filter((t) => t.status !== "canceled");
       return {
         ...issue,
+        priority: issue.priority ?? "none",
         status: deriveIssueStatus(tasks.map((t) => t.status)),
         taskCount: active.length,
         doneCount: active.filter((t) => t.status === "done").length,
+        estimateTotal: active.reduce((sum, t) => sum + (t.estimate ?? 0), 0),
+        actualTotal: active.reduce((sum, t) => sum + (t.actual ?? 0), 0),
       };
     });
   },
@@ -212,6 +219,7 @@ export const getByRef = query({
     return {
       ...issue,
       projectKey: project.key,
+      priority: issue.priority ?? "none",
       status: deriveIssueStatus(tasks.map((t) => t.status)),
       createdByName: await resolveMemberName(ctx, issue.createdBy),
       tasks: tasks.map((t) => ({

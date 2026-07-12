@@ -8,16 +8,19 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 /**
  * Issue 詳細のローディング表示（Issue #29）と編集フロー（Issue #32）を検証する。
  * Convex は外部依存のためモックし、購読値（issue）とミューテーション呼び出しを
- * テストごとに差し替える。
+ * テストごとに差し替える。getByRef は引数付き・members.list は引数なしで
+ * 呼ばれる性質を使って購読値を出し分ける（TaskDetail.test.tsx と同方式）。
  */
 
 const mocks = vi.hoisted(() => ({
   issue: undefined as unknown,
+  members: [] as unknown,
   mutate: vi.fn<(args: Record<string, unknown>) => Promise<unknown>>(),
 }));
 
 vi.mock("convex/react", () => ({
-  useQuery: () => mocks.issue,
+  useQuery: (_query: unknown, args?: unknown) =>
+    args === undefined ? mocks.members : mocks.issue,
   useMutation: () => mocks.mutate,
 }));
 
@@ -69,6 +72,7 @@ const renderIssueDetail = () => render(issueDetailUi());
 
 beforeEach(() => {
   mocks.issue = undefined;
+  mocks.members = [];
   mocks.mutate.mockReset();
   mocks.mutate.mockResolvedValue(undefined);
 });
@@ -162,6 +166,28 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
       "ログイン機能を実装する",
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("IssueDetail の AddTaskForm 表示", () => {
+  it("メンバーがいる場合はタスク一覧末尾に AddTaskForm を表示する", () => {
+    mocks.issue = createIssue();
+    mocks.members = [{ _id: "member_1", name: "Alice" }];
+    renderIssueDetail();
+
+    expect(
+      screen.getByRole("button", { name: "＋ タスク" }),
+    ).toBeInTheDocument();
+  });
+
+  it("メンバーが0件の場合は AddTaskForm を表示しない", () => {
+    mocks.issue = createIssue();
+    mocks.members = [];
+    renderIssueDetail();
+
+    expect(
+      screen.queryByRole("button", { name: "＋ タスク" }),
+    ).not.toBeInTheDocument();
   });
 });
 

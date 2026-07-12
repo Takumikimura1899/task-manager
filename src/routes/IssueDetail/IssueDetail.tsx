@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
+import { AddTaskForm } from "../../components/AddTaskForm/AddTaskForm";
 import { Badge } from "../../components/Badge/Badge";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
@@ -31,6 +32,10 @@ export function IssueDetail() {
     api.issues.getByRef,
     number !== null ? { projectKey, number } : "skip",
   );
+  const members = useQuery(api.members.list);
+  // 認証は未実装（Phase2）のため、暫定的に先頭メンバーを作成者とする
+  // （AppLayout.tsx と同方針）。
+  const currentMember = members?.[0] ?? null;
 
   const updateIssue = useMutation(api.issues.update);
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
@@ -169,6 +174,9 @@ export function IssueDetail() {
             </div>
           );
         })}
+        {currentMember !== null && (
+          <AddTaskForm createdBy={currentMember._id} issue={issue._id} />
+        )}
       </section>
 
       <section className={s.section}>

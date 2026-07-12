@@ -27,17 +27,35 @@ import {
 import s from "./TaskDetail.module.css";
 
 /**
- * 編集フォームの下書き（タイトル・説明・優先度）。
+ * 編集フォームの下書き（タイトル・説明・優先度・予想/実績工数）。
  * revision は編集開始時点の値を保持し、保存時の expectedRevision に使う。
  * 購読中の最新値を使うと、編集中の他者更新で expectedRevision も追従して
  * しまい競合を検知できないため（Issue #73）。
+ * estimate / actual は input の値を文字列で保持する（空文字 = 未設定）。
  */
 type TaskDraft = {
   title: string;
   description: string;
   priority: Priority;
+  estimate: string;
+  actual: string;
   revision: number;
 };
+
+/**
+ * 工数 input の文字列値を送信用の値へ変換する。
+ * 空文字は未設定への変更（null）、非空なら 0 以上の有限数のみ許容する。
+ * 不正値は ConvexError として投げ、useEditForm の既存エラー表示（role=alert）に
+ * 乗せて画面に伝える（サイレント失敗を避ける・送信もしない）。
+ */
+function parseHoursDraft(label: string, raw: string): number | null {
+  if (raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    throw new ConvexError(`${label}は 0 以上の数値で指定してください`);
+  }
+  return n;
+}
 
 /** 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。 */
 type PendingConfirm = {
@@ -70,12 +88,16 @@ export function TaskDetail() {
   const edit = useEditForm<TaskDraft>({
     save: async (draft) => {
       if (task === null || task === undefined) return;
+      const estimate = parseHoursDraft("予想工数", draft.estimate);
+      const actual = parseHoursDraft("実績工数", draft.actual);
       await updateFields({
         id: task._id,
         expectedRevision: draft.revision,
         title: draft.title.trim(),
         description: draft.description,
         priority: draft.priority,
+        estimate,
+        actual,
       });
     },
   });
@@ -119,6 +141,8 @@ export function TaskDetail() {
     title: task.title,
     description: task.description ?? "",
     priority: task.priority,
+    estimate: task.estimate?.toString() ?? "",
+    actual: task.actual?.toString() ?? "",
     revision: task.revision,
   });
 
@@ -260,6 +284,28 @@ export function TaskDetail() {
                 ))}
               </select>
             </label>
+            <label className={s.editField}>
+              予想工数 (h)
+              <input
+                className={s.editInput}
+                min="0"
+                onChange={(e) => edit.update({ estimate: e.target.value })}
+                step="0.5"
+                type="number"
+                value={edit.draft.estimate}
+              />
+            </label>
+            <label className={s.editField}>
+              実績工数 (h)
+              <input
+                className={s.editInput}
+                min="0"
+                onChange={(e) => edit.update({ actual: e.target.value })}
+                step="0.5"
+                type="number"
+                value={edit.draft.actual}
+              />
+            </label>
           </DetailEditForm>
         </section>
       ) : (
@@ -317,6 +363,14 @@ export function TaskDetail() {
                 </option>
               ))}
             </select>
+          </dd>
+          <dt className={s.term}>予想工数</dt>
+          <dd className={`${s.value} ${s.hours}`}>
+            {task.estimate === undefined ? "—" : `${task.estimate}h`}
+          </dd>
+          <dt className={s.term}>実績工数</dt>
+          <dd className={`${s.value} ${s.hours}`}>
+            {task.actual === undefined ? "—" : `${task.actual}h`}
           </dd>
         </dl>
         {actionError !== null && (

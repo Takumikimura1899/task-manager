@@ -115,6 +115,8 @@ describe("TaskDetail の編集操作（Issue #32）", () => {
       title: "認証APIの実装",
       description: "JWT の発行と検証",
       priority: "high",
+      estimate: null,
+      actual: null,
     });
   });
 

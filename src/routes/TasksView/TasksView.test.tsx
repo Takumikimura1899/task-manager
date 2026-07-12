@@ -1,14 +1,19 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import { AppLayout } from "../../components/AppLayout/AppLayout";
 import type { BoardTask } from "../../lib/board";
 import { type TaskStatus, TASK_STATUS_ORDER } from "../../lib/taskMeta";
-import { Home } from "./Home";
+import { TasksView } from "./TasksView";
 
 /**
- * Home のローディング表示（Issue #29）とプロジェクト切替（Issue #74）を検証する。
+ * TasksView のプロジェクト切替（Issue #74）を検証する。
+ * 分離前は Home が単独でこの責務（プロジェクト選択 + Board の key 再生成）を
+ * 持っていたが、AppLayout（プロジェクト選択）と TasksView（Board 再生成）に
+ * 分かれたため、両者を統合レンダリングして移植する（旧 Home.test.tsx の
+ * 構成・コメントを踏襲）。
  * Convex は外部依存のためモックする。api の関数参照（anyApi）は参照同一性を
  * 持たないため、getFunctionName で "module:function" 名に解決してディスパッチ
  * する。
@@ -39,6 +44,8 @@ const createProject = (overrides: Record<string, unknown> = {}) =>
     _creationTime: 1000,
     key: "TASK",
     name: "タスク管理",
+    nextTaskNumber: 1,
+    nextIssueNumber: 1,
     ...overrides,
   }) as Doc<"projects">;
 
@@ -47,6 +54,8 @@ const createMember = (overrides: Record<string, unknown> = {}) =>
     _id: "member_1" as Id<"members">,
     _creationTime: 1000,
     name: "Alice",
+    email: "alice@example.com",
+    role: "member",
     ...overrides,
   }) as Doc<"members">;
 
@@ -76,10 +85,16 @@ const createColumns = (
     tasks: tasksByStatus[status] ?? [],
   }));
 
-const renderHome = () =>
+// AppLayout 配下に TasksView をマウントし、プロジェクト選択 → Board 再生成の
+// 実際の親子関係を再現する（AppLayout.test.tsx は AppLayout 単体の責務のみ検証）。
+const renderTasksView = () =>
   render(
-    <MemoryRouter>
-      <Home />
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route element={<TasksView />} path="/" />
+        </Route>
+      </Routes>
     </MemoryRouter>,
   );
 
@@ -89,21 +104,7 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 
-describe("Home のローディング表示", () => {
-  it("読み込み中もタイトルを維持したままスケルトンを表示する", () => {
-    // すべての購読が読み込み中（undefined）
-    renderHome();
-
-    expect(
-      screen.getByRole("heading", { name: "Task Manager" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("status", { name: "プロジェクトを読み込み中" }),
-    ).toBeInTheDocument();
-  });
-});
-
-describe("Home のプロジェクト切替（Issue #74）", () => {
+describe("TasksView のプロジェクト切替（Issue #74）", () => {
   it("切替直後は旧プロジェクトのカードを残さず、ボードをロード中表示にする", async () => {
     const user = userEvent.setup();
     const projectA = createProject();
@@ -126,6 +127,7 @@ describe("Home のプロジェクト切替（Issue #74）", () => {
         case "members:list":
           return members;
         case "issues:list":
+          // ActiveIssueStrip の購読。切替の検証には無関係のため空で固定する。
           return issues;
         case "tasks:board":
           // 旧プロジェクトのみデータ済み。新プロジェクトはロード中（undefined）
@@ -134,7 +136,7 @@ describe("Home のプロジェクト切替（Issue #74）", () => {
           return undefined;
       }
     });
-    renderHome();
+    renderTasksView();
 
     // 切替前：旧プロジェクトのカードが表示されている
     expect(screen.getByRole("link", { name: "TASK-12" })).toBeInTheDocument();

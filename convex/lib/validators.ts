@@ -28,3 +28,8 @@ const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 export function isValidEmail(email: string): boolean {
   return EMAIL_PATTERN.test(email);
 }
+
+/** 見積・実績工数（単位: 時間）: 有限な非負数のみ許容する。 */
+export function isValidHours(n: number): boolean {
+  return Number.isFinite(n) && n >= 0;
+}

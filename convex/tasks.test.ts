@@ -525,6 +525,107 @@ describe("tasks.updateFields", () => {
       }),
     ).rejects.toThrowError("タスクが見つかりません");
   });
+
+  it("estimate / actual を設定でき、getDetail / board の返却に反映される", async () => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const member = await seedMember(t);
+    const { task } = await seedIssueWithTask(t, project, member);
+
+    await t.mutation(api.tasks.updateFields, {
+      id: task,
+      expectedRevision: 0,
+      estimate: 8,
+      actual: 3.5,
+    });
+
+    expect(await loadTask(t, task)).toMatchObject({
+      estimate: 8,
+      actual: 3.5,
+      revision: 1,
+    });
+
+    const detail = await t.query(api.tasks.getDetail, {
+      projectKey: "TASK",
+      number: 1,
+    });
+    expect(detail).toMatchObject({ estimate: 8, actual: 3.5 });
+
+    const board = await t.query(api.tasks.board, { project });
+    const backlog = board.find((column) => column.status === "backlog")!;
+    expect(backlog.tasks).toMatchObject([{ estimate: 8, actual: 3.5 }]);
+  });
+
+  it("estimate / actual に null を指定するとクリアされる（DB 上 undefined）", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { task } = await seedIssueWithTask(t, project, member);
+
+    await t.mutation(api.tasks.updateFields, {
+      id: task,
+      expectedRevision: 0,
+      estimate: 8,
+      actual: 3,
+    });
+    await t.mutation(api.tasks.updateFields, {
+      id: task,
+      expectedRevision: 1,
+      estimate: null,
+      actual: null,
+    });
+
+    const after = await loadTask(t, task);
+    expect(after.estimate).toBeUndefined();
+    expect(after.actual).toBeUndefined();
+    expect(after.revision).toBe(2);
+  });
+
+  it.each([
+    { name: "estimate に負数", args: { estimate: -1 }, message: "見積工数" },
+    {
+      name: "estimate に NaN",
+      args: { estimate: Number.NaN },
+      message: "見積工数",
+    },
+    {
+      name: "estimate に Infinity",
+      args: { estimate: Number.POSITIVE_INFINITY },
+      message: "見積工数",
+    },
+    { name: "actual に負数", args: { actual: -1 }, message: "実績工数" },
+    {
+      name: "actual に NaN",
+      args: { actual: Number.NaN },
+      message: "実績工数",
+    },
+    {
+      name: "actual に Infinity",
+      args: { actual: Number.POSITIVE_INFINITY },
+      message: "実績工数",
+    },
+  ])(
+    "$name を指定すると ConvexError で拒否され DB は変わらない",
+    async ({ args, message }) => {
+      const t = setup();
+      const project = await seedProject(t);
+      const member = await seedMember(t);
+      const { task } = await seedIssueWithTask(t, project, member);
+
+      await expect(
+        t.mutation(api.tasks.updateFields, {
+          id: task,
+          expectedRevision: 0,
+          ...args,
+        }),
+      ).rejects.toThrowError(message);
+
+      const after = await loadTask(t, task);
+      expect(after.estimate).toBeUndefined();
+      expect(after.actual).toBeUndefined();
+      expect(after.revision).toBe(0);
+    },
+  );
 });
 
 // --- listByProject ------------------------------------------------------------

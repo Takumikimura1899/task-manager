@@ -180,6 +180,113 @@ describe("issues.list（派生ステータス）", () => {
   });
 });
 
+// --- priority（未指定は "none" に正規化・作成時指定・更新） -------------------
+
+describe("issues の priority", () => {
+  it('priority 未指定で作成すると list / getByRef で "none" になる', async () => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const member = await seedMember(t);
+    await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク" },
+    });
+
+    const [listed] = await t.query(api.issues.list, { project });
+    expect(listed).toMatchObject({ priority: "none" });
+
+    const found = await t.query(api.issues.getByRef, {
+      projectKey: "TASK",
+      number: 1,
+    });
+    expect(found).toMatchObject({ priority: "none" });
+  });
+
+  it("priority を指定して作成すると反映され、update で変更できる", async () => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const member = await seedMember(t);
+    const { issue } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      priority: "high",
+      firstTask: { title: "タスク" },
+    });
+
+    expect(
+      await t.query(api.issues.getByRef, { projectKey: "TASK", number: 1 }),
+    ).toMatchObject({ priority: "high" });
+
+    await t.mutation(api.issues.update, {
+      id: issue,
+      expectedRevision: 0,
+      priority: "urgent",
+    });
+
+    expect(await t.run((ctx) => ctx.db.get(issue))).toMatchObject({
+      priority: "urgent",
+      revision: 1,
+    });
+  });
+});
+
+// --- list（estimateTotal / actualTotal の集計） ------------------------------
+
+describe("issues.list（estimateTotal / actualTotal）", () => {
+  it("active な Task の estimate/actual を合計し、canceled は除外、未設定は0扱いにする", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { issue, task: first } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク1" },
+    });
+    // 2つ目は estimate/actual を未設定のまま（0 扱いになることを検証する）
+    await t.mutation(api.tasks.create, {
+      issue,
+      title: "タスク2",
+      createdBy: member,
+    });
+    const canceled = await t.mutation(api.tasks.create, {
+      issue,
+      title: "タスク3（canceledにする）",
+      createdBy: member,
+    });
+
+    await t.mutation(api.tasks.updateFields, {
+      id: first,
+      expectedRevision: 0,
+      estimate: 5,
+      actual: 2,
+    });
+    // canceled にするタスクにも工数を入れておくが、集計からは除外されるはず
+    await t.mutation(api.tasks.updateFields, {
+      id: canceled,
+      expectedRevision: 0,
+      estimate: 10,
+      actual: 10,
+    });
+    await t.mutation(api.tasks.transitionStatus, {
+      id: canceled,
+      to: "canceled",
+      expectedRevision: 1,
+    });
+
+    const [found] = await t.query(api.issues.list, { project });
+
+    expect(found).toMatchObject({
+      taskCount: 2, // canceled を除いた active 数
+      estimateTotal: 5, // タスク1(5) + タスク2(未設定=0)、canceled(10)は除外
+      actualTotal: 2, // タスク1(2) + タスク2(未設定=0)、canceled(10)は除外
+    });
+  });
+});
+
 // --- update（タイトル・説明の編集） ------------------------------------------
 
 describe("issues.update", () => {

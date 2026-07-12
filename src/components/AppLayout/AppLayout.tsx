@@ -1,16 +1,13 @@
 import { useQuery } from "convex/react";
 import { useState } from "react";
+import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
-import { Board } from "../../components/Board/Board";
-import { IssueList } from "../../components/IssueList/IssueList";
-import { NewIssueForm } from "../../components/NewIssueForm/NewIssueForm";
-import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotice";
-import { Skeleton } from "../../components/Skeleton/Skeleton";
-import s from "./Home.module.css";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import { Skeleton } from "../Skeleton/Skeleton";
+import s from "./AppLayout.module.css";
 
 // 選択中プロジェクトを session 内で保持するキー。
-// 詳細画面へ遷移すると Home はアンマウントされ useState が失われるため、
+// 詳細画面へ遷移すると AppLayout はアンマウントされ useState が失われるため、
 // 「← 一覧へ」で戻った際に選択を復元できるよう sessionStorage に退避する。
 const SELECTED_PROJECT_KEY = "selectedProjectId";
 
@@ -34,7 +31,19 @@ function writeSelectedProject(id: Id<"projects">): void {
   }
 }
 
-export function Home() {
+type AppOutletContext = {
+  projects: Doc<"projects">[];
+  selected: Doc<"projects">;
+  members: Doc<"members">[] | undefined;
+  currentMember: Doc<"members"> | null;
+};
+
+/** 子ルート（TasksView / IssuesView）から選択中プロジェクトと購読済みメンバーを取り出す。 */
+export function useAppOutletContext(): AppOutletContext {
+  return useOutletContext<AppOutletContext>();
+}
+
+export function AppLayout() {
   const projects = useQuery(api.projects.list);
   const members = useQuery(api.members.list);
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
@@ -81,9 +90,17 @@ export function Home() {
   const selected = projects.find((p) => p._id === selectedId) ?? projects[0];
 
   return (
-    <main className={s.app}>
+    <div className={s.app}>
       <header className={s.header}>
         <h1 className={s.title}>Task Manager</h1>
+        <nav className={s.nav}>
+          <NavLink className={s.navLink} end to="/">
+            タスク
+          </NavLink>
+          <NavLink className={s.navLink} to="/issues">
+            Issue
+          </NavLink>
+        </nav>
         <label className={s.picker}>
           プロジェクト
           <select
@@ -99,26 +116,11 @@ export function Home() {
           </select>
         </label>
       </header>
-      {currentMember !== null ? (
-        <NewIssueForm createdBy={currentMember._id} project={selected._id} />
-      ) : (
-        // メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
-        // （Issue #16）。members 読み込み中（undefined）は判定できないため何も出さない。
-        members !== undefined && <NoMembersNotice />
-      )}
-      <IssueList
-        createdBy={currentMember?._id ?? null}
-        project={selected._id}
-        projectKey={selected.key}
-      />
-      {/* プロジェクト切替時に Board を再生成してローカル state（board /
-          syncedRef）を初期化する。key が無いと新データのロード中に旧プロジェクト
-          のカードが新しい projectKey で表示され、不正な URL へ遷移する（Issue #74）。 */}
-      <Board
-        key={selected._id}
-        project={selected._id}
-        projectKey={selected.key}
-      />
-    </main>
+      {/* 画面本体（タスク一覧 / Issue 一覧）は子ルートが描画する。main
+          ランドマークは各子ルート（TasksView / IssuesView）側が持つため、
+          ここでは main にしない（Issue #17 の ErrorBoundary フォールバックも
+          main を持つため、二重にしない）。 */}
+      <Outlet context={{ projects, selected, members, currentMember }} />
+    </div>
   );
 }
