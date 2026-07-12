@@ -67,14 +67,17 @@ function parseHoursDraft(label: string, raw: string): number | null {
   return n;
 }
 
-/** 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。 */
-type PendingConfirm = {
-  /** 確認パネルの表示位置（操作した場所の直下に出す）。 */
-  kind: "transition" | "delete";
-  message: string;
-  label: string;
-  run: () => Promise<void>;
-};
+/**
+ * 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。
+ * 「実行内容のクロージャ」ではなく意図の宣言として持つ。run() クロージャに
+ * 確定時点の task._id / revision を固定すると、パネル表示中に他クライアントが
+ * 同タスクを更新した際 stale な expectedRevision を送ってしまう。確定処理
+ * （runConfirmed）は kind/to から必要な値を導出し、実行時点の購読値
+ * （task）から revision を読む（IssueTable の削除確認と同方式）。
+ */
+type PendingConfirm =
+  | { kind: "transition"; to: TaskStatus }
+  | { kind: "delete" };
 
 export function TaskDetail() {
   const params = useParams();
@@ -95,8 +98,12 @@ export function TaskDetail() {
 
   // badInput（例: Firefox で type="number" に「8h」等の非数値文字を入力すると、
   // テキストは表示されたまま DOM の value だけが空文字になる状態）を保存前に
-  // 検知するための参照。value の空文字だけでは「未入力」と区別できないため、
-  // input 自身の validity を見る必要がある（parseHoursDraft の docstring参照）。
+  // 検知するための参照。実ブラウザ・現状の noValidate なしの構成では
+  // ネイティブの constraint validation が先に submit をブロックするため
+  // 通常はここに到達しないが、検証が効かない環境（jsdom 等のテスト）や
+  // 将来 noValidate 化した場合に備える防御層として残す。value の空文字
+  // だけでは「未入力」と区別できないため、input 自身の validity を見る
+  // 必要がある（parseHoursDraft の docstring参照）。
   const estimateInputRef = useRef<HTMLInputElement | null>(null);
   const actualInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -183,51 +190,61 @@ export function TaskDetail() {
   };
 
   const requestTransition = (to: TaskStatus) => {
-    const run = async () => {
-      await transitionStatus({
-        id: task._id,
-        to,
-        expectedRevision: task.revision,
-      });
-    };
     // 破壊的遷移（done/canceled）は確認を挟む（§6 Human-in-the-Loop）。
     if (requiresApproval(to)) {
-      setConfirm({
-        kind: "transition",
-        message: `「${TASK_STATUS_LABELS[to]}」へ遷移します。この操作は取り消せません。`,
-        label: `${TASK_STATUS_LABELS[to]}にする`,
-        run,
-      });
+      setConfirm({ kind: "transition", to });
     } else {
-      void runAction(run);
+      void runAction(async () => {
+        await transitionStatus({
+          id: task._id,
+          to,
+          expectedRevision: task.revision,
+        });
+      });
     }
   };
 
   const requestDelete = () => {
-    setConfirm({
-      kind: "delete",
-      message:
-        "このタスクを削除しますか？関連する Git 連携も併せて削除されます。",
-      label: "削除する",
-      run: async () => {
+    setConfirm({ kind: "delete" });
+  };
+
+  // 確定時点の購読値（task）の revision を expectedRevision に使う。編集
+  // フォームが draft.revision（編集開始時点、Issue #73）を使うのとは対照的
+  // ――確認パネルは開いてから確定までが短い即時操作なので、パネル表示中に
+  // 他クライアントが更新していれば最新値を送るほうが自然に成功する
+  // （IssueTable の削除確認と同方式）。
+  const runConfirmed = () => {
+    if (confirm === null) return;
+    const pending = confirm;
+    setConfirm(null);
+    void runAction(async () => {
+      if (pending.kind === "transition") {
+        await transitionStatus({
+          id: task._id,
+          to: pending.to,
+          expectedRevision: task.revision,
+        });
+      } else {
         await deleteTask({ id: task._id, expectedRevision: task.revision });
         navigate("/"); // 削除後は一覧へ戻る
-      },
+      }
     });
   };
 
-  const runConfirmed = () => {
-    if (confirm === null) return;
-    const { run } = confirm;
-    setConfirm(null);
-    void runAction(run);
-  };
-
   // 破壊的操作の確認パネル。操作した場所（遷移ボタン／削除ボタン）の直下に出す。
+  // message/label は現行文言を維持したまま kind/to から都度導出する。
   const confirmPanel = confirm !== null && (
     <ConfirmPanel
-      confirmLabel={confirm.label}
-      message={confirm.message}
+      confirmLabel={
+        confirm.kind === "transition"
+          ? `${TASK_STATUS_LABELS[confirm.to]}にする`
+          : "削除する"
+      }
+      message={
+        confirm.kind === "transition"
+          ? `「${TASK_STATUS_LABELS[confirm.to]}」へ遷移します。この操作は取り消せません。`
+          : "このタスクを削除しますか？関連する Git 連携も併せて削除されます。"
+      }
       onCancel={() => setConfirm(null)}
       onConfirm={runConfirmed}
     />
@@ -307,7 +324,7 @@ export function TaskDetail() {
                 min="0"
                 onChange={(e) => edit.update({ estimate: e.target.value })}
                 ref={estimateInputRef}
-                step="0.5"
+                step="any"
                 type="number"
                 value={edit.draft.estimate}
               />
@@ -319,7 +336,7 @@ export function TaskDetail() {
                 min="0"
                 onChange={(e) => edit.update({ actual: e.target.value })}
                 ref={actualInputRef}
-                step="0.5"
+                step="any"
                 type="number"
                 value={edit.draft.actual}
               />

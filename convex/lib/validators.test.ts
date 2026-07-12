@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertHours,
   isValidEmail,
   isValidHours,
   isValidProjectKey,
@@ -62,5 +63,28 @@ describe("入力バリデーション", () => {
     ])("$n の妥当性は $expected", ({ n, expected }) => {
       expect(isValidHours(n)).toBe(expected);
     });
+  });
+
+  describe("assertHours", () => {
+    it.each([
+      { value: undefined }, // 未指定は素通し
+      { value: null }, // クリアは素通し
+      { value: 0 },
+      { value: 8 },
+    ])("$value のときは何も起きない", ({ value }) => {
+      expect(() => assertHours("見積工数", value)).not.toThrow();
+    });
+
+    it.each([
+      { label: "見積工数", value: -1 },
+      { label: "実績工数", value: Number.NaN },
+    ])(
+      "$label が不正な値（$value）なら「$label は0以上の数値で」という ConvexError を投げる",
+      ({ label, value }) => {
+        expect(() => assertHours(label, value)).toThrowError(
+          `${label}は 0 以上の数値で指定してください`,
+        );
+      },
+    );
   });
 });

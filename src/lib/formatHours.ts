@@ -10,3 +10,16 @@ export function formatHours(n: number): string {
   const rounded = Math.round(n * 100) / 100;
   return `${rounded}h`;
 }
+
+/**
+ * 合計工数（時間）を表示用の文字列へ整形する。
+ * バックエンドは 0.001 のような極小値も許容するため、単純に
+ * `formatHours` を通すと丸め後に "0h" となり、未入力（合計 0）を表す
+ * "—" と区別が付かない矛盾表示になりうる。そこで合計の表示に限っては、
+ * 丸めた結果が 0 になる値は一律「未入力」扱いとして "—" を返す。
+ * 個別値の表示（TaskDetail 等）は従来どおり formatHours を使うこと。
+ */
+export function formatHoursTotal(total: number): string {
+  const rounded = Math.round(total * 100) / 100;
+  return rounded === 0 ? "—" : formatHours(total);
+}

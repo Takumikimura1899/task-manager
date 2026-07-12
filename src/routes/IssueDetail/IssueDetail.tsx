@@ -14,16 +14,27 @@ import { useCurrentMember } from "../../hooks/useCurrentMember";
 import { useEditForm } from "../../hooks/useEditForm";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { parseRefNumber } from "../../lib/routeParams";
-import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
+import {
+  PRIORITY_LABELS,
+  PRIORITY_OPTIONS,
+  type Priority,
+  TASK_STATUS_LABELS,
+  TASK_STATUS_ORDER,
+} from "../../lib/taskMeta";
 import s from "./IssueDetail.module.css";
 
 /**
- * 編集フォームの下書き（タイトル・説明）。
+ * 編集フォームの下書き（タイトル・説明・優先度）。
  * revision は編集開始時点の値を保持し、保存時の expectedRevision に使う。
  * 購読中の最新値を使うと、編集中の他者更新で expectedRevision も追従して
  * しまい競合を検知できないため（Issue #73）。
  */
-type IssueDraft = { title: string; description: string; revision: number };
+type IssueDraft = {
+  title: string;
+  description: string;
+  priority: Priority;
+  revision: number;
+};
 
 export function IssueDetail() {
   const params = useParams();
@@ -47,6 +58,7 @@ export function IssueDetail() {
         expectedRevision: draft.revision,
         title: draft.title.trim(),
         description: draft.description,
+        priority: draft.priority,
       });
     },
   });
@@ -89,6 +101,7 @@ export function IssueDetail() {
   const toDraft = (): IssueDraft => ({
     title: issue.title,
     description: issue.description ?? "",
+    priority: issue.priority,
     revision: issue.revision,
   });
 
@@ -139,7 +152,24 @@ export function IssueDetail() {
             saving={edit.saving}
             templates={ISSUE_TEMPLATES}
             title={edit.draft.title}
-          />
+          >
+            <label className={s.editField}>
+              優先度
+              <select
+                className={s.editSelect}
+                onChange={(e) =>
+                  edit.update({ priority: e.target.value as Priority })
+                }
+                value={edit.draft.priority}
+              >
+                {PRIORITY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </DetailEditForm>
         </section>
       ) : (
         issue.description !== undefined &&
@@ -181,6 +211,13 @@ export function IssueDetail() {
           // 判定できないため何も出さない。
           members !== undefined && <NoMembersNotice />
         )}
+      </section>
+
+      <section className={s.section}>
+        <dl className={s.props}>
+          <dt className={s.term}>優先度</dt>
+          <dd className={s.value}>{PRIORITY_LABELS[issue.priority]}</dd>
+        </dl>
       </section>
 
       <section className={s.section}>

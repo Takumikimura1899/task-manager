@@ -110,7 +110,9 @@ describe("IssueTable の行内容", () => {
   });
 
   // 合計 0 は「未入力」と区別できないため、予想・実績とも "—" 表示に統一。
-  // 合計は浮動小数点の生値で届くため、表示は formatHours で丸める。
+  // 合計は浮動小数点の生値で届くため、表示は formatHoursTotal で丸める。
+  // 丸めて 0 になる極小値（バックエンドは 0.001 等も許容）も "—" に統一され、
+  // 「0h」と「未入力」の矛盾表示が起きないことを含めて検証する。
   it.each([
     { estimateTotal: 8, actualTotal: 0, estimateText: "8h", actualText: "—" },
     {
@@ -124,6 +126,12 @@ describe("IssueTable の行内容", () => {
       actualTotal: 0.1 + 0.2, // 0.30000000000000004
       estimateText: "3.3h",
       actualText: "0.3h",
+    },
+    {
+      estimateTotal: 0.004, // 丸めると 0 になる極小値
+      actualTotal: 0.005, // 丸めても 0 にならない境界値
+      estimateText: "—",
+      actualText: "0.01h",
     },
   ])(
     "予想 $estimateTotal / 実績 $actualTotal 時間を表示する",
@@ -260,6 +268,48 @@ describe("IssueTable の削除確認フロー", () => {
 
     expect(screen.queryByText("削除する")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "削除" })).toBeEnabled();
+  });
+
+  it("削除実行中（in-flight）に対象 Issue が外部で消えても、deleting の間は全行の削除ボタンが無効のまま", async () => {
+    // 未解決の Promise で「削除実行中」の状態を固定する
+    let resolveRemove: (() => void) | undefined;
+    removeIssue.mockImplementationOnce(
+      () =>
+        new Promise<unknown>((resolve) => {
+          resolveRemove = () => resolve(undefined);
+        }),
+    );
+    const user = userEvent.setup();
+    const { rerender } = renderTable([
+      createIssueSummary({ _id: "issue_1" as Id<"issues">, number: 1 }),
+      createIssueSummary({ _id: "issue_2" as Id<"issues">, number: 2 }),
+    ]);
+
+    await user.click(screen.getAllByRole("button", { name: "削除" })[0]);
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    // in-flight 中に対象 Issue が外部（別タブ・MCP・他ユーザー）による
+    // 削除で一覧から消える（購読更新 = props 更新で再現）
+    rerender(
+      <MemoryRouter>
+        <IssueTable
+          issues={[
+            createIssueSummary({ _id: "issue_2" as Id<"issues">, number: 2 }),
+          ]}
+          projectKey="TASK"
+        />
+      </MemoryRouter>,
+    );
+
+    // 対象消失で確認パネルは消えるが、in-flight の削除が完了するまでは
+    // 新たなパネルを開かせない（別行を開けると in-flight の完了ハンドラが
+    // その行を誤って操作しうるため）
+    expect(screen.queryByText("削除する")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "削除" })).toBeDisabled();
+
+    resolveRemove?.();
+    // 完了後は無効化が解除される
+    expect(await screen.findByRole("button", { name: "削除" })).toBeEnabled();
   });
 
   it("パネル表示中に対象 Issue の revision が進むと、確定は最新の revision で remove を呼ぶ", async () => {

@@ -190,6 +190,65 @@ export const list = query({
 });
 
 /**
+ * 進行中（in_progress）の Issue だけを、表示に必要な最小フィールドで返す。
+ * ActiveIssueStrip（ボード画面上部の帯）専用の軽量版。フル指標（工数集計等）が
+ * 必要な場合は list を使うこと。
+ *
+ * D&D のホットパス（Task 書き込みごとにサーバーで再計算される購読）上にあるため、
+ * list と異なり estimateTotal/actualTotal の reduce や Issue ドキュメント全体の
+ * スプレッドは行わず、in_progress の Issue のみを最小フィールドで返す。
+ */
+export const listInProgress = query({
+  args: { project: v.id("projects") },
+  handler: async (ctx, args) => {
+    const issues = await ctx.db
+      .query("issues")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+
+    // N+1 回避: list と同様、project 配下の Task を一括取得してメモリ上で
+    // Issue ごとにグルーピングする。
+    const projectTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+    const tasksByIssue = new Map<Id<"issues">, Doc<"tasks">[]>();
+    for (const task of projectTasks) {
+      const group = tasksByIssue.get(task.issue);
+      if (group === undefined) {
+        tasksByIssue.set(task.issue, [task]);
+      } else {
+        group.push(task);
+      }
+    }
+
+    const result: {
+      _id: Id<"issues">;
+      number: number;
+      title: string;
+      taskCount: number;
+      doneCount: number;
+    }[] = [];
+    for (const issue of issues) {
+      const tasks = tasksByIssue.get(issue._id) ?? [];
+      if (deriveIssueStatus(tasks.map((t) => t.status)) !== "in_progress") {
+        continue;
+      }
+      // 進捗は canceled を除いた「実行対象」で集計（派生ステータスと同基準・§5.1）。
+      const active = tasks.filter((t) => t.status !== "canceled");
+      result.push({
+        _id: issue._id,
+        number: issue.number,
+        title: issue.title,
+        taskCount: active.length,
+        doneCount: active.filter((t) => t.status === "done").length,
+      });
+    }
+    return result;
+  },
+});
+
+/**
  * {key}#{number} 形式の参照から Issue を解決し、派生ステータスと配下 Task を返す。
  * 詳細画面の表示用に作成者名と各 Task の担当者名を付与する
  * （member の PII は返さず name のみ）。

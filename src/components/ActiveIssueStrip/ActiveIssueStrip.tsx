@@ -16,7 +16,7 @@ export function ActiveIssueStrip({
   project: Id<"projects">;
   projectKey: string;
 }) {
-  const issues = useQuery(api.issues.list, { project });
+  const issues = useQuery(api.issues.listInProgress, { project });
 
   // 読み込み中も帯の高さを保つため、行数分ではなく1行分のスケルトンだけ示す。
   if (issues === undefined) {
@@ -27,16 +27,15 @@ export function ActiveIssueStrip({
     );
   }
 
-  const active = issues.filter((issue) => issue.status === "in_progress");
-
   // 0 件を黙って隠さず、進行中の Issue が無いことを明示する（Issue #16 方針）。
-  if (active.length === 0) {
+  // in_progress への絞り込みはサーバー側（listInProgress）で完結している。
+  if (issues.length === 0) {
     return <p className={s.empty}>進行中の Issue はありません。</p>;
   }
 
   return (
     <div className={s.strip}>
-      {active.map((issue) => (
+      {issues.map((issue) => (
         <Link
           className={s.chip}
           key={issue._id}

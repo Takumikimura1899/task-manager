@@ -1,7 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Doc, Id } from "../convex/_generated/dataModel";
+import {
+  createMember,
+  createProject,
+  createQueryDispatcher,
+  type MutateMock,
+  type QueryMock,
+} from "../test/reactQuerySupport";
 import { App } from "./App";
 
 /**
@@ -12,30 +18,19 @@ import { App } from "./App";
  * コンポーネントは描画されないため、モック無しでもテストできる（既存ケース）。
  * 一方 "/" と "/issues" は AppLayout（レイアウトルート）配下にマウントされ、
  * AppLayout 自身が projects.list / members.list を購読するため、convex/react
- * のモックが必要になる。api の関数参照（anyApi）は参照同一性を持たないため、
- * getFunctionName で "module:function" 名に解決してディスパッチする
- * （AppLayout.test.tsx と同方式）。NotFound ケースへの影響はない
- * （NotFound は Convex の hooks を呼ばない）。
+ * のモックが必要になる（ディスパッチの詳細は test/reactQuerySupport.ts 参照）。
+ * NotFound ケースへの影響はない（NotFound は Convex の hooks を呼ばない）。
  * 既存ルート（TasksView / 詳細画面）の描画内容は各画面のテストに委ねる。
  */
 
 const { useQueryMock, mutate } = vi.hoisted(() => ({
-  useQueryMock:
-    vi.fn<
-      (name: string, args: Record<string, unknown> | undefined) => unknown
-    >(),
-  mutate: vi.fn<(args: unknown) => Promise<unknown>>(),
+  useQueryMock: vi.fn<QueryMock>(),
+  mutate: vi.fn<MutateMock>(),
 }));
 
 vi.mock("convex/react", async () => {
-  const { getFunctionName } = await import("convex/server");
-  return {
-    useQuery: (
-      query: Parameters<typeof getFunctionName>[0],
-      args?: Record<string, unknown>,
-    ) => useQueryMock(getFunctionName(query), args),
-    useMutation: () => mutate,
-  };
+  const { buildConvexReactMock } = await import("../test/reactQuerySupport");
+  return buildConvexReactMock(useQueryMock, mutate);
 });
 
 beforeEach(() => {
@@ -67,33 +62,15 @@ describe("App のルーティング", () => {
 
 describe("App の /issues ルート", () => {
   it("/issues では AppLayout 配下に IssuesView（Issue 一覧）をマウントする", () => {
-    const project = {
-      _id: "project_1" as Id<"projects">,
-      _creationTime: 1000,
-      key: "TASK",
-      name: "タスク管理",
-      nextTaskNumber: 1,
-      nextIssueNumber: 1,
-    } as Doc<"projects">;
-    const member = {
-      _id: "member_1" as Id<"members">,
-      _creationTime: 1000,
-      name: "Alice",
-      email: "alice@example.com",
-      role: "member",
-    } as Doc<"members">;
-    useQueryMock.mockImplementation((name) => {
-      switch (name) {
-        case "projects:list":
-          return [project];
-        case "members:list":
-          return [member];
-        case "issues:list":
-          return [];
-        default:
-          return undefined;
-      }
-    });
+    const project = createProject();
+    const member = createMember();
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [project],
+        "members:list": [member],
+        "issues:list": [],
+      }),
+    );
 
     render(
       <MemoryRouter initialEntries={["/issues"]}>

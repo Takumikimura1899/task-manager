@@ -1,7 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import type { Id } from "../../../convex/_generated/dataModel";
+import {
+  createMember,
+  createProject,
+  createQueryDispatcher,
+  type MutateMock,
+  type QueryMock,
+} from "../../../test/reactQuerySupport";
 import { AppLayout } from "./AppLayout";
 
 /**
@@ -9,49 +16,19 @@ import { AppLayout } from "./AppLayout";
  * タブナビ（/ タスク・/issues Issue）・プロジェクト選択 select を検証する。
  * Convex は外部依存のためモックする。projects.list / members.list はいずれも
  * 引数なしで呼ばれるため args では区別できず、api の関数参照（anyApi）も
- * 参照同一性を持たない。getFunctionName で "module:function" 名に解決して
- * ディスパッチする（旧 Home.test.tsx と同方式）。
+ * 参照同一性を持たない。ディスパッチの詳細は test/reactQuerySupport.ts 参照。
  */
 
 const { useQueryMock, mutate } = vi.hoisted(() => ({
-  useQueryMock:
-    vi.fn<
-      (name: string, args: Record<string, unknown> | undefined) => unknown
-    >(),
-  mutate: vi.fn<(args: unknown) => Promise<unknown>>(),
+  useQueryMock: vi.fn<QueryMock>(),
+  mutate: vi.fn<MutateMock>(),
 }));
 
 vi.mock("convex/react", async () => {
-  const { getFunctionName } = await import("convex/server");
-  return {
-    useQuery: (
-      query: Parameters<typeof getFunctionName>[0],
-      args?: Record<string, unknown>,
-    ) => useQueryMock(getFunctionName(query), args),
-    useMutation: () => mutate,
-  };
+  const { buildConvexReactMock } =
+    await import("../../../test/reactQuerySupport");
+  return buildConvexReactMock(useQueryMock, mutate);
 });
-
-const createProject = (overrides: Record<string, unknown> = {}) =>
-  ({
-    _id: "project_1" as Id<"projects">,
-    _creationTime: 1000,
-    key: "TASK",
-    name: "タスク管理",
-    nextTaskNumber: 1,
-    nextIssueNumber: 1,
-    ...overrides,
-  }) as Doc<"projects">;
-
-const createMember = (overrides: Record<string, unknown> = {}) =>
-  ({
-    _id: "member_1" as Id<"members">,
-    _creationTime: 1000,
-    name: "Alice",
-    email: "alice@example.com",
-    role: "member",
-    ...overrides,
-  }) as Doc<"members">;
 
 // 子ルート（TasksView / IssuesView）の描画内容は各画面のテストに委ねる。
 // ここでは AppLayout 自身の責務（ローディング・0件分岐・タブ・select）だけを
@@ -110,16 +87,12 @@ describe("AppLayout のタブナビ", () => {
   beforeEach(() => {
     const project = createProject();
     const member = createMember();
-    useQueryMock.mockImplementation((name) => {
-      switch (name) {
-        case "projects:list":
-          return [project];
-        case "members:list":
-          return [member];
-        default:
-          return undefined;
-      }
-    });
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [project],
+        "members:list": [member],
+      }),
+    );
   });
 
   it.each([
@@ -144,16 +117,12 @@ describe("AppLayout のタブナビ", () => {
 describe("AppLayout のメンバー0件案内（Issue #16）", () => {
   it("メンバーが0件（ロード完了）なら NoMembersNotice を表示する", () => {
     const project = createProject();
-    useQueryMock.mockImplementation((name) => {
-      switch (name) {
-        case "projects:list":
-          return [project];
-        case "members:list":
-          return [];
-        default:
-          return undefined;
-      }
-    });
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [project],
+        "members:list": [],
+      }),
+    );
     renderAppLayout();
 
     expect(screen.getByRole("note")).toHaveTextContent(
@@ -174,16 +143,12 @@ describe("AppLayout のメンバー0件案内（Issue #16）", () => {
   it("メンバーがいる場合は NoMembersNotice を表示しない", () => {
     const project = createProject();
     const member = createMember();
-    useQueryMock.mockImplementation((name) => {
-      switch (name) {
-        case "projects:list":
-          return [project];
-        case "members:list":
-          return [member];
-        default:
-          return undefined;
-      }
-    });
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [project],
+        "members:list": [member],
+      }),
+    );
     renderAppLayout();
 
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
@@ -198,16 +163,12 @@ describe("AppLayout の sessionStorage 例外時のデグレード", () => {
       key: "WEB",
       name: "Web サイト",
     });
-    useQueryMock.mockImplementation((name) => {
-      switch (name) {
-        case "projects:list":
-          return [projectA, projectB];
-        case "members:list":
-          return [createMember()];
-        default:
-          return undefined;
-      }
-    });
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [projectA, projectB],
+        "members:list": [createMember()],
+      }),
+    );
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const getItemSpy = vi
       .spyOn(Storage.prototype, "getItem")
@@ -240,16 +201,12 @@ describe("AppLayout のプロジェクト select", () => {
       key: "WEB",
       name: "Web サイト",
     });
-    useQueryMock.mockImplementation((name) => {
-      switch (name) {
-        case "projects:list":
-          return [projectA, projectB];
-        case "members:list":
-          return [createMember()];
-        default:
-          return undefined;
-      }
-    });
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [projectA, projectB],
+        "members:list": [createMember()],
+      }),
+    );
     renderAppLayout();
 
     const select = screen.getByRole("combobox", { name: "プロジェクト" });

@@ -283,3 +283,25 @@ describe("TaskDetail の楽観ロック（Issue #73）", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("TaskDetail の確認パネル revision", () => {
+  it("削除確認パネル表示中に購読値の revision が進んだ場合、確定時は最新の revision を送る", async () => {
+    const user = userEvent.setup();
+    mocks.task = createTask({ revision: 5 });
+    const { rerender } = renderTaskDetail();
+
+    await user.click(screen.getByRole("button", { name: "タスクを削除" }));
+
+    // パネル表示中に他クライアントが更新し、購読値の revision が進む
+    mocks.task = createTask({ revision: 6 });
+    rerender(taskDetailUi());
+
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    // パネルを開いた時点（5）ではなく、確定時点の最新値（6）を送る
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      id: "task1",
+      expectedRevision: 6,
+    });
+  });
+});

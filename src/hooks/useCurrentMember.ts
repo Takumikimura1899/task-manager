@@ -1,5 +1,14 @@
 import { useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "../../convex/_generated/api";
+
+/**
+ * api.members.list の戻り値要素の型（_id, name のみ）。
+ * Doc<"members"> ではない点に注意: PII（email 等）を含まない最小限の
+ * フィールドしか返さないため（convex/members.ts 参照）、実際の戻り型から
+ * 導出したこの型を単一の情報源として使う（AppOutletContext 等）。
+ */
+export type MemberSummary = FunctionReturnType<typeof api.members.list>[number];
 
 /**
  * ログイン中の操作者（作成者・担当者の既定値として使う）を返すフック。

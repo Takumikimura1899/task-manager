@@ -3,6 +3,13 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
+import {
+  createMember,
+  createProject,
+  createQueryDispatcher,
+  type MutateMock,
+  type QueryMock,
+} from "../../../test/reactQuerySupport";
 import { AppLayout } from "../../components/AppLayout/AppLayout";
 import type { BoardTask } from "../../lib/board";
 import { type TaskStatus, TASK_STATUS_ORDER } from "../../lib/taskMeta";
@@ -14,50 +21,20 @@ import { TasksView } from "./TasksView";
  * 持っていたが、AppLayout（プロジェクト選択）と TasksView（Board 再生成）に
  * 分かれたため、両者を統合レンダリングして移植する（旧 Home.test.tsx の
  * 構成・コメントを踏襲）。
- * Convex は外部依存のためモックする。api の関数参照（anyApi）は参照同一性を
- * 持たないため、getFunctionName で "module:function" 名に解決してディスパッチ
- * する。
+ * Convex は外部依存のためモックする。ディスパッチの詳細は
+ * test/reactQuerySupport.ts 参照。
  */
 
 const { useQueryMock, mutate } = vi.hoisted(() => ({
-  useQueryMock:
-    vi.fn<
-      (name: string, args: Record<string, unknown> | undefined) => unknown
-    >(),
-  mutate: vi.fn<(args: unknown) => Promise<unknown>>(),
+  useQueryMock: vi.fn<QueryMock>(),
+  mutate: vi.fn<MutateMock>(),
 }));
 
 vi.mock("convex/react", async () => {
-  const { getFunctionName } = await import("convex/server");
-  return {
-    useQuery: (
-      query: Parameters<typeof getFunctionName>[0],
-      args?: Record<string, unknown>,
-    ) => useQueryMock(getFunctionName(query), args),
-    useMutation: () => mutate,
-  };
+  const { buildConvexReactMock } =
+    await import("../../../test/reactQuerySupport");
+  return buildConvexReactMock(useQueryMock, mutate);
 });
-
-const createProject = (overrides: Record<string, unknown> = {}) =>
-  ({
-    _id: "project_1" as Id<"projects">,
-    _creationTime: 1000,
-    key: "TASK",
-    name: "タスク管理",
-    nextTaskNumber: 1,
-    nextIssueNumber: 1,
-    ...overrides,
-  }) as Doc<"projects">;
-
-const createMember = (overrides: Record<string, unknown> = {}) =>
-  ({
-    _id: "member_1" as Id<"members">,
-    _creationTime: 1000,
-    name: "Alice",
-    email: "alice@example.com",
-    role: "member",
-    ...overrides,
-  }) as Doc<"members">;
 
 const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
   _id: "task_1" as Id<"tasks">,
@@ -113,29 +90,22 @@ describe("TasksView のプロジェクト切替（Issue #74）", () => {
       key: "WEB",
       name: "Web サイト",
     });
-    // Convex の購読は同じスナップショットに対して同一参照を返す。
-    // 毎回新しい配列を返すと Board の同期 effect（参照比較）が無限ループする
-    // ため、実物同様に安定した参照を返す。
+    // 参照安定性の注意は test/reactQuerySupport.ts（createQueryDispatcher）参照。
     const projects = [projectA, projectB];
     const members = [createMember()];
     const issues: never[] = [];
     const columnsA = createColumns({ todo: [createTask()] });
-    useQueryMock.mockImplementation((name, args) => {
-      switch (name) {
-        case "projects:list":
-          return projects;
-        case "members:list":
-          return members;
-        case "issues:list":
-          // ActiveIssueStrip の購読。切替の検証には無関係のため空で固定する。
-          return issues;
-        case "tasks:board":
-          // 旧プロジェクトのみデータ済み。新プロジェクトはロード中（undefined）
-          return args?.project === projectA._id ? columnsA : undefined;
-        default:
-          return undefined;
-      }
-    });
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": projects,
+        "members:list": members,
+        // ActiveIssueStrip の購読。切替の検証には無関係のため空で固定する。
+        "issues:list": issues,
+        // 旧プロジェクトのみデータ済み。新プロジェクトはロード中（undefined）
+        "tasks:board": (args: Record<string, unknown> | undefined) =>
+          args?.project === projectA._id ? columnsA : undefined,
+      }),
+    );
     renderTasksView();
 
     // 切替前：旧プロジェクトのカードが表示されている

@@ -52,6 +52,7 @@ const createIssue = (overrides: Record<string, unknown> = {}) => ({
   title: "ログイン機能を実装する",
   description: "認証まわりの説明",
   status: "in_progress",
+  priority: "none",
   tasks: [],
   createdByName: "木村",
   updatedAt: 1751900000000,
@@ -136,10 +137,35 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
       expectedRevision: 7,
       title: "ログイン機能（改）",
       description: "認証まわりの説明",
+      priority: "none",
     });
     expect(
       screen.queryByRole("form", { name: "Issue を編集" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("編集フォームに優先度 select が現在値入りで表示される", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ priority: "high" });
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+
+    expect(screen.getByLabelText("優先度")).toHaveValue("high");
+  });
+
+  it("優先度を変更して保存すると update に新しい priority が渡る", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ priority: "none" });
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "編集" }));
+    await user.selectOptions(screen.getByLabelText("優先度"), "urgent");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    expect(mocks.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: "urgent" }),
+    );
   });
 
   it("楽観ロック競合時はエラーと再取得導線を表示し、再読込で最新値から編集し直せる", async () => {

@@ -1,3 +1,5 @@
+import { ConvexError } from "convex/values";
+
 /**
  * 入力バリデーション・正規化の純粋関数（基本設計書 §3 不変条件の前段）。
  *
@@ -32,4 +34,19 @@ export function isValidEmail(email: string): boolean {
 /** 見積・実績工数（単位: 時間）: 有限な非負数のみ許容する。 */
 export function isValidHours(n: number): boolean {
   return Number.isFinite(n) && n >= 0;
+}
+
+/**
+ * 見積・実績工数フィールドの検証（tasks.updateFields の estimate/actual で共有）。
+ * undefined/null（未指定・クリア）は素通しし、数値が isValidHours を満たさない
+ * 場合のみ ConvexError で失敗させる。`label` はエラー文言の主語（例: "見積工数"）。
+ */
+export function assertHours(
+  label: string,
+  value: number | null | undefined,
+): void {
+  if (value === undefined || value === null) return;
+  if (!isValidHours(value)) {
+    throw new ConvexError(`${label}は 0 以上の数値で指定してください`);
+  }
 }

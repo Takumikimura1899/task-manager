@@ -3,7 +3,10 @@ import { useState } from "react";
 import { NavLink, Outlet, useOutletContext } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
-import { useCurrentMember } from "../../hooks/useCurrentMember";
+import {
+  type MemberSummary,
+  useCurrentMember,
+} from "../../hooks/useCurrentMember";
 import { NoMembersNotice } from "../NoMembersNotice/NoMembersNotice";
 import { Skeleton } from "../Skeleton/Skeleton";
 import s from "./AppLayout.module.css";
@@ -45,8 +48,8 @@ function writeSelectedProject(id: Id<"projects">): void {
 type AppOutletContext = {
   projects: Doc<"projects">[];
   selected: Doc<"projects">;
-  members: Doc<"members">[] | undefined;
-  currentMember: Doc<"members"> | null;
+  members: MemberSummary[] | undefined;
+  currentMember: MemberSummary | null;
 };
 
 /** 子ルート（TasksView / IssuesView）から選択中プロジェクトと購読済みメンバーを取り出す。 */

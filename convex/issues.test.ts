@@ -287,6 +287,82 @@ describe("issues.list（estimateTotal / actualTotal）", () => {
   });
 });
 
+// --- listInProgress（ActiveIssueStrip 向け軽量版） ---------------------------
+
+describe("issues.listInProgress", () => {
+  it("in_progress の Issue のみを返す（open/done/canceled は含まない）", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+
+    // open のまま
+    await t.mutation(api.issues.create, {
+      project,
+      title: "未着手の課題",
+      createdBy: member,
+      firstTask: { title: "タスクA" },
+    });
+
+    // in_progress にする
+    const { task: inProgressTask } = await t.mutation(api.issues.create, {
+      project,
+      title: "進行中の課題",
+      createdBy: member,
+      firstTask: { title: "タスクB" },
+    });
+    await driveTo(t, inProgressTask, "in_progress");
+
+    // done にする
+    const { task: doneTask } = await t.mutation(api.issues.create, {
+      project,
+      title: "完了済みの課題",
+      createdBy: member,
+      firstTask: { title: "タスクC" },
+    });
+    await driveTo(t, doneTask, "done");
+
+    // canceled にする
+    const { task: canceledTask } = await t.mutation(api.issues.create, {
+      project,
+      title: "中止された課題",
+      createdBy: member,
+      firstTask: { title: "タスクD" },
+    });
+    await t.mutation(api.tasks.transitionStatus, {
+      id: canceledTask,
+      to: "canceled",
+      expectedRevision: 0,
+    });
+
+    const result = await t.query(api.issues.listInProgress, { project });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ title: "進行中の課題" });
+  });
+
+  it("返却フィールドを最小セット（_id/number/title/taskCount/doneCount）に絞る", async () => {
+    const t = setup();
+    const { project, task } = await arrangeSingleIssue(t);
+    await driveTo(t, task, "in_progress");
+
+    const [found] = await t.query(api.issues.listInProgress, { project });
+
+    expect(Object.keys(found).toSorted()).toEqual([
+      "_id",
+      "doneCount",
+      "number",
+      "taskCount",
+      "title",
+    ]);
+    expect(found).toMatchObject({
+      number: 1,
+      title: "課題",
+      taskCount: 1,
+      doneCount: 0,
+    });
+  });
+});
+
 // --- update（タイトル・説明の編集） ------------------------------------------
 
 describe("issues.update", () => {

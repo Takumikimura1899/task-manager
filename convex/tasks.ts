@@ -12,7 +12,7 @@ import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
 import { rankBetween } from "./lib/rank";
-import { isValidHours } from "./lib/validators";
+import { assertHours } from "./lib/validators";
 
 /**
  * Task の Core API（基本設計書 §3 / §4 / §5）。
@@ -158,20 +158,8 @@ export const updateFields = mutation({
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
-    if (
-      args.estimate !== undefined &&
-      args.estimate !== null &&
-      !isValidHours(args.estimate)
-    ) {
-      throw new ConvexError("見積工数は 0 以上の数値で指定してください");
-    }
-    if (
-      args.actual !== undefined &&
-      args.actual !== null &&
-      !isValidHours(args.actual)
-    ) {
-      throw new ConvexError("実績工数は 0 以上の数値で指定してください");
-    }
+    assertHours("見積工数", args.estimate);
+    assertHours("実績工数", args.actual);
 
     const patch: Partial<Doc<"tasks">> = nextMeta(task);
     if (args.title !== undefined) patch.title = args.title;

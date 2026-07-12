@@ -1,10 +1,10 @@
 import { useMutation } from "convex/react";
 import { ConvexError } from "convex/values";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { formatHours } from "../../lib/formatHours";
+import { formatHoursTotal } from "../../lib/formatHours";
 import { ISSUE_STATUS_LABELS, type IssueSummary } from "../../lib/issueMeta";
 import { PRIORITY_LABELS } from "../../lib/taskMeta";
 import { Badge } from "../Badge/Badge";
@@ -33,6 +33,14 @@ export function IssueTable({
   // 二重確定や他行への pending 切替を防ぐ実行中フラグを持つ。
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // confirmDelete の完了ハンドラは in-flight 中に取得した pending の
+  // 最新値を必要とする（クロージャの pending は呼び出し時点のまま更新
+  // されない）。ref で常に最新値を追随させ、対象が完了時点でも pending の
+  // ままかを判定する。
+  const pendingRef = useRef(pending);
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
 
   const pendingIssue =
     pending !== null ? (issues.find((i) => i._id === pending) ?? null) : null;
@@ -44,6 +52,10 @@ export function IssueTable({
 
   const confirmDelete = async () => {
     if (pendingIssue === null || deleting) return;
+    // 完了時点で対象が pending のままか判定するために、実行開始時点の id を
+    // ローカルに固定する（pendingIssue はレンダーのたびに issues から
+    // 再導出されるため、await 中に別行へ切り替わりうる）。
+    const targetId = pendingIssue._id;
     setError(null);
     setDeleting(true);
     try {
@@ -51,11 +63,18 @@ export function IssueTable({
         id: pendingIssue._id,
         expectedRevision: pendingIssue.revision,
       });
-      setPending(null);
+      // pending が targetId のままの場合のみクリアする。対象消失後に
+      // 別行のパネルが開いていれば、それを誤って閉じない。
+      setPending((p) => (p === targetId ? null : p));
     } catch (err) {
-      setError(
-        err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
-      );
+      // pending が targetId のままの場合のみエラーを表示する。削除ボタンの
+      // disabled（deleting 併用）で通常は到達しないが、状態誤帰属を
+      // 構造的に不可能にする防御。
+      if (pendingRef.current === targetId) {
+        setError(
+          err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
+        );
+      }
     } finally {
       setDeleting(false);
     }
@@ -145,25 +164,25 @@ export function IssueTable({
                       </div>
                     </td>
                     {/* 合計 0 は「未入力」と区別できないため、予想・実績とも
-                        「—」で未入力扱いに統一する（0h 見積の区別は現状不要）。 */}
+                        「—」で未入力扱いに統一する（丸めて 0 になる極小値も
+                        formatHoursTotal 側で同様に扱う）。 */}
                     <td className={`${s.td} ${s.numeric}`}>
-                      {issue.estimateTotal === 0
-                        ? "—"
-                        : formatHours(issue.estimateTotal)}
+                      {formatHoursTotal(issue.estimateTotal)}
                     </td>
                     <td className={`${s.td} ${s.numeric}`}>
-                      {issue.actualTotal === 0
-                        ? "—"
-                        : formatHours(issue.actualTotal)}
+                      {formatHoursTotal(issue.actualTotal)}
                     </td>
                     <td className={s.td}>
                       {/* 確認フロー進行中は他行の削除を受け付けない（実行中の
                           pending 切替で別行のパネルが閉じる競合を防ぐ）。
                           対象が外部で削除され pendingIssue が null に戻れば
-                          自動的に再度有効になる。 */}
+                          自動的に再度有効になるが、削除 in-flight 中
+                          （deleting）はそれでも新たなパネルを開かせない
+                          （対象消失後に他行を開けてしまうと、in-flight の
+                          完了ハンドラがその行を誤って操作しうるため）。 */}
                       <button
                         className={s.deleteButton}
-                        disabled={pendingIssue !== null}
+                        disabled={pendingIssue !== null || deleting}
                         onClick={() => requestDelete(issue)}
                         type="button"
                       >
