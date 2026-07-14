@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { formatHoursTotal } from "../../lib/formatHours";
+import { formatIssueRef } from "../../lib/formatIssueRef";
 import { ISSUE_STATUS_LABELS, type IssueSummary } from "../../lib/issueMeta";
 import { PRIORITY_LABELS } from "../../lib/taskMeta";
 import { Badge } from "../Badge/Badge";
@@ -121,7 +122,7 @@ export function IssueTable({
                 <Fragment key={issue._id}>
                   <tr>
                     <td className={`${s.td} ${s.ref}`}>
-                      {projectKey}#{issue.number}
+                      {formatIssueRef(issue.number)}
                     </td>
                     <td className={s.td}>
                       <Badge status={issue.status}>

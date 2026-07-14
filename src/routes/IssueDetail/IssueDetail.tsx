@@ -12,6 +12,7 @@ import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
 import { useCurrentMember } from "../../hooks/useCurrentMember";
 import { useEditForm } from "../../hooks/useEditForm";
+import { formatIssueRef } from "../../lib/formatIssueRef";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
 import { parseRefNumber } from "../../lib/routeParams";
 import {
@@ -113,9 +114,7 @@ export function IssueDetail() {
 
       <header className={s.header}>
         <div className={s.heading}>
-          <span className={s.ref}>
-            {issue.projectKey}#{issue.number}
-          </span>
+          <span className={s.ref}>{formatIssueRef(issue.number)}</span>
           <Badge status={status}>{ISSUE_STATUS_LABELS[status]}</Badge>
           {!edit.editing && (
             <button

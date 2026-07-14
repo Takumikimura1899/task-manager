@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { formatIssueRef } from "../../lib/formatIssueRef";
 import { Skeleton } from "../Skeleton/Skeleton";
 import s from "./ActiveIssueStrip.module.css";
 
@@ -41,9 +42,7 @@ export function ActiveIssueStrip({
           key={issue._id}
           to={`/${projectKey}/issues/${issue.number}`}
         >
-          <span className={s.ref}>
-            {projectKey}#{issue.number}
-          </span>
+          <span className={s.ref}>{formatIssueRef(issue.number)}</span>
           <span className={s.title}>{issue.title}</span>
           <span className={s.count}>
             {issue.doneCount}/{issue.taskCount}

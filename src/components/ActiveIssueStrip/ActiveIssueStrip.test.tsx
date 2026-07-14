@@ -75,12 +75,12 @@ describe("ActiveIssueStrip の表示とリンク", () => {
 
     const link = screen.getByRole("link", { name: /ログイン機能を実装する/ });
     expect(link).toHaveAttribute("href", "/TASK/issues/12");
-    expect(link).toHaveTextContent("TASK#12");
+    expect(link).toHaveTextContent("Issue #12");
     expect(link).toHaveTextContent("1/3");
 
     const other = screen.getByRole("link", { name: /決済フローを見直す/ });
     expect(other).toHaveAttribute("href", "/TASK/issues/7");
-    expect(other).toHaveTextContent("TASK#7");
+    expect(other).toHaveTextContent("Issue #7");
     expect(other).toHaveTextContent("0/2");
   });
 

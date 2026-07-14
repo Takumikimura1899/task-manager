@@ -80,7 +80,7 @@ describe("IssueTable の行内容", () => {
       }),
     ]);
 
-    expect(screen.getByText("TASK#34")).toBeInTheDocument();
+    expect(screen.getByText("Issue #34")).toBeInTheDocument();
     expect(
       screen.getByText(ISSUE_STATUS_LABELS.in_progress),
     ).toBeInTheDocument();

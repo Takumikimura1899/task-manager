@@ -1,6 +1,7 @@
 import { memo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../../convex/_generated/dataModel";
+import { formatIssueRef } from "../../lib/formatIssueRef";
 import s from "./TaskCard.module.css";
 
 const PRIORITY_LABELS: Record<Doc<"tasks">["priority"], string> = {
@@ -42,7 +43,7 @@ export const TaskCard = memo(function TaskCard({
         </Link>
         <span className={s.refEnd}>
           {issueNumber !== null && (
-            <span className={s.issue}>Issue #{issueNumber}</span>
+            <span className={s.issue}>{formatIssueRef(issueNumber)}</span>
           )}
           {dragHandle}
         </span>

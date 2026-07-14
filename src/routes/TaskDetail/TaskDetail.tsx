@@ -18,6 +18,7 @@ import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useEditForm } from "../../hooks/useEditForm";
 import { formatHours } from "../../lib/formatHours";
+import { formatIssueRef } from "../../lib/formatIssueRef";
 import { parseRefNumber } from "../../lib/routeParams";
 import {
   PRIORITY_LABELS,
@@ -261,7 +262,7 @@ export function TaskDetail() {
           className={s.breadcrumb}
           to={`/${task.projectKey}/issues/${task.issueNumber}`}
         >
-          {task.projectKey}#{task.issueNumber}
+          {formatIssueRef(task.issueNumber)}
           {task.issueTitle !== null && ` ${task.issueTitle}`}
         </Link>
       )}
