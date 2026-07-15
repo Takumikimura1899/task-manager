@@ -42,6 +42,7 @@ const createIssueSummary = (
   doneCount: 1,
   estimateTotal: 8,
   actualTotal: 0,
+  assignees: [],
   ...overrides,
 });
 
