@@ -506,6 +506,45 @@ describe("issues.remove", () => {
   });
 });
 
+// --- getIdByRef（{key}#{number} → _id の軽量解決） ---------------------------
+
+describe("issues.getIdByRef", () => {
+  it("参照を解決して _id だけを返す", async () => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const member = await seedMember(t);
+    const { issue } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク" },
+    });
+
+    expect(
+      await t.query(api.issues.getIdByRef, { projectKey: "TASK", number: 1 }),
+    ).toBe(issue);
+  });
+
+  it.each([
+    { name: "プロジェクトキーが未知", projectKey: "NONE", number: 1 },
+    { name: "Issue 番号が未知", projectKey: "TASK", number: 999 },
+  ])("$name の場合は null を返す", async ({ projectKey, number }) => {
+    const t = setup();
+    const project = await seedProject(t, { key: "TASK" });
+    const member = await seedMember(t);
+    await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク" },
+    });
+
+    expect(
+      await t.query(api.issues.getIdByRef, { projectKey, number }),
+    ).toBeNull();
+  });
+});
+
 // --- getByRef（{key}#{number} 解決・詳細表示用 join） -------------------------
 
 describe("issues.getByRef", () => {

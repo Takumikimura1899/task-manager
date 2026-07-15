@@ -109,8 +109,18 @@ async function resolveIssue(ref: string) {
   return issue;
 }
 
+/**
+ * "TASK#1" 形式の参照から Issue の _id だけを解決する。
+ * getByRef の join（配下 Task・担当者名）を伴わない軽量版。
+ */
 async function resolveIssueId(ref: string): Promise<Id<"issues">> {
-  return (await resolveIssue(ref))._id;
+  const { key, number } = parseIssueRef(ref);
+  const id = await convex.query(api.issues.getIdByRef, {
+    projectKey: key,
+    number,
+  });
+  if (id === null) throw new Error(`Issue が見つかりません: ${ref}`);
+  return id;
 }
 
 async function resolveMemberId(email: string): Promise<Id<"members">> {
