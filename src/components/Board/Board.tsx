@@ -98,13 +98,18 @@ export function Board({
   // 同期を止める。mutation 成功後は新しい columns snapshot が届いた時点で
   // （columnsChanged=true になり）最新 filter がまとめて適用される。
   const pendingMutationsRef = useRef(0);
-  // mutation 未解決中に開始されたドラッグを無効化するフラグ（Issue #92
-  // 再レビュー指摘1・2・4）。in-flight mutation を常に高々1つに保つことで、
-  // (1) neighborRanksInFullColumn へ渡す fullColumn（columns スナップショット）
-  // が新しいドラッグの間に stale化する、(2) その状態の handleDragCancel が
-  // 進行中の楽観更新を巻き戻す、(4) catch の resyncFromServer が別ドラッグを
-  // clobber する、を根本的に防ぐ。
-  const suppressedDragRef = useRef(false);
+  // mutation 未解決中は SortableTaskCard の useSortable を disabled にし、
+  // dnd-kit 自身にドラッグを開始させない（Issue #92 4周目レビュー指摘1・2）。
+  // 以前は Board の React state（activeTask）だけを抑止する方式だったが、
+  // それでは dnd-kit 内部のドラッグライフサイクル（transform 追従・
+  // DragOverlay 無しでのポインタ追従、ドロップ時の汎用エラー残留）を止め
+  // られず、見た目が壊れたまま操作できてしまっていた。ドラッグの発生源
+  // （dnd-kit の useSortable）側で止めることで、in-flight mutation を常に
+  // 高々1つに保ち、(1) neighborRanksInFullColumn へ渡す fullColumn（columns
+  // スナップショット）が新しいドラッグの間に stale化する、(2) handleDragCancel
+  // が進行中の楽観更新を巻き戻す、(3) catch の resyncFromServer が別ドラッグを
+  // clobber する、も合わせて防ぐ。
+  const [dragLocked, setDragLocked] = useState(false);
 
   /** syncedRef/appliedFilterRef を更新しつつ、server snapshot から board を再構築する。 */
   const resyncFromServer = useCallback(
@@ -202,21 +207,16 @@ export function Board({
   }
 
   function handleDragStart({ active }: DragStartEvent) {
-    // mutation 未解決中に始まったドラッグは無効化する（activeTask を設定
-    // しない）。dnd-kit 自体のドラッグ操作は継続するため見た目上カードは
-    // 動くが、onDragOver/onDragEnd を早期 return させ board には影響しない。
-    if (pendingMutationsRef.current > 0) {
-      suppressedDragRef.current = true;
-      return;
-    }
-    suppressedDragRef.current = false;
+    // dragLocked（useSortable の disabled）が効いていれば dnd-kit がそもそも
+    // ドラッグを開始しないため通常は到達しない。disabled 反映前のごく短い
+    // 競合ウィンドウに対する防御ガードとしてのみ残す。
+    if (pendingMutationsRef.current > 0) return;
     setError(null);
     setActiveTask(findTask(active.id as string));
   }
 
   // ドラッグ中、別の列に重なったらローカル状態上でカードを移し替える。
   function handleDragOver({ active, over }: DragOverEvent) {
-    if (suppressedDragRef.current) return;
     if (!over) return;
     const activeId = active.id as string;
     const overId = over.id as string;
@@ -252,14 +252,8 @@ export function Board({
   // （上記 useEffect が activeTask で早期 return）ため、columns はドラッグ
   // 開始前のスナップショットであり復元元として正しい。
   function handleDragCancel() {
-    // 抑止中のドラッグ（Issue #92）はローカル変更を作っていないため、
-    // フラグを下ろすだけで resync は不要。
-    if (suppressedDragRef.current) {
-      suppressedDragRef.current = false;
-      return;
-    }
     setActiveTask(null);
-    // mutation 未解決中は resync しない。抑止中でない通常のドラッグは
+    // mutation 未解決中は resync しない。dragLocked により通常のドラッグは
     // pendingMutationsRef が 0 のとき（前回の mutation が完了済み）にしか
     // 開始されないため、この時点でも 0 のはずだが、念のためガードする。
     if (columns && pendingMutationsRef.current === 0) resyncFromServer(columns);
@@ -274,15 +268,6 @@ export function Board({
   // snapshot）における可視アンカーの直近実隣接」を求め、その間へ挿入する。
   // 挿入位置は常にフル列で本当に隣接する2枚の間になるため、rank は一意になる。
   async function handleDragEnd({ active, over }: DragEndEvent) {
-    // 抑止中のドラッグ（Issue #92）は activeTask を持たないため、そのまま
-    // 進めても実質 no-op だが、ユーザーには理由を明示して案内する。
-    if (suppressedDragRef.current) {
-      suppressedDragRef.current = false;
-      setError(
-        "直前の操作を反映しています。少し待ってからもう一度お試しください",
-      );
-      return;
-    }
     const dragged = activeTask;
     setActiveTask(null);
     const current = boardRef.current;
@@ -352,13 +337,16 @@ export function Board({
         });
       }
 
-      // mutation 未解決の間は同期 effect による resync を止める（Issue #92）。
-      // 参照は resyncFromServer 側の解説を参照。
+      // mutation 未解決の間は同期 effect による resync を止め、かつ
+      // dragLocked で新しいドラッグの開始自体を防ぐ（Issue #92）。
+      // 参照は resyncFromServer / dragLocked 側の解説を参照。
       pendingMutationsRef.current++;
+      setDragLocked(true);
       try {
         await mutationPromise;
       } finally {
         pendingMutationsRef.current--;
+        if (pendingMutationsRef.current === 0) setDragLocked(false);
       }
     } catch (e) {
       setError(errorMessage(e));
@@ -408,6 +396,7 @@ export function Board({
       <div className={`${s.board} ${activeTask ? s.boardDragging : ""}`}>
         {board.map((column) => (
           <Column
+            dragLocked={dragLocked}
             key={column.status}
             label={TASK_STATUS_LABELS[column.status]}
             projectKey={projectKey}

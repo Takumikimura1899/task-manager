@@ -18,16 +18,25 @@ import s from "./TaskCard.module.css";
  * transform はドラッグ追従のため動的値であり、インラインstyleが正となる。
  *
  * memo: ドラッグ中は dragOver のたびに Board が再レンダリングされるため、
- * props（task 参照 / projectKey）が不変のカードはスキップする（#80）。
- * useSortable のコンテキスト更新による再レンダリングは transform 追従に
- * 必要なので残る。
+ * props（task 参照 / projectKey / dragLocked）が不変のカードはスキップする
+ * （#80）。useSortable のコンテキスト更新による再レンダリングは transform
+ * 追従に必要なので残る。
+ *
+ * dragLocked: mutation 未解決中は true になり useSortable を disabled にする
+ * （Issue #92 4周目レビュー指摘1・2）。Board 側の state だけでドラッグを
+ * 抑止すると dnd-kit 自身のドラッグライフサイクルは止まらず、DragOverlay
+ * 無しでカードがポインタへ追従する視覚的グリッチや、ドロップ時の汎用
+ * エラー残留を招く。disabled により dnd-kit がそもそもドラッグを開始しない
+ * ため、これらは発生しない。
  */
 export const SortableTaskCard = memo(function SortableTaskCard({
   task,
   projectKey,
+  dragLocked,
 }: {
   task: BoardTask;
   projectKey: string;
+  dragLocked: boolean;
 }) {
   const {
     attributes,
@@ -37,7 +46,7 @@ export const SortableTaskCard = memo(function SortableTaskCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task._id });
+  } = useSortable({ disabled: dragLocked, id: task._id });
 
   return (
     <div

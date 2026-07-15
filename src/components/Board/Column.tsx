@@ -14,18 +14,22 @@ import s from "./Board.module.css";
  * 中身は縦方向の SortableContext として並べる。
  *
  * memo: dragOver では変化した列以外の tasks 配列参照が維持される（Board 側）
- * ため、未変更列の再レンダリングをスキップできる（#80）。
+ * ため、未変更列の再レンダリングをスキップできる（#80）。dragLocked の
+ * 変化時のみ全列が再レンダーされるが、mutation の開始/終了という境界でしか
+ * 変化しないため頻度は問題にならない（Issue #92 4周目レビュー指摘1・2）。
  */
 export const Column = memo(function Column({
   status,
   label,
   tasks,
   projectKey,
+  dragLocked,
 }: {
   status: Doc<"tasks">["status"];
   label: string;
   tasks: BoardTask[];
   projectKey: string;
+  dragLocked: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -45,6 +49,7 @@ export const Column = memo(function Column({
         >
           {tasks.map((task) => (
             <SortableTaskCard
+              dragLocked={dragLocked}
               key={task._id}
               projectKey={projectKey}
               task={task}

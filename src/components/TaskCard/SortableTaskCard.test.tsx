@@ -37,7 +37,7 @@ const renderSortableCard = (task = createTask()) =>
     <MemoryRouter>
       <DndContext>
         <SortableContext items={[task._id]}>
-          <SortableTaskCard projectKey="TASK" task={task} />
+          <SortableTaskCard dragLocked={false} projectKey="TASK" task={task} />
         </SortableContext>
       </DndContext>
     </MemoryRouter>,
