@@ -57,6 +57,10 @@ function columnIndexOf(board: BoardColumn[], id: string): number {
   return board.findIndex((c) => c.tasks.some((t) => t._id === id));
 }
 
+/** mutation 反映待ち中に開始されたドラッグを拒否したときの案内。 */
+const DRAG_LOCKED_MESSAGE =
+  "直前の操作を反映しています。少し待ってからもう一度お試しください";
+
 function errorMessage(e: unknown): string {
   if (e instanceof ConvexError) return String(e.data);
   if (e instanceof Error) return e.message;
@@ -110,6 +114,12 @@ export function Board({
   // が進行中の楽観更新を巻き戻す、(3) catch の resyncFromServer が別ドラッグを
   // clobber する、も合わせて防ぐ。
   const [dragLocked, setDragLocked] = useState(false);
+  // dragLocked（state）が useSortable の disabled に反映されるのは再レンダー後の
+  // ため、反映前のごく短い競合ウィンドウでは dnd-kit がドラッグを開始できて
+  // しまう。その「activeTask を持たない幽霊ドラッグ」が handleDragOver で
+  // ローカル board を書き換えないよう、開始時に印を付けて over/end/cancel を
+  // 一貫して無効化するバックストップ（Issue #92 5周目レビュー指摘）。
+  const lockedDragRef = useRef(false);
 
   /** syncedRef/appliedFilterRef を更新しつつ、server snapshot から board を再構築する。 */
   const resyncFromServer = useCallback(
@@ -209,14 +219,19 @@ export function Board({
   function handleDragStart({ active }: DragStartEvent) {
     // dragLocked（useSortable の disabled）が効いていれば dnd-kit がそもそも
     // ドラッグを開始しないため通常は到達しない。disabled 反映前のごく短い
-    // 競合ウィンドウに対する防御ガードとしてのみ残す。
-    if (pendingMutationsRef.current > 0) return;
+    // 競合ウィンドウで開始された幽霊ドラッグは、activeTask を設定せず
+    // lockedDragRef で over/end/cancel まで一貫して無効化する。
+    if (pendingMutationsRef.current > 0) {
+      lockedDragRef.current = true;
+      return;
+    }
     setError(null);
     setActiveTask(findTask(active.id as string));
   }
 
   // ドラッグ中、別の列に重なったらローカル状態上でカードを移し替える。
   function handleDragOver({ active, over }: DragOverEvent) {
+    if (lockedDragRef.current) return;
     if (!over) return;
     const activeId = active.id as string;
     const overId = over.id as string;
@@ -252,6 +267,12 @@ export function Board({
   // （上記 useEffect が activeTask で早期 return）ため、columns はドラッグ
   // 開始前のスナップショットであり復元元として正しい。
   function handleDragCancel() {
+    // 幽霊ドラッグ（lockedDragRef）はローカル変更を作っていないため、
+    // 印を下ろすだけで resync も不要。
+    if (lockedDragRef.current) {
+      lockedDragRef.current = false;
+      return;
+    }
     setActiveTask(null);
     // mutation 未解決中は resync しない。dragLocked により通常のドラッグは
     // pendingMutationsRef が 0 のとき（前回の mutation が完了済み）にしか
@@ -268,6 +289,13 @@ export function Board({
   // snapshot）における可視アンカーの直近実隣接」を求め、その間へ挿入する。
   // 挿入位置は常にフル列で本当に隣接する2枚の間になるため、rank は一意になる。
   async function handleDragEnd({ active, over }: DragEndEvent) {
+    // 幽霊ドラッグのドロップは黙って捨てず、拒否した理由をユーザーへ伝える
+    // （サイレント失敗の回避）。メッセージは直前 mutation の成功時に消す。
+    if (lockedDragRef.current) {
+      lockedDragRef.current = false;
+      setError(DRAG_LOCKED_MESSAGE);
+      return;
+    }
     const dragged = activeTask;
     setActiveTask(null);
     const current = boardRef.current;
@@ -348,6 +376,9 @@ export function Board({
         pendingMutationsRef.current--;
         if (pendingMutationsRef.current === 0) setDragLocked(false);
       }
+      // 反映待ちを理由に拒否した幽霊ドラッグの案内は、当の mutation が
+      // 成功した時点で用済みなので残さない（失敗時は catch が上書きする）。
+      setError((prev) => (prev === DRAG_LOCKED_MESSAGE ? null : prev));
     } catch (e) {
       setError(errorMessage(e));
       // 失敗時は server の真実へ戻す。
