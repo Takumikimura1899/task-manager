@@ -1,30 +1,151 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Id } from "../../convex/_generated/dataModel";
 import {
-  neighborRanks,
+  applyBoardFilter,
+  type BoardColumn,
+  type BoardTask,
+  neighborRanksInFullColumn,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "./board";
+import { EMPTY_FILTER, type FilterState } from "./filterParams";
+import type { TaskStatus } from "./taskMeta";
+
+const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
+  _id: "task_1" as Id<"tasks">,
+  _creationTime: 1000,
+  issue: "issue_1" as Id<"issues">,
+  project: "project_1" as Id<"projects">,
+  number: 1,
+  title: "タスク",
+  status: "todo",
+  priority: "high",
+  rank: "a0",
+  createdBy: "member_1" as Id<"members">,
+  revision: 1,
+  updatedAt: 1000,
+  issueNumber: 1,
+  assigneeName: null,
+  ...overrides,
+});
 
 /**
- * カンバン並べ替えの近傍rank算出（純粋関数）の振る舞いを検証する。
- * tasks.move は before < after を要求するため、境界での null と
- * 隣接要素の正しい選択を確認する。
+ * フィルタ中の rank 重複バグ（Issue #92 修正1）の回帰テスト。
+ * 可視カードの隣接だけから rank を発行すると、間に隠れたカードと同一 rank を
+ * 重複発行しうる（rankBetween は決定的）。neighborRanksInFullColumn は
+ * 可視アンカーから「フル列（未フィルタの server snapshot）における
+ * 直近の実隣接」を求めることでこれを防ぐ。
  */
-describe("neighborRanks", () => {
-  const ranks = ["a", "m", "z"];
+describe("neighborRanksInFullColumn", () => {
+  const a = createTask({ _id: "a" as Id<"tasks">, rank: "a" });
+  const m = createTask({ _id: "m" as Id<"tasks">, rank: "m" });
+  const z = createTask({ _id: "z" as Id<"tasks">, rank: "z" });
 
   it.each([
-    // [movedIndex, before, after]
-    [0, null, "m"], // 先頭へ移動 → 上端、下は次要素
-    [1, "a", "z"], // 中間へ移動 → 上下とも隣接要素
-    [2, "m", null], // 末尾へ移動 → 下端、上は前要素
-  ])("index=%i のとき before/after を返す", (index, before, after) => {
-    expect(neighborRanks(ranks, index)).toEqual({ before, after });
+    // [ケース, draggedId, visiblePrev, visibleNext, before, after]
+    ["先頭へ移動", "a", null, m, undefined, "m"],
+    ["中間へ移動", "m", a, z, "a", "z"],
+    ["末尾へ移動", "z", m, null, "m", undefined],
+  ] as const)(
+    "フィルタ無し（可視=フル）では素直な前後隣接の rank になる: %s",
+    (_case, draggedId, visiblePrev, visibleNext, before, after) => {
+      const fullColumn = [a, m, z];
+      expect(
+        neighborRanksInFullColumn(
+          fullColumn,
+          draggedId,
+          visiblePrev,
+          visibleNext,
+        ),
+      ).toEqual({ before, after });
+    },
+  );
+
+  it("非表示カードが可視アンカーの間にある場合、フル列の実隣接 rank を返す（重複防止の再現）", () => {
+    // 隠れた b は可視の a/c の間で rankBetween(a0, a2) 相当の rank を既に
+    // 持っている。可視隣接（a0, a2）だけで計算すると同一 rank を再発行し
+    // 重複してしまうため、a の直後（フル列で実際に隣接する b の手前）へ
+    // 挿入されることを確認する。
+    const visibleA = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const hiddenB = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
+    const visibleC = createTask({ _id: "c" as Id<"tasks">, rank: "a2" });
+    const fullColumn = [visibleA, hiddenB, visibleC];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", visibleA, visibleC),
+    ).toEqual({ before: "a0", after: "a1" });
   });
 
-  it("要素が1つだけの列では上下とも端(null)になる", () => {
-    expect(neighborRanks(["a"], 0)).toEqual({ before: null, after: null });
+  it("先頭挿入: visiblePrev が無い場合はフル列で visibleNext の直前へ挿入する", () => {
+    const first = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const second = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
+    const fullColumn = [first, second];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", null, first),
+    ).toEqual({ before: undefined, after: "a0" });
+  });
+
+  it("可視0枚で末尾追加: 可視アンカーが無ければフル列末尾の rank を before にする", () => {
+    const hiddenA = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const hiddenB = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
+    const fullColumn = [hiddenA, hiddenB];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", null, null),
+    ).toEqual({ before: "a1", after: undefined });
+  });
+
+  it("ドラッグ中カードの除外: fullColumn に自身が含まれていても除外して隣接を計算する", () => {
+    const before = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const dragged = createTask({ _id: "dragged" as Id<"tasks">, rank: "a1" });
+    const after = createTask({ _id: "b" as Id<"tasks">, rank: "a2" });
+    // fullColumn は移動前の server snapshot なので dragged 自身も含む
+    const fullColumn = [before, dragged, after];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", before, null),
+    ).toEqual({ before: "a0", after: "a2" });
+  });
+
+  /**
+   * アンカー未検出時の警告（再レビュー指摘5）。visiblePrev/visibleNext が
+   * fullColumn に見つからない（board 側のデータと server snapshot がずれた
+   * 想定外ケース）場合、サイレント失敗させず console.warn で taskId を残す
+   * （プロジェクト規約「サイレント失敗の回避」）。フォールバック挙動自体は
+   * 変えない。
+   */
+  it("visiblePrev がフル列に見つからない場合は console.warn し、after を undefined にフォールバックする", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const missingPrev = createTask({
+      _id: "missing" as Id<"tasks">,
+      rank: "x",
+    });
+    const fullColumn = [a, m, z]; // missing は含まれない
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", missingPrev, null),
+    ).toEqual({ before: "x", after: undefined });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("missing"));
+
+    warnSpy.mockRestore();
+  });
+
+  it("visibleNext がフル列に見つからない場合は console.warn し、before を undefined にフォールバックする", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const missingNext = createTask({
+      _id: "missing" as Id<"tasks">,
+      rank: "x",
+    });
+    const fullColumn = [a, m, z]; // missing は含まれない
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", null, missingNext),
+    ).toEqual({ before: undefined, after: "x" });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("missing"));
+
+    warnSpy.mockRestore();
   });
 });
 
@@ -144,5 +265,111 @@ describe("pickPointerScopedCollisions", () => {
         columnOfCard,
       ),
     ).toEqual(expected === null ? null : wrap(expected));
+  });
+});
+
+/**
+ * カンバンのフィルタ派生（Issue #92）を検証する。
+ * board 派生の全経路（同期 effect / dragCancel / dragEnd の catch）が
+ * この純粋関数を通るため、ここでは列構造の保持と priority/assignee の
+ * AND 絞り込みだけを純粋関数として検証する。
+ */
+describe("applyBoardFilter", () => {
+  const createColumn = (
+    status: TaskStatus,
+    tasks: BoardTask[] = [],
+  ): BoardColumn => ({ status, tasks });
+
+  it("priority/assignee が両方 null なら入力をそのまま返す", () => {
+    const columns = [createColumn("todo", [createTask()])];
+    expect(applyBoardFilter(columns, EMPTY_FILTER)).toBe(columns);
+  });
+
+  it("priority のみ指定時はその優先度のタスクだけ残す", () => {
+    const high = createTask({ _id: "t1" as Id<"tasks">, priority: "high" });
+    const low = createTask({ _id: "t2" as Id<"tasks">, priority: "low" });
+    const columns = [createColumn("todo", [high, low])];
+    const filter: FilterState = { ...EMPTY_FILTER, priority: "high" };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [high] },
+    ]);
+  });
+
+  it("assignee のみ指定時はその担当者のタスクだけ残す（未アサインは除外）", () => {
+    const mine = createTask({
+      _id: "t1" as Id<"tasks">,
+      assignee: "member_1" as Id<"members">,
+    });
+    const others = createTask({
+      _id: "t2" as Id<"tasks">,
+      assignee: "member_2" as Id<"members">,
+    });
+    const unassigned = createTask({
+      _id: "t3" as Id<"tasks">,
+      assignee: undefined,
+    });
+    const columns = [createColumn("todo", [mine, others, unassigned])];
+    const filter: FilterState = {
+      ...EMPTY_FILTER,
+      assignee: "member_1" as Id<"members">,
+    };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [mine] },
+    ]);
+  });
+
+  it("priority/assignee 両方指定時は AND で絞り込む", () => {
+    const match = createTask({
+      _id: "t1" as Id<"tasks">,
+      priority: "high",
+      assignee: "member_1" as Id<"members">,
+    });
+    const wrongPriority = createTask({
+      _id: "t2" as Id<"tasks">,
+      priority: "low",
+      assignee: "member_1" as Id<"members">,
+    });
+    const wrongAssignee = createTask({
+      _id: "t3" as Id<"tasks">,
+      priority: "high",
+      assignee: "member_2" as Id<"members">,
+    });
+    const columns = [
+      createColumn("todo", [match, wrongPriority, wrongAssignee]),
+    ];
+    const filter: FilterState = {
+      status: null,
+      priority: "high",
+      assignee: "member_1" as Id<"members">,
+    };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [match] },
+    ]);
+  });
+
+  it("列構造（status）を保持する。全件除外された列も空配列で残る", () => {
+    const todoTask = createTask({
+      _id: "t1" as Id<"tasks">,
+      status: "todo",
+      priority: "high",
+    });
+    const doneTask = createTask({
+      _id: "t2" as Id<"tasks">,
+      status: "done",
+      priority: "low",
+    });
+    const columns = [
+      createColumn("todo", [todoTask]),
+      createColumn("done", [doneTask]),
+    ];
+    const filter: FilterState = { ...EMPTY_FILTER, priority: "high" };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [todoTask] },
+      { status: "done", tasks: [] },
+    ]);
   });
 });

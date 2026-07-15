@@ -3,6 +3,7 @@ import type { MemberSummary } from "../../hooks/useCurrentMember";
 import { EMPTY_FILTER, type FilterState } from "../../lib/filterParams";
 import { ISSUE_STATUS_LABELS, type IssueStatus } from "../../lib/issueMeta";
 import { type Priority, PRIORITY_OPTIONS } from "../../lib/taskMeta";
+import { FilterClearButton } from "./FilterClearButton";
 import s from "./FilterBar.module.css";
 
 type FilterAttribute = "status" | "priority" | "assignee";
@@ -114,13 +115,7 @@ export function FilterBar({
         </label>
       )}
       {hasActiveFilter && (
-        <button
-          className={s.clear}
-          onClick={() => onChange(EMPTY_FILTER)}
-          type="button"
-        >
-          クリア
-        </button>
+        <FilterClearButton onClick={() => onChange(EMPTY_FILTER)} />
       )}
     </div>
   );

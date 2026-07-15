@@ -1,4 +1,6 @@
 import type { Doc } from "../../convex/_generated/dataModel";
+import type { FilterState } from "./filterParams";
+import type { TaskStatus } from "./taskMeta";
 
 /**
  * カンバンD&Dの純粋ロジック（DB・React非依存・テスト容易）。
@@ -16,24 +18,80 @@ export type BoardTask = Doc<"tasks"> & {
   assigneeName: string | null;
 };
 
+/** Board のローカル編集可能な列。status 別6列を維持する（Board.tsx と共有）。 */
+export type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
+
 /**
- * 並べ替え後の rank 配列と移動カードの index から、その上下の近傍 rank を返す。
- * - `orderedRanks` は移動カード自身を含む最終的な並び（昇順）。
- * - 先頭なら before=null、末尾なら after=null。
+ * priority/assignee でカードを絞り込む（Issue #92）。列構造（status）は保持し、
+ * 各列の tasks だけを絞る。両方 null（フィルタ無し）なら入力をそのまま返す。
  *
- * 返り値は tasks.move の before/after にそのまま渡せる（before < after を満たす）。
+ * Board 側は toLocal で複製した列をこの関数に通してから setBoard するため、
+ * ここでは非破壊（列・タスク配列を新規に作る）を前提にせず、フィルタ無し時は
+ * 素通しでよい。
  */
-export function neighborRanks(
-  orderedRanks: readonly string[],
-  movedIndex: number,
-): { before: string | null; after: string | null } {
-  return {
-    before: movedIndex > 0 ? orderedRanks[movedIndex - 1] : null,
-    after:
-      movedIndex < orderedRanks.length - 1
-        ? orderedRanks[movedIndex + 1]
-        : null,
-  };
+export function applyBoardFilter(
+  columns: BoardColumn[],
+  filter: FilterState,
+): BoardColumn[] {
+  if (filter.priority === null && filter.assignee === null) return columns;
+  return columns.map((column) => ({
+    status: column.status,
+    tasks: column.tasks.filter(
+      (t) =>
+        (filter.priority === null || t.priority === filter.priority) &&
+        (filter.assignee === null || t.assignee === filter.assignee),
+    ),
+  }));
+}
+
+/**
+ * ドロップ位置の可視アンカー（直前/直後の可視カード）から、フル列順における
+ * 実際の隣接 rank ペアを求める。可視隣接だけで計算すると、間に隠れたカードと
+ * 同一 rank を重複発行しうる（rankBetween は決定的）ため、必ず「フル列で
+ * 本当に隣接している2枚の間」を返す。
+ * - visiblePrev があれば「visiblePrev の直後」に挿入（before=visiblePrev.rank、
+ *   after=フル列で visiblePrev の次のカードの rank）
+ * - visiblePrev が無く visibleNext があれば「visibleNext の直前」に挿入
+ *   （after=visibleNext.rank、before=フル列で visibleNext の前のカードの rank）
+ * - どちらも無ければフル列の末尾へ（before=フル列末尾の rank、after=undefined）
+ * fullColumn にドラッグ中カードが含まれる場合は除外して計算する。
+ */
+export function neighborRanksInFullColumn(
+  fullColumn: readonly BoardTask[],
+  draggedId: string,
+  visiblePrev: BoardTask | null,
+  visibleNext: BoardTask | null,
+): { before: string | undefined; after: string | undefined } {
+  const others = fullColumn.filter((t) => t._id !== draggedId);
+
+  if (visiblePrev) {
+    const prevIndex = others.findIndex((t) => t._id === visiblePrev._id);
+    // アンカー未検出はサイレント失敗させず警告する（プロジェクト規約）。
+    // fullColumn（server snapshot）と可視アンカー（board 由来）の取得元が
+    // ずれた場合に起きうる想定外ケースのため、原因調査の手がかりを残す。
+    // 挙動自体は従来どおり after を undefined にフォールバックする。
+    if (prevIndex === -1) {
+      console.warn(
+        `neighborRanksInFullColumn: visiblePrev（taskId=${visiblePrev._id}）がフル列に見つかりません`,
+      );
+    }
+    const next = prevIndex === -1 ? undefined : others[prevIndex + 1];
+    return { before: visiblePrev.rank, after: next?.rank };
+  }
+
+  if (visibleNext) {
+    const nextIndex = others.findIndex((t) => t._id === visibleNext._id);
+    if (nextIndex === -1) {
+      console.warn(
+        `neighborRanksInFullColumn: visibleNext（taskId=${visibleNext._id}）がフル列に見つかりません`,
+      );
+    }
+    const prev = nextIndex <= 0 ? undefined : others[nextIndex - 1];
+    return { before: prev?.rank, after: visibleNext.rank };
+  }
+
+  const last = others[others.length - 1];
+  return { before: last?.rank, after: undefined };
 }
 
 /**
