@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
+import type { Id } from "../../convex/_generated/dataModel";
 import {
+  applyBoardFilter,
+  type BoardColumn,
+  type BoardTask,
   neighborRanks,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "./board";
+import { EMPTY_FILTER, type FilterState } from "./filterParams";
+import type { TaskStatus } from "./taskMeta";
 
 /**
  * カンバン並べ替えの近傍rank算出（純粋関数）の振る舞いを検証する。
@@ -144,5 +150,129 @@ describe("pickPointerScopedCollisions", () => {
         columnOfCard,
       ),
     ).toEqual(expected === null ? null : wrap(expected));
+  });
+});
+
+/**
+ * カンバンのフィルタ派生（Issue #92）を検証する。
+ * board 派生の全経路（同期 effect / dragCancel / dragEnd の catch）が
+ * この純粋関数を通るため、ここでは列構造の保持と priority/assignee の
+ * AND 絞り込みだけを純粋関数として検証する。
+ */
+describe("applyBoardFilter", () => {
+  const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
+    _id: "task_1" as Id<"tasks">,
+    _creationTime: 1000,
+    issue: "issue_1" as Id<"issues">,
+    project: "project_1" as Id<"projects">,
+    number: 1,
+    title: "タスク",
+    status: "todo",
+    priority: "high",
+    rank: "a0",
+    createdBy: "member_1" as Id<"members">,
+    revision: 1,
+    updatedAt: 1000,
+    issueNumber: 1,
+    assigneeName: null,
+    ...overrides,
+  });
+
+  const createColumn = (
+    status: TaskStatus,
+    tasks: BoardTask[] = [],
+  ): BoardColumn => ({ status, tasks });
+
+  it("priority/assignee が両方 null なら入力をそのまま返す", () => {
+    const columns = [createColumn("todo", [createTask()])];
+    expect(applyBoardFilter(columns, EMPTY_FILTER)).toBe(columns);
+  });
+
+  it("priority のみ指定時はその優先度のタスクだけ残す", () => {
+    const high = createTask({ _id: "t1" as Id<"tasks">, priority: "high" });
+    const low = createTask({ _id: "t2" as Id<"tasks">, priority: "low" });
+    const columns = [createColumn("todo", [high, low])];
+    const filter: FilterState = { ...EMPTY_FILTER, priority: "high" };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [high] },
+    ]);
+  });
+
+  it("assignee のみ指定時はその担当者のタスクだけ残す（未アサインは除外）", () => {
+    const mine = createTask({
+      _id: "t1" as Id<"tasks">,
+      assignee: "member_1" as Id<"members">,
+    });
+    const others = createTask({
+      _id: "t2" as Id<"tasks">,
+      assignee: "member_2" as Id<"members">,
+    });
+    const unassigned = createTask({
+      _id: "t3" as Id<"tasks">,
+      assignee: undefined,
+    });
+    const columns = [createColumn("todo", [mine, others, unassigned])];
+    const filter: FilterState = {
+      ...EMPTY_FILTER,
+      assignee: "member_1" as Id<"members">,
+    };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [mine] },
+    ]);
+  });
+
+  it("priority/assignee 両方指定時は AND で絞り込む", () => {
+    const match = createTask({
+      _id: "t1" as Id<"tasks">,
+      priority: "high",
+      assignee: "member_1" as Id<"members">,
+    });
+    const wrongPriority = createTask({
+      _id: "t2" as Id<"tasks">,
+      priority: "low",
+      assignee: "member_1" as Id<"members">,
+    });
+    const wrongAssignee = createTask({
+      _id: "t3" as Id<"tasks">,
+      priority: "high",
+      assignee: "member_2" as Id<"members">,
+    });
+    const columns = [
+      createColumn("todo", [match, wrongPriority, wrongAssignee]),
+    ];
+    const filter: FilterState = {
+      status: null,
+      priority: "high",
+      assignee: "member_1" as Id<"members">,
+    };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [match] },
+    ]);
+  });
+
+  it("列構造（status）を保持する。全件除外された列も空配列で残る", () => {
+    const todoTask = createTask({
+      _id: "t1" as Id<"tasks">,
+      status: "todo",
+      priority: "high",
+    });
+    const doneTask = createTask({
+      _id: "t2" as Id<"tasks">,
+      status: "done",
+      priority: "low",
+    });
+    const columns = [
+      createColumn("todo", [todoTask]),
+      createColumn("done", [doneTask]),
+    ];
+    const filter: FilterState = { ...EMPTY_FILTER, priority: "high" };
+
+    expect(applyBoardFilter(columns, filter)).toEqual([
+      { status: "todo", tasks: [todoTask] },
+      { status: "done", tasks: [] },
+    ]);
   });
 });

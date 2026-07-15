@@ -20,6 +20,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
+  applyBoardFilter,
+  type BoardColumn,
   type BoardTask,
   neighborRanks,
   pickCardFirstCollisions,
@@ -27,16 +29,15 @@ import {
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
 import {
-  type TaskStatus,
-  TASK_STATUS_LABELS,
-  TASK_STATUS_ORDER,
-} from "../../lib/taskMeta";
+  EMPTY_FILTER,
+  type FilterState,
+  useFilterParams,
+} from "../../lib/filterParams";
+import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
 import { Skeleton } from "../Skeleton/Skeleton";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
 import { Column } from "./Column";
-
-type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
 
 const COLUMN_IDS: ReadonlySet<string> = new Set(TASK_STATUS_ORDER);
 
@@ -71,6 +72,7 @@ export function Board({
   const columns = useQuery(api.tasks.board, { project });
   const moveTask = useMutation(api.tasks.move);
   const transitionStatus = useMutation(api.tasks.transitionStatus);
+  const [filter, setFilter] = useFilterParams();
 
   const [board, setBoard] = useState<BoardColumn[] | null>(null);
   const [activeTask, setActiveTask] = useState<BoardTask | null>(null);
@@ -82,16 +84,22 @@ export function Board({
     boardRef.current = board;
   }, [board]);
 
-  // server から新しいスナップショットが来たときだけ同期する（ドラッグ中は維持）。
-  // activeTask が null に戻っただけでは再同期しない（楽観更新のちらつき防止）。
+  // server から新しいスナップショット or フィルタ変更があったときだけ同期する
+  // （ドラッグ中は維持）。activeTask が null に戻っただけでは再同期しない
+  // （楽観更新のちらつき防止）。フィルタは parseFilterParams が useMemo
+  // されているため URL 不変なら同一参照を保つ（useFilterParams 参照）。
   const syncedRef = useRef<readonly BoardColumn[] | undefined>(undefined);
+  const appliedFilterRef = useRef<FilterState | undefined>(undefined);
   useEffect(() => {
     if (activeTask) return;
     if (columns === undefined) return;
-    if (syncedRef.current === columns) return;
+    if (syncedRef.current === columns && appliedFilterRef.current === filter) {
+      return;
+    }
     syncedRef.current = columns;
-    setBoard(toLocal(columns));
-  }, [columns, activeTask]);
+    appliedFilterRef.current = filter;
+    setBoard(applyBoardFilter(toLocal(columns), filter));
+  }, [columns, activeTask, filter]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -149,6 +157,7 @@ export function Board({
   }
 
   const boardIsEmpty = board.every((column) => column.tasks.length === 0);
+  const hasActiveFilter = filter.priority !== null || filter.assignee !== null;
 
   function findTask(id: string): BoardTask | null {
     for (const column of boardRef.current ?? []) {
@@ -203,10 +212,18 @@ export function Board({
     setActiveTask(null);
     if (columns) {
       syncedRef.current = columns;
-      setBoard(toLocal(columns));
+      appliedFilterRef.current = filter;
+      setBoard(applyBoardFilter(toLocal(columns), filter));
     }
   }
 
+  // rank 不変条件（Issue #92）: board はフィルタ適用後（可視カードのみ）の配列
+  // のため、neighborRanks が返す before/after も可視カードの近傍 rank になる。
+  // 非表示カードは LexoRank の連続区間のどこかに存在するだけで、可視カード
+  // 間 before < after を満たす新 rank を発行する限り非表示カードとの前後関係
+  // が崩れることはない（非表示カードのすぐ隣に挿入されても区間内に収まる）。
+  // フィルタ解除時は全カードの rank をそのまま昇順ソートして表示するため、
+  // フィルタ中に発行した rank も正しい位置に再整列される。
   async function handleDragEnd({ active, over }: DragEndEvent) {
     const dragged = activeTask;
     setActiveTask(null);
@@ -273,7 +290,8 @@ export function Board({
       // 失敗時は server の真実へ戻す。
       if (columns) {
         syncedRef.current = columns;
-        setBoard(toLocal(columns));
+        appliedFilterRef.current = filter;
+        setBoard(applyBoardFilter(toLocal(columns), filter));
       }
     }
   }
@@ -293,8 +311,21 @@ export function Board({
         </p>
       )}
       {/* タスク皆無でも空列だけが並ぶと次の一手が分からないため案内を出す
-          （Issue #29）。列＝droppable は D&D 構造維持のためそのまま描画する。 */}
-      {boardIsEmpty && (
+          （Issue #29）。列＝droppable は D&D 構造維持のためそのまま描画する。
+          フィルタで全件隠れた場合は作成導線ではなくクリア導線を出す（Issue #92）。 */}
+      {boardIsEmpty && hasActiveFilter && (
+        <p className={s.empty}>
+          フィルタに一致するタスクがありません。
+          <button
+            className={s.emptyClear}
+            onClick={() => setFilter(EMPTY_FILTER)}
+            type="button"
+          >
+            フィルタをクリア
+          </button>
+        </p>
+      )}
+      {boardIsEmpty && !hasActiveFilter && (
         <p className={s.empty}>
           タスクがありません。Issue 一覧の「＋ タスク」または「＋ 新規
           Issue」から作成できます。

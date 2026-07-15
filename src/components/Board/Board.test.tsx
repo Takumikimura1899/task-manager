@@ -6,7 +6,12 @@ import type {
   DragStartEvent,
 } from "@dnd-kit/core";
 import { act, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import {
+  createMemoryRouter,
+  MemoryRouter,
+  RouterProvider,
+} from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import type { BoardTask } from "../../lib/board";
@@ -78,12 +83,34 @@ const createColumns = (
     tasks: tasksByStatus[status] ?? [],
   }));
 
-const renderBoard = () =>
+const renderBoard = (initialEntries: string[] = ["/"]) =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
     </MemoryRouter>,
   );
+
+/**
+ * URL 変更（フィルタ更新）を描画後に発生させたいテスト専用のレンダラ。
+ * MemoryRouter は初期 URL しか受け取れないため、data router
+ * （createMemoryRouter + RouterProvider）で router.navigate による
+ * 遷移を可能にする。
+ */
+const renderBoardWithRouter = (initialEntries: string[] = ["/"]) => {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/",
+        element: (
+          <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
+        ),
+      },
+    ],
+    { initialEntries },
+  );
+  const view = render(<RouterProvider router={router} />);
+  return { ...view, router };
+};
 
 beforeEach(() => {
   boardQuery.mockReset();
@@ -233,5 +260,266 @@ describe("Board のドラッグ中アニメーション抑止（Issue #79）", (
       } as DragCancelEvent);
     });
     expect(boardEl).not.toHaveClass(boardStyles.boardDragging);
+  });
+});
+
+/**
+ * priority/assignee フィルタ（Issue #92）の board 派生を検証する。
+ * フィルタの絞り込み自体（AND 条件・列構造保持）は lib/board.test.ts の
+ * applyBoardFilter 単体テストで検証済みのため、ここでは Board が
+ * useFilterParams（URL）からフィルタを受け取り、同期 effect / 空状態表示に
+ * 一貫して反映することだけを確認する。
+ */
+describe("Board のフィルタ適用（Issue #92）", () => {
+  it("URL の priority/assignee クエリで該当カードのみ各列に残る（暗黙 AND）", () => {
+    const match = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      priority: "high",
+      assignee: "member_1" as Id<"members">,
+    });
+    const wrongPriority = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      priority: "low",
+      assignee: "member_1" as Id<"members">,
+    });
+    const wrongAssignee = createTask({
+      _id: "task_3" as Id<"tasks">,
+      number: 3,
+      priority: "high",
+      assignee: "member_2" as Id<"members">,
+    });
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [match, wrongPriority, wrongAssignee] }),
+    );
+    renderBoard(["/?priority=high&assignee=member_1"]);
+
+    expect(screen.getByRole("link", { name: "TASK-1" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "TASK-2" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "TASK-3" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("URL のフィルタ変更で board が再派生される", async () => {
+    const high = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      priority: "high",
+    });
+    const low = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      priority: "low",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [high, low] }));
+    const { router } = renderBoardWithRouter();
+
+    expect(screen.getByRole("link", { name: "TASK-1" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "TASK-2" })).toBeInTheDocument();
+
+    await act(async () => {
+      await router.navigate("/?priority=high");
+    });
+
+    expect(screen.getByRole("link", { name: "TASK-1" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "TASK-2" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ドラッグ開始後の URL フィルタ変更は board を即座に書き換えない（ドロップ後に反映される仕様）", async () => {
+    const high = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      priority: "high",
+    });
+    const low = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      priority: "low",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [high, low] }));
+    const { router } = renderBoardWithRouter();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+    });
+
+    await act(async () => {
+      await router.navigate("/?priority=high");
+    });
+
+    // ドラッグ中は同期 effect が activeTask で早期 return するため、
+    // フィルタ変更後も両カードとも表示されたまま（ドロップ後に反映される）
+    expect(screen.getByRole("link", { name: "TASK-1" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "TASK-2" })).toBeInTheDocument();
+  });
+});
+
+describe("Board のフィルタ中の空状態（Issue #92）", () => {
+  it("フィルタに一致するタスクが無いときはクリア導線を出し、作成導線は出さない", () => {
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [createTask({ priority: "low" })] }),
+    );
+    renderBoard(["/?priority=high"]);
+
+    expect(
+      screen.getByText("フィルタに一致するタスクがありません。"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "フィルタをクリア" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Issue 一覧の「＋ タスク」/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("クリア導線を押すとフィルタが解除され、隠れていたカードが再表示される", async () => {
+    const user = userEvent.setup();
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [createTask({ priority: "low" })] }),
+    );
+    renderBoard(["/?priority=high"]);
+
+    await user.click(screen.getByRole("button", { name: "フィルタをクリア" }));
+
+    expect(screen.getByRole("link", { name: "TASK-12" })).toBeInTheDocument();
+    expect(
+      screen.queryByText("フィルタに一致するタスクがありません。"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe("Board のフィルタ中の D&D（Issue #92）", () => {
+  it("同一列内の並べ替えは可視カードの近傍 rank で moveTask を呼ぶ（非表示カードの rank は使わない）", async () => {
+    const task1 = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      priority: "high",
+      rank: "a0",
+    });
+    const hidden = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      priority: "low",
+      rank: "a1",
+    });
+    const task3 = createTask({
+      _id: "task_3" as Id<"tasks">,
+      number: 3,
+      priority: "high",
+      rank: "a2",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [task1, hidden, task3] }));
+    mutate.mockResolvedValue(undefined);
+    renderBoard(["/?priority=high"]);
+
+    // 前提: フィルタで低優先度カードは非表示
+    expect(
+      screen.queryByRole("link", { name: "TASK-2" }),
+    ).not.toBeInTheDocument();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    // onDragStart は setActiveTask を伴う再レンダリングを起こすため、
+    // onDragEnd は再レンダリング後の最新 handlers（dragged=activeTask を
+    // 正しく捕捉したクロージャ）から呼び出す必要がある。
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_3" } } as DragStartEvent);
+    });
+    const afterStart = dndHandlers.current;
+    if (!afterStart) throw new Error("DndContext が描画されていません");
+    await act(async () => {
+      await afterStart.onDragEnd?.({
+        active: { id: "task_3" },
+        over: { id: "task_1" },
+      } as DragEndEvent);
+    });
+
+    // 可視配列 [task1, task3] で task3 を先頭へ→ before=null,
+    // after=task1.rank（非表示 hidden の rank "a1" は近傍計算に登場しない）
+    expect(mutate).toHaveBeenCalledWith({
+      id: "task_3",
+      before: null,
+      after: "a0",
+      expectedRevision: task3.revision,
+    });
+  });
+
+  it("列またぎの移動は可視カードの近傍 rank で transitionStatus を呼ぶ（非表示カードの rank は使わない）", async () => {
+    const source = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      status: "todo",
+      priority: "high",
+      rank: "a0",
+    });
+    const targetVisible = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      status: "in_progress",
+      priority: "high",
+      rank: "b0",
+    });
+    const targetHidden = createTask({
+      _id: "task_3" as Id<"tasks">,
+      number: 3,
+      status: "in_progress",
+      priority: "low",
+      rank: "b1",
+    });
+    boardQuery.mockReturnValue(
+      createColumns({
+        todo: [source],
+        in_progress: [targetVisible, targetHidden],
+      }),
+    );
+    mutate.mockResolvedValue(undefined);
+    renderBoard(["/?priority=high"]);
+
+    expect(
+      screen.queryByRole("link", { name: "TASK-3" }),
+    ).not.toBeInTheDocument();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    // onDragStart は setActiveTask を伴う再レンダリングを起こすため、
+    // onDragEnd は再レンダリング後の最新 handlers（dragged=activeTask を
+    // 正しく捕捉したクロージャ）から呼び出す必要がある。
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+      // 遷移先列の余白（列コンテナ自体）へドロップ＝可視末尾へ追加
+      handlers.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "in_progress" },
+      } as DragOverEvent);
+    });
+    const afterStart = dndHandlers.current;
+    if (!afterStart) throw new Error("DndContext が描画されていません");
+    await act(async () => {
+      await afterStart.onDragEnd?.({
+        active: { id: "task_1" },
+        over: { id: "in_progress" },
+      } as DragEndEvent);
+    });
+
+    // 可視配列 [targetVisible, source] の末尾へ挿入
+    // → before=targetVisible.rank, after=null（非表示 targetHidden は登場しない）
+    expect(mutate).toHaveBeenCalledWith({
+      id: "task_1",
+      to: "in_progress",
+      before: "b0",
+      after: null,
+      expectedRevision: source.revision,
+    });
   });
 });

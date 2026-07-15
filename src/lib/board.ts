@@ -1,4 +1,6 @@
 import type { Doc } from "../../convex/_generated/dataModel";
+import type { FilterState } from "./filterParams";
+import type { TaskStatus } from "./taskMeta";
 
 /**
  * カンバンD&Dの純粋ロジック（DB・React非依存・テスト容易）。
@@ -15,6 +17,32 @@ export type BoardTask = Doc<"tasks"> & {
   issueNumber: number | null;
   assigneeName: string | null;
 };
+
+/** Board のローカル編集可能な列。status 別6列を維持する（Board.tsx と共有）。 */
+export type BoardColumn = { status: TaskStatus; tasks: BoardTask[] };
+
+/**
+ * priority/assignee でカードを絞り込む（Issue #92）。列構造（status）は保持し、
+ * 各列の tasks だけを絞る。両方 null（フィルタ無し）なら入力をそのまま返す。
+ *
+ * Board 側は toLocal で複製した列をこの関数に通してから setBoard するため、
+ * ここでは非破壊（列・タスク配列を新規に作る）を前提にせず、フィルタ無し時は
+ * 素通しでよい。
+ */
+export function applyBoardFilter(
+  columns: BoardColumn[],
+  filter: FilterState,
+): BoardColumn[] {
+  if (filter.priority === null && filter.assignee === null) return columns;
+  return columns.map((column) => ({
+    status: column.status,
+    tasks: column.tasks.filter(
+      (t) =>
+        (filter.priority === null || t.priority === filter.priority) &&
+        (filter.assignee === null || t.assignee === filter.assignee),
+    ),
+  }));
+}
 
 /**
  * 並べ替え後の rank 配列と移動カードの index から、その上下の近傍 rank を返す。
