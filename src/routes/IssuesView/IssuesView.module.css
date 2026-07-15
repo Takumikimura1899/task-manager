@@ -7,6 +7,15 @@
     gap: var(--space-6);
   }
 
+  /* FilterBar（何を出すか）と SortBar（どう見せるか）は互いに独立した
+     コンポーネントだが、同じ操作行に並べて置く（Issue #93）。 */
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
   .loading {
     display: flex;
     flex-direction: column;
