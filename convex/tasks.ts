@@ -303,20 +303,27 @@ export const listByProject = query({
 });
 
 /**
- * status / assignee で絞り込んだプロジェクトの Task 一覧（MCP list_tasks 用）。
+ * status / assignee / priority で絞り込んだプロジェクトの Task 一覧（MCP list_tasks 用）。
  * 全件転送してクライアント側でフィルタする代わりに、条件に応じたインデックスで
  * サーバー側に絞り込みを寄せる（Issue #19）:
  * - assignee 指定あり → by_assignee で担当者の Task だけ読み、project/status を照合
  * - status のみ → by_project_and_status で該当列だけ読む
  * - 指定なし → by_project（listByProject と同じ読み取り）
+ *
+ * priority にはインデックスを追加せず、上記いずれの分岐でも読み取り後のメモリ
+ * フィルタで適用する（既存の assignee×status 併用と同じ後段フィルタ方式・Issue #94）。
  */
 export const listFiltered = query({
   args: {
     project: v.id("projects"),
     status: v.optional(taskStatus),
     assignee: v.optional(v.id("members")),
+    priority: v.optional(taskPriority),
   },
   handler: async (ctx, args) => {
+    const byPriority = (t: Doc<"tasks">) =>
+      args.priority === undefined || t.priority === args.priority;
+
     if (args.assignee !== undefined) {
       const assignee = args.assignee;
       const tasks = await ctx.db
@@ -326,22 +333,25 @@ export const listFiltered = query({
       return tasks.filter(
         (t) =>
           t.project === args.project &&
-          (args.status === undefined || t.status === args.status),
+          (args.status === undefined || t.status === args.status) &&
+          byPriority(t),
       );
     }
     if (args.status !== undefined) {
       const status = args.status;
-      return await ctx.db
+      const tasks = await ctx.db
         .query("tasks")
         .withIndex("by_project_and_status", (q) =>
           q.eq("project", args.project).eq("status", status),
         )
         .collect();
+      return tasks.filter(byPriority);
     }
-    return await ctx.db
+    const tasks = await ctx.db
       .query("tasks")
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
+    return tasks.filter(byPriority);
   },
 });
 

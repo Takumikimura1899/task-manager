@@ -290,15 +290,16 @@ async function main() {
     {
       title: "タスク一覧",
       description:
-        "プロジェクトのタスクを status / assignee で絞り込んで取得する",
+        "プロジェクトのタスクを status / assignee / priority で絞り込んで取得する",
       inputSchema: {
         project_key: z.string().describe("プロジェクトキー（例: TASK）"),
         status: z.enum(TASK_STATUSES).optional(),
         assignee_email: z.string().optional(),
+        priority: z.enum(PRIORITY_VALUES).optional(),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ project_key, status, assignee_email }) => {
+    async ({ project_key, status, assignee_email, priority }) => {
       try {
         const project = await resolveProject(project_key);
         // 絞り込みはサーバー側（tasks.listFiltered）に寄せ、全件転送を避ける。
@@ -310,6 +311,7 @@ async function main() {
           project: project._id,
           status,
           assignee,
+          priority,
         });
         return ok(tasks);
       } catch (e) {
