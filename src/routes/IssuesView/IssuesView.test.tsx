@@ -302,6 +302,202 @@ describe("IssuesView の URL からのフィルタ復元（Issue #91）", () => 
   });
 });
 
+describe("IssuesView の URL からのソート復元（Issue #93）", () => {
+  it("sort=priority&dir=desc で優先度の高い順（urgent→high→none）に並べる（文字列比較では壊れる順序）", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "noneのIssue",
+        priority: "none",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "urgentのIssue",
+        priority: "urgent",
+      }),
+      createIssueSummary({
+        _id: "issue_3" as Id<"issues">,
+        number: 3,
+        title: "highのIssue",
+        priority: "high",
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?sort=priority&dir=desc"] });
+
+    // IssueTable の行タイトルリンクのみが link ロールを持つ（他に link は無い）。
+    const links = screen.getAllByRole("link");
+    expect(links.map((el) => el.textContent)).toEqual([
+      "urgentのIssue",
+      "highのIssue",
+      "noneのIssue",
+    ]);
+  });
+
+  it("sort=priority&dir=asc で優先度の低い順（none→high→urgent）に並べる", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "urgentのIssue",
+        priority: "urgent",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "noneのIssue",
+        priority: "none",
+      }),
+      createIssueSummary({
+        _id: "issue_3" as Id<"issues">,
+        number: 3,
+        title: "highのIssue",
+        priority: "high",
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?sort=priority&dir=asc"] });
+
+    // IssueTable の行タイトルリンクのみが link ロールを持つ（他に link は無い）。
+    const links = screen.getAllByRole("link");
+    expect(links.map((el) => el.textContent)).toEqual([
+      "noneのIssue",
+      "highのIssue",
+      "urgentのIssue",
+    ]);
+  });
+
+  it("sort=updatedAt&dir=desc で更新が新しい順に並べる", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "古いIssue",
+        updatedAt: 1000,
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "新しいIssue",
+        updatedAt: 3000,
+      }),
+      createIssueSummary({
+        _id: "issue_3" as Id<"issues">,
+        number: 3,
+        title: "中間のIssue",
+        updatedAt: 2000,
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?sort=updatedAt&dir=desc"] });
+
+    // IssueTable の行タイトルリンクのみが link ロールを持つ（他に link は無い）。
+    const links = screen.getAllByRole("link");
+    expect(links.map((el) => el.textContent)).toEqual([
+      "新しいIssue",
+      "中間のIssue",
+      "古いIssue",
+    ]);
+  });
+
+  it("sort=updatedAt&dir=asc で更新が古い順に並べる", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "新しいIssue",
+        updatedAt: 3000,
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "古いIssue",
+        updatedAt: 1000,
+      }),
+      createIssueSummary({
+        _id: "issue_3" as Id<"issues">,
+        number: 3,
+        title: "中間のIssue",
+        updatedAt: 2000,
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?sort=updatedAt&dir=asc"] });
+
+    // IssueTable の行タイトルリンクのみが link ロールを持つ（他に link は無い）。
+    const links = screen.getAllByRole("link");
+    expect(links.map((el) => el.textContent)).toEqual([
+      "古いIssue",
+      "中間のIssue",
+      "新しいIssue",
+    ]);
+  });
+
+  it("sort 無指定の場合はサーバー返却順（issues.list の順序）を維持する", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "2番目に返るIssue",
+        priority: "urgent",
+        updatedAt: 3000,
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "1番目に返るIssue",
+        priority: "none",
+        updatedAt: 1000,
+      }),
+    ];
+    renderIssuesView();
+
+    // IssueTable の行タイトルリンクのみが link ロールを持つ（他に link は無い）。
+    const links = screen.getAllByRole("link");
+    expect(links.map((el) => el.textContent)).toEqual([
+      "2番目に返るIssue",
+      "1番目に返るIssue",
+    ]);
+  });
+
+  it("フィルタ（status=open）とソート（priority降順）を併用すると、フィルタ後の集合に対してソートが独立に機能する", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "openかつnoneのIssue",
+        status: "open",
+        priority: "none",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "doneかつurgentのIssue",
+        status: "done",
+        priority: "urgent",
+      }),
+      createIssueSummary({
+        _id: "issue_3" as Id<"issues">,
+        number: 3,
+        title: "openかつurgentのIssue",
+        status: "open",
+        priority: "urgent",
+      }),
+    ];
+    renderIssuesView({
+      initialEntries: ["/?status=open&sort=priority&dir=desc"],
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Issue 一覧（2）" }),
+    ).toBeInTheDocument();
+    // IssueTable の行タイトルリンクのみが link ロールを持つ（他に link は無い）。
+    const links = screen.getAllByRole("link");
+    expect(links.map((el) => el.textContent)).toEqual([
+      "openかつurgentのIssue",
+      "openかつnoneのIssue",
+    ]);
+  });
+});
+
 describe("IssuesView の NewIssueForm 表示条件", () => {
   it("currentMember が null の場合は NewIssueForm を表示しない（NoMembersNotice も出さない）", () => {
     mocks.issues = [];
