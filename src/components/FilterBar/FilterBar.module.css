@@ -49,4 +49,23 @@
   .clear:hover {
     color: var(--color-accent);
   }
+
+  /* Board の空状態メッセージ文中で使う文中リンク版（Issue #92 再レビュー
+     指摘6）。.clear の共有化で失われた視認性（アクセント色＋下線）を
+     文脈上必要な場所にだけ戻す。 */
+  .clearInline {
+    padding: var(--space-1) var(--space-2);
+    margin-inline-start: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-accent);
+    text-decoration: underline;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .clearInline:hover {
+    color: var(--color-accent-alt);
+  }
 }

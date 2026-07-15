@@ -98,6 +98,13 @@ export function Board({
   // 同期を止める。mutation 成功後は新しい columns snapshot が届いた時点で
   // （columnsChanged=true になり）最新 filter がまとめて適用される。
   const pendingMutationsRef = useRef(0);
+  // mutation 未解決中に開始されたドラッグを無効化するフラグ（Issue #92
+  // 再レビュー指摘1・2・4）。in-flight mutation を常に高々1つに保つことで、
+  // (1) neighborRanksInFullColumn へ渡す fullColumn（columns スナップショット）
+  // が新しいドラッグの間に stale化する、(2) その状態の handleDragCancel が
+  // 進行中の楽観更新を巻き戻す、(4) catch の resyncFromServer が別ドラッグを
+  // clobber する、を根本的に防ぐ。
+  const suppressedDragRef = useRef(false);
 
   /** syncedRef/appliedFilterRef を更新しつつ、server snapshot から board を再構築する。 */
   const resyncFromServer = useCallback(
@@ -176,7 +183,13 @@ export function Board({
   const boardIsEmpty = board.every((column) => column.tasks.length === 0);
   // server snapshot（未フィルタ）自体が0件かどうか。フィルタで全滅した場合と
   // 区別し、本当に0件のプロジェクトでは常に作成導線を出す（Issue #92）。
-  const serverIsEmpty = (columns ?? []).every(
+  // board の派生元スナップショット（syncedRef.current）から計算する。pending
+  // 中は live な columns だけが進んでも board は据え置かれるため、ここも
+  // board と同じスナップショットを基準にしないと表示メッセージと表示中
+  // カードが矛盾しうる（再レビュー指摘3）。board !== null の時点では
+  // syncedRef.current は必ず設定済み（resyncFromServer が setBoard に先行
+  // して同期的にセットするため）。
+  const serverIsEmpty = (syncedRef.current ?? []).every(
     (column) => column.tasks.length === 0,
   );
 
@@ -189,12 +202,21 @@ export function Board({
   }
 
   function handleDragStart({ active }: DragStartEvent) {
+    // mutation 未解決中に始まったドラッグは無効化する（activeTask を設定
+    // しない）。dnd-kit 自体のドラッグ操作は継続するため見た目上カードは
+    // 動くが、onDragOver/onDragEnd を早期 return させ board には影響しない。
+    if (pendingMutationsRef.current > 0) {
+      suppressedDragRef.current = true;
+      return;
+    }
+    suppressedDragRef.current = false;
     setError(null);
     setActiveTask(findTask(active.id as string));
   }
 
   // ドラッグ中、別の列に重なったらローカル状態上でカードを移し替える。
   function handleDragOver({ active, over }: DragOverEvent) {
+    if (suppressedDragRef.current) return;
     if (!over) return;
     const activeId = active.id as string;
     const overId = over.id as string;
@@ -230,8 +252,17 @@ export function Board({
   // （上記 useEffect が activeTask で早期 return）ため、columns はドラッグ
   // 開始前のスナップショットであり復元元として正しい。
   function handleDragCancel() {
+    // 抑止中のドラッグ（Issue #92）はローカル変更を作っていないため、
+    // フラグを下ろすだけで resync は不要。
+    if (suppressedDragRef.current) {
+      suppressedDragRef.current = false;
+      return;
+    }
     setActiveTask(null);
-    if (columns) resyncFromServer(columns);
+    // mutation 未解決中は resync しない。抑止中でない通常のドラッグは
+    // pendingMutationsRef が 0 のとき（前回の mutation が完了済み）にしか
+    // 開始されないため、この時点でも 0 のはずだが、念のためガードする。
+    if (columns && pendingMutationsRef.current === 0) resyncFromServer(columns);
   }
 
   // rank 不変条件（Issue #92）: board はフィルタ適用後（可視カードのみ）の配列
@@ -243,6 +274,15 @@ export function Board({
   // snapshot）における可視アンカーの直近実隣接」を求め、その間へ挿入する。
   // 挿入位置は常にフル列で本当に隣接する2枚の間になるため、rank は一意になる。
   async function handleDragEnd({ active, over }: DragEndEvent) {
+    // 抑止中のドラッグ（Issue #92）は activeTask を持たないため、そのまま
+    // 進めても実質 no-op だが、ユーザーには理由を明示して案内する。
+    if (suppressedDragRef.current) {
+      suppressedDragRef.current = false;
+      setError(
+        "直前の操作を反映しています。少し待ってからもう一度お試しください",
+      );
+      return;
+    }
     const dragged = activeTask;
     setActiveTask(null);
     const current = boardRef.current;
@@ -355,7 +395,10 @@ export function Board({
       {!serverIsEmpty && boardIsEmpty && (
         <p className={s.empty}>
           フィルタに一致するタスクがありません。
-          <FilterClearButton onClick={() => setFilter(EMPTY_FILTER)}>
+          <FilterClearButton
+            onClick={() => setFilter(EMPTY_FILTER)}
+            variant="inline"
+          >
             フィルタをクリア
           </FilterClearButton>
         </p>

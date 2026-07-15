@@ -45,31 +45,6 @@ export function applyBoardFilter(
 }
 
 /**
- * 並べ替え後の rank 配列と移動カードの index から、その上下の近傍 rank を返す。
- * - `orderedRanks` は移動カード自身を含む最終的な並び（昇順）。
- * - 先頭なら before=null、末尾なら after=null。
- *
- * 返り値は tasks.move の before/after にそのまま渡せる（before < after を満たす）。
- *
- * 注意: フィルタ適用中の board（可視カードのみ）にこの関数を直接使うと、
- * 可視カードの間に隠れたカードがいる場合に rank が重複しうる
- * （neighborRanksInFullColumn を参照）。フィルタ非対応の呼び出し元・
- * 単体テストでのみ使うこと。
- */
-export function neighborRanks(
-  orderedRanks: readonly string[],
-  movedIndex: number,
-): { before: string | null; after: string | null } {
-  return {
-    before: movedIndex > 0 ? orderedRanks[movedIndex - 1] : null,
-    after:
-      movedIndex < orderedRanks.length - 1
-        ? orderedRanks[movedIndex + 1]
-        : null,
-  };
-}
-
-/**
  * ドロップ位置の可視アンカー（直前/直後の可視カード）から、フル列順における
  * 実際の隣接 rank ペアを求める。可視隣接だけで計算すると、間に隠れたカードと
  * 同一 rank を重複発行しうる（rankBetween は決定的）ため、必ず「フル列で
@@ -91,12 +66,26 @@ export function neighborRanksInFullColumn(
 
   if (visiblePrev) {
     const prevIndex = others.findIndex((t) => t._id === visiblePrev._id);
+    // アンカー未検出はサイレント失敗させず警告する（プロジェクト規約）。
+    // fullColumn（server snapshot）と可視アンカー（board 由来）の取得元が
+    // ずれた場合に起きうる想定外ケースのため、原因調査の手がかりを残す。
+    // 挙動自体は従来どおり after を undefined にフォールバックする。
+    if (prevIndex === -1) {
+      console.warn(
+        `neighborRanksInFullColumn: visiblePrev（taskId=${visiblePrev._id}）がフル列に見つかりません`,
+      );
+    }
     const next = prevIndex === -1 ? undefined : others[prevIndex + 1];
     return { before: visiblePrev.rank, after: next?.rank };
   }
 
   if (visibleNext) {
     const nextIndex = others.findIndex((t) => t._id === visibleNext._id);
+    if (nextIndex === -1) {
+      console.warn(
+        `neighborRanksInFullColumn: visibleNext（taskId=${visibleNext._id}）がフル列に見つかりません`,
+      );
+    }
     const prev = nextIndex <= 0 ? undefined : others[nextIndex - 1];
     return { before: prev?.rank, after: visibleNext.rank };
   }

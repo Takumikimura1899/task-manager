@@ -1,10 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   applyBoardFilter,
   type BoardColumn,
   type BoardTask,
-  neighborRanks,
   neighborRanksInFullColumn,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
@@ -32,28 +31,6 @@ const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
 });
 
 /**
- * カンバン並べ替えの近傍rank算出（純粋関数）の振る舞いを検証する。
- * tasks.move は before < after を要求するため、境界での null と
- * 隣接要素の正しい選択を確認する。
- */
-describe("neighborRanks", () => {
-  const ranks = ["a", "m", "z"];
-
-  it.each([
-    // [movedIndex, before, after]
-    [0, null, "m"], // 先頭へ移動 → 上端、下は次要素
-    [1, "a", "z"], // 中間へ移動 → 上下とも隣接要素
-    [2, "m", null], // 末尾へ移動 → 下端、上は前要素
-  ])("index=%i のとき before/after を返す", (index, before, after) => {
-    expect(neighborRanks(ranks, index)).toEqual({ before, after });
-  });
-
-  it("要素が1つだけの列では上下とも端(null)になる", () => {
-    expect(neighborRanks(["a"], 0)).toEqual({ before: null, after: null });
-  });
-});
-
-/**
  * フィルタ中の rank 重複バグ（Issue #92 修正1）の回帰テスト。
  * 可視カードの隣接だけから rank を発行すると、間に隠れたカードと同一 rank を
  * 重複発行しうる（rankBetween は決定的）。neighborRanksInFullColumn は
@@ -71,7 +48,7 @@ describe("neighborRanksInFullColumn", () => {
     ["中間へ移動", "m", a, z, "a", "z"],
     ["末尾へ移動", "z", m, null, "m", undefined],
   ] as const)(
-    "フィルタ無し（可視=フル）では従来の neighborRanks と同値になる: %s",
+    "フィルタ無し（可視=フル）では素直な前後隣接の rank になる: %s",
     (_case, draggedId, visiblePrev, visibleNext, before, after) => {
       const fullColumn = [a, m, z];
       expect(
@@ -130,6 +107,45 @@ describe("neighborRanksInFullColumn", () => {
     expect(
       neighborRanksInFullColumn(fullColumn, "dragged", before, null),
     ).toEqual({ before: "a0", after: "a2" });
+  });
+
+  /**
+   * アンカー未検出時の警告（再レビュー指摘5）。visiblePrev/visibleNext が
+   * fullColumn に見つからない（board 側のデータと server snapshot がずれた
+   * 想定外ケース）場合、サイレント失敗させず console.warn で taskId を残す
+   * （プロジェクト規約「サイレント失敗の回避」）。フォールバック挙動自体は
+   * 変えない。
+   */
+  it("visiblePrev がフル列に見つからない場合は console.warn し、after を undefined にフォールバックする", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const missingPrev = createTask({
+      _id: "missing" as Id<"tasks">,
+      rank: "x",
+    });
+    const fullColumn = [a, m, z]; // missing は含まれない
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", missingPrev, null),
+    ).toEqual({ before: "x", after: undefined });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("missing"));
+
+    warnSpy.mockRestore();
+  });
+
+  it("visibleNext がフル列に見つからない場合は console.warn し、before を undefined にフォールバックする", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const missingNext = createTask({
+      _id: "missing" as Id<"tasks">,
+      rank: "x",
+    });
+    const fullColumn = [a, m, z]; // missing は含まれない
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", null, missingNext),
+    ).toEqual({ before: undefined, after: "x" });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("missing"));
+
+    warnSpy.mockRestore();
   });
 });
 
