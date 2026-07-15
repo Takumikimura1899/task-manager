@@ -94,24 +94,6 @@
     color: var(--color-text-muted);
   }
 
-  /* フィルタで全件隠れた空状態のクリア導線（Issue #92）。
-     FilterBar の .clear と同じトーン（地味→hover でアクセント発光）に揃える。 */
-  .emptyClear {
-    margin-inline-start: var(--space-2);
-    padding: var(--space-1) var(--space-2);
-    font-size: var(--font-size-sm);
-    color: var(--color-accent);
-    text-decoration: underline;
-    background: none;
-    border: none;
-    cursor: pointer;
-    transition: color var(--duration-fast) var(--ease-out);
-  }
-
-  .emptyClear:hover {
-    color: var(--color-accent-alt);
-  }
-
   .error {
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);

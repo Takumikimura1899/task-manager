@@ -50,6 +50,11 @@ export function applyBoardFilter(
  * - 先頭なら before=null、末尾なら after=null。
  *
  * 返り値は tasks.move の before/after にそのまま渡せる（before < after を満たす）。
+ *
+ * 注意: フィルタ適用中の board（可視カードのみ）にこの関数を直接使うと、
+ * 可視カードの間に隠れたカードがいる場合に rank が重複しうる
+ * （neighborRanksInFullColumn を参照）。フィルタ非対応の呼び出し元・
+ * 単体テストでのみ使うこと。
  */
 export function neighborRanks(
   orderedRanks: readonly string[],
@@ -62,6 +67,42 @@ export function neighborRanks(
         ? orderedRanks[movedIndex + 1]
         : null,
   };
+}
+
+/**
+ * ドロップ位置の可視アンカー（直前/直後の可視カード）から、フル列順における
+ * 実際の隣接 rank ペアを求める。可視隣接だけで計算すると、間に隠れたカードと
+ * 同一 rank を重複発行しうる（rankBetween は決定的）ため、必ず「フル列で
+ * 本当に隣接している2枚の間」を返す。
+ * - visiblePrev があれば「visiblePrev の直後」に挿入（before=visiblePrev.rank、
+ *   after=フル列で visiblePrev の次のカードの rank）
+ * - visiblePrev が無く visibleNext があれば「visibleNext の直前」に挿入
+ *   （after=visibleNext.rank、before=フル列で visibleNext の前のカードの rank）
+ * - どちらも無ければフル列の末尾へ（before=フル列末尾の rank、after=undefined）
+ * fullColumn にドラッグ中カードが含まれる場合は除外して計算する。
+ */
+export function neighborRanksInFullColumn(
+  fullColumn: readonly BoardTask[],
+  draggedId: string,
+  visiblePrev: BoardTask | null,
+  visibleNext: BoardTask | null,
+): { before: string | undefined; after: string | undefined } {
+  const others = fullColumn.filter((t) => t._id !== draggedId);
+
+  if (visiblePrev) {
+    const prevIndex = others.findIndex((t) => t._id === visiblePrev._id);
+    const next = prevIndex === -1 ? undefined : others[prevIndex + 1];
+    return { before: visiblePrev.rank, after: next?.rank };
+  }
+
+  if (visibleNext) {
+    const nextIndex = others.findIndex((t) => t._id === visibleNext._id);
+    const prev = nextIndex <= 0 ? undefined : others[nextIndex - 1];
+    return { before: prev?.rank, after: visibleNext.rank };
+  }
+
+  const last = others[others.length - 1];
+  return { before: last?.rank, after: undefined };
 }
 
 /**

@@ -395,10 +395,25 @@ describe("Board のフィルタ中の空状態（Issue #92）", () => {
       screen.queryByText("フィルタに一致するタスクがありません。"),
     ).not.toBeInTheDocument();
   });
+
+  it("server snapshot 自体が0件のときは、フィルタ指定があっても作成導線を出す（クリア導線は出さない）", () => {
+    boardQuery.mockReturnValue(createColumns());
+    renderBoard(["/?priority=high"]);
+
+    expect(
+      screen.getByText(/タスクがありません。Issue 一覧の「＋ タスク」/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("フィルタに一致するタスクがありません。"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "フィルタをクリア" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("Board のフィルタ中の D&D（Issue #92）", () => {
-  it("同一列内の並べ替えは可視カードの近傍 rank で moveTask を呼ぶ（非表示カードの rank は使わない）", async () => {
+  it("同一列内の並べ替えはフル列（未フィルタ）の実隣接 rank で moveTask を呼ぶ", async () => {
     const task1 = createTask({
       _id: "task_1" as Id<"tasks">,
       number: 1,
@@ -444,8 +459,9 @@ describe("Board のフィルタ中の D&D（Issue #92）", () => {
       } as DragEndEvent);
     });
 
-    // 可視配列 [task1, task3] で task3 を先頭へ→ before=null,
-    // after=task1.rank（非表示 hidden の rank "a1" は近傍計算に登場しない）
+    // task3 を可視先頭（task1 の前）へ挿入する。フル列（未フィルタ）で task1 の
+    // 直前には何も無いため before=null。after=task1.rank（フル列で task1 の
+    // 直後は非表示 hidden だが、挿入位置は task1 の"前"なので登場しない）。
     expect(mutate).toHaveBeenCalledWith({
       id: "task_3",
       before: null,
@@ -454,7 +470,7 @@ describe("Board のフィルタ中の D&D（Issue #92）", () => {
     });
   });
 
-  it("列またぎの移動は可視カードの近傍 rank で transitionStatus を呼ぶ（非表示カードの rank は使わない）", async () => {
+  it("列またぎの移動はフル列（未フィルタ）の実隣接 rank で transitionStatus を呼ぶ（非表示カードとの rank 重複を避ける）", async () => {
     const source = createTask({
       _id: "task_1" as Id<"tasks">,
       number: 1,
@@ -512,14 +528,99 @@ describe("Board のフィルタ中の D&D（Issue #92）", () => {
       } as DragEndEvent);
     });
 
-    // 可視配列 [targetVisible, source] の末尾へ挿入
-    // → before=targetVisible.rank, after=null（非表示 targetHidden は登場しない）
+    // 可視配列では [targetVisible, source] の末尾（targetVisible の直後）へ
+    // 挿入するが、フル列（未フィルタ）では targetVisible の直後に非表示
+    // targetHidden がいる。可視隣接だけ（before=targetVisible.rank,
+    // after=null）で rankBetween を呼ぶと targetHidden と同一 rank を
+    // 重複発行しうるため、before=targetVisible.rank, after=targetHidden.rank
+    // としてその間へ挿入する。
     expect(mutate).toHaveBeenCalledWith({
       id: "task_1",
       to: "in_progress",
       before: "b0",
-      after: null,
+      after: "b1",
       expectedRevision: source.revision,
+    });
+  });
+});
+
+/**
+ * mutation 未解決中のフィルタ変更による楽観更新の巻き戻り防止（Issue #92 修正2）。
+ * moveTask/transitionStatus の await 中に URL フィルタが変わると、同期
+ * effect が「columns 不変・filter 変化」で発火し、ドロップ前の古い
+ * snapshot から board を再構築して楽観更新が巻き戻ってしまう回帰を防ぐ。
+ * mutate の Promise を手動制御し、未解決の間は resync が起きないことを
+ * DOM のカード順序で確認する。
+ */
+describe("Board のドロップ直後・mutation 未解決中のフィルタ変更（Issue #92）", () => {
+  it("mutation が未解決の間はフィルタ変更があっても board を巻き戻さない", async () => {
+    const a = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      priority: "high",
+      rank: "a0",
+    });
+    const b = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      priority: "high",
+      rank: "a1",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+
+    let resolveMutate: (() => void) | undefined;
+    mutate.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMutate = resolve;
+        }),
+    );
+
+    const { router } = renderBoardWithRouter(["/"]);
+    const cardOrder = () =>
+      within(getColumn(TASK_STATUS_LABELS.todo))
+        .getAllByRole("link")
+        .map((el) => el.textContent);
+
+    expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    // task_1 を task_2 の後ろへ並べ替える（同一列内ドロップ）。
+    // dragEnd 内の moveTask は上で差し替えた未解決 Promise を返すため、
+    // 以降 await は resolveMutate() を呼ぶまで完了しない。
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+    });
+    const afterStart = dndHandlers.current;
+    if (!afterStart) throw new Error("DndContext が描画されていません");
+
+    act(() => {
+      afterStart.onDragEnd?.({
+        active: { id: "task_1" },
+        over: { id: "task_2" },
+      } as DragEndEvent);
+    });
+
+    // 楽観更新で並び順が入れ替わる（mutation は上で差し替えた未解決
+    // Promise を返すため、resolveMutate() を呼ぶまで完了しない）
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    // mutation 未解決のまま URL フィルタを変更する。
+    await act(async () => {
+      await router.navigate("/?priority=high");
+    });
+
+    // 巻き戻り防止: pendingMutationsRef が立っている間は同期 effect が
+    // resync しないため、ドロップ前の並び（server snapshot 由来）へは
+    // 戻らず、楽観更新後の並びのまま維持される。
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    // mutation を解決させて後片付けする（他テストへの影響防止）。
+    await act(async () => {
+      resolveMutate?.();
+      await Promise.resolve();
     });
   });
 });

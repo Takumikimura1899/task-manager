@@ -5,12 +5,31 @@ import {
   type BoardColumn,
   type BoardTask,
   neighborRanks,
+  neighborRanksInFullColumn,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "./board";
 import { EMPTY_FILTER, type FilterState } from "./filterParams";
 import type { TaskStatus } from "./taskMeta";
+
+const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
+  _id: "task_1" as Id<"tasks">,
+  _creationTime: 1000,
+  issue: "issue_1" as Id<"issues">,
+  project: "project_1" as Id<"projects">,
+  number: 1,
+  title: "タスク",
+  status: "todo",
+  priority: "high",
+  rank: "a0",
+  createdBy: "member_1" as Id<"members">,
+  revision: 1,
+  updatedAt: 1000,
+  issueNumber: 1,
+  assigneeName: null,
+  ...overrides,
+});
 
 /**
  * カンバン並べ替えの近傍rank算出（純粋関数）の振る舞いを検証する。
@@ -31,6 +50,86 @@ describe("neighborRanks", () => {
 
   it("要素が1つだけの列では上下とも端(null)になる", () => {
     expect(neighborRanks(["a"], 0)).toEqual({ before: null, after: null });
+  });
+});
+
+/**
+ * フィルタ中の rank 重複バグ（Issue #92 修正1）の回帰テスト。
+ * 可視カードの隣接だけから rank を発行すると、間に隠れたカードと同一 rank を
+ * 重複発行しうる（rankBetween は決定的）。neighborRanksInFullColumn は
+ * 可視アンカーから「フル列（未フィルタの server snapshot）における
+ * 直近の実隣接」を求めることでこれを防ぐ。
+ */
+describe("neighborRanksInFullColumn", () => {
+  const a = createTask({ _id: "a" as Id<"tasks">, rank: "a" });
+  const m = createTask({ _id: "m" as Id<"tasks">, rank: "m" });
+  const z = createTask({ _id: "z" as Id<"tasks">, rank: "z" });
+
+  it.each([
+    // [ケース, draggedId, visiblePrev, visibleNext, before, after]
+    ["先頭へ移動", "a", null, m, undefined, "m"],
+    ["中間へ移動", "m", a, z, "a", "z"],
+    ["末尾へ移動", "z", m, null, "m", undefined],
+  ] as const)(
+    "フィルタ無し（可視=フル）では従来の neighborRanks と同値になる: %s",
+    (_case, draggedId, visiblePrev, visibleNext, before, after) => {
+      const fullColumn = [a, m, z];
+      expect(
+        neighborRanksInFullColumn(
+          fullColumn,
+          draggedId,
+          visiblePrev,
+          visibleNext,
+        ),
+      ).toEqual({ before, after });
+    },
+  );
+
+  it("非表示カードが可視アンカーの間にある場合、フル列の実隣接 rank を返す（重複防止の再現）", () => {
+    // 隠れた b は可視の a/c の間で rankBetween(a0, a2) 相当の rank を既に
+    // 持っている。可視隣接（a0, a2）だけで計算すると同一 rank を再発行し
+    // 重複してしまうため、a の直後（フル列で実際に隣接する b の手前）へ
+    // 挿入されることを確認する。
+    const visibleA = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const hiddenB = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
+    const visibleC = createTask({ _id: "c" as Id<"tasks">, rank: "a2" });
+    const fullColumn = [visibleA, hiddenB, visibleC];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", visibleA, visibleC),
+    ).toEqual({ before: "a0", after: "a1" });
+  });
+
+  it("先頭挿入: visiblePrev が無い場合はフル列で visibleNext の直前へ挿入する", () => {
+    const first = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const second = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
+    const fullColumn = [first, second];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", null, first),
+    ).toEqual({ before: undefined, after: "a0" });
+  });
+
+  it("可視0枚で末尾追加: 可視アンカーが無ければフル列末尾の rank を before にする", () => {
+    const hiddenA = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const hiddenB = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
+    const fullColumn = [hiddenA, hiddenB];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", null, null),
+    ).toEqual({ before: "a1", after: undefined });
+  });
+
+  it("ドラッグ中カードの除外: fullColumn に自身が含まれていても除外して隣接を計算する", () => {
+    const before = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
+    const dragged = createTask({ _id: "dragged" as Id<"tasks">, rank: "a1" });
+    const after = createTask({ _id: "b" as Id<"tasks">, rank: "a2" });
+    // fullColumn は移動前の server snapshot なので dragged 自身も含む
+    const fullColumn = [before, dragged, after];
+
+    expect(
+      neighborRanksInFullColumn(fullColumn, "dragged", before, null),
+    ).toEqual({ before: "a0", after: "a2" });
   });
 });
 
@@ -160,24 +259,6 @@ describe("pickPointerScopedCollisions", () => {
  * AND 絞り込みだけを純粋関数として検証する。
  */
 describe("applyBoardFilter", () => {
-  const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
-    _id: "task_1" as Id<"tasks">,
-    _creationTime: 1000,
-    issue: "issue_1" as Id<"issues">,
-    project: "project_1" as Id<"projects">,
-    number: 1,
-    title: "タスク",
-    status: "todo",
-    priority: "high",
-    rank: "a0",
-    createdBy: "member_1" as Id<"members">,
-    revision: 1,
-    updatedAt: 1000,
-    issueNumber: 1,
-    assigneeName: null,
-    ...overrides,
-  });
-
   const createColumn = (
     status: TaskStatus,
     tasks: BoardTask[] = [],

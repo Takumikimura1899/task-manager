@@ -23,7 +23,7 @@ import {
   applyBoardFilter,
   type BoardColumn,
   type BoardTask,
-  neighborRanks,
+  neighborRanksInFullColumn,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
@@ -34,6 +34,7 @@ import {
   useFilterParams,
 } from "../../lib/filterParams";
 import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
+import { FilterClearButton } from "../FilterBar/FilterClearButton";
 import { Skeleton } from "../Skeleton/Skeleton";
 import { TaskCard } from "../TaskCard/TaskCard";
 import s from "./Board.module.css";
@@ -90,16 +91,32 @@ export function Board({
   // されているため URL 不変なら同一参照を保つ（useFilterParams 参照）。
   const syncedRef = useRef<readonly BoardColumn[] | undefined>(undefined);
   const appliedFilterRef = useRef<FilterState | undefined>(undefined);
+  // handleDragEnd の moveTask/transitionStatus が未解決の間にインクリメントする
+  // カウンタ（Issue #92）。await 中にフィルタが変わると、この効果が
+  // 「columns 不変・filter 変化」で発火し、ドロップ前の古い snapshot から
+  // board を再構築して楽観更新を巻き戻してしまうため、mutation 解決前は
+  // 同期を止める。mutation 成功後は新しい columns snapshot が届いた時点で
+  // （columnsChanged=true になり）最新 filter がまとめて適用される。
+  const pendingMutationsRef = useRef(0);
+
+  /** syncedRef/appliedFilterRef を更新しつつ、server snapshot から board を再構築する。 */
+  const resyncFromServer = useCallback(
+    (cols: readonly BoardColumn[]) => {
+      syncedRef.current = cols;
+      appliedFilterRef.current = filter;
+      setBoard(applyBoardFilter(toLocal(cols), filter));
+    },
+    [filter],
+  );
+
   useEffect(() => {
     if (activeTask) return;
     if (columns === undefined) return;
-    if (syncedRef.current === columns && appliedFilterRef.current === filter) {
-      return;
-    }
-    syncedRef.current = columns;
-    appliedFilterRef.current = filter;
-    setBoard(applyBoardFilter(toLocal(columns), filter));
-  }, [columns, activeTask, filter]);
+    const columnsChanged = syncedRef.current !== columns;
+    if (!columnsChanged && pendingMutationsRef.current > 0) return;
+    if (!columnsChanged && appliedFilterRef.current === filter) return;
+    resyncFromServer(columns);
+  }, [columns, activeTask, filter, resyncFromServer]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -157,7 +174,11 @@ export function Board({
   }
 
   const boardIsEmpty = board.every((column) => column.tasks.length === 0);
-  const hasActiveFilter = filter.priority !== null || filter.assignee !== null;
+  // server snapshot（未フィルタ）自体が0件かどうか。フィルタで全滅した場合と
+  // 区別し、本当に0件のプロジェクトでは常に作成導線を出す（Issue #92）。
+  const serverIsEmpty = (columns ?? []).every(
+    (column) => column.tasks.length === 0,
+  );
 
   function findTask(id: string): BoardTask | null {
     for (const column of boardRef.current ?? []) {
@@ -210,20 +231,17 @@ export function Board({
   // 開始前のスナップショットであり復元元として正しい。
   function handleDragCancel() {
     setActiveTask(null);
-    if (columns) {
-      syncedRef.current = columns;
-      appliedFilterRef.current = filter;
-      setBoard(applyBoardFilter(toLocal(columns), filter));
-    }
+    if (columns) resyncFromServer(columns);
   }
 
   // rank 不変条件（Issue #92）: board はフィルタ適用後（可視カードのみ）の配列
-  // のため、neighborRanks が返す before/after も可視カードの近傍 rank になる。
-  // 非表示カードは LexoRank の連続区間のどこかに存在するだけで、可視カード
-  // 間 before < after を満たす新 rank を発行する限り非表示カードとの前後関係
-  // が崩れることはない（非表示カードのすぐ隣に挿入されても区間内に収まる）。
-  // フィルタ解除時は全カードの rank をそのまま昇順ソートして表示するため、
-  // フィルタ中に発行した rank も正しい位置に再整列される。
+  // のため、可視カードの前後だけから rank を発行すると、間に隠れたカードと
+  // 同一 rank を重複発行しうる（rankBetween は決定的関数のため、同じ
+  // before/after からは常に同じ rank が生成される。重複すると rank 昇順の
+  // board クエリの順序が不定になり、後続の rankBetween(x, x) は例外を投げる）。
+  // そのため neighborRanksInFullColumn で「フル列（未フィルタの server
+  // snapshot）における可視アンカーの直近実隣接」を求め、その間へ挿入する。
+  // 挿入位置は常にフル列で本当に隣接する2枚の間になるため、rank は一意になる。
   async function handleDragEnd({ active, over }: DragEndEvent) {
     const dragged = activeTask;
     setActiveTask(null);
@@ -239,8 +257,12 @@ export function Board({
     let columnTasks = current[toCol].tasks;
     const oldIndex = columnTasks.findIndex((t) => t._id === activeId);
     const overIndex = columnTasks.findIndex((t) => t._id === overId);
+    const fullColumn =
+      columns?.find((c) => c.status === targetStatus)?.tasks ?? [];
 
     try {
+      let mutationPromise: Promise<unknown>;
+
       if (targetStatus === dragged.status) {
         // 同一列内の並べ替え。over が列コンテナ（overIndex === -1）なら末尾へ
         // フォールバックし、位置が変わらないなら何もしない。
@@ -258,14 +280,16 @@ export function Board({
                 i === toCol ? { ...c, tasks: columnTasks } : c,
               ),
         );
-        const { before, after } = neighborRanks(
-          columnTasks.map((t) => t.rank),
-          targetIndex,
+        const { before, after } = neighborRanksInFullColumn(
+          fullColumn,
+          dragged._id,
+          columnTasks[targetIndex - 1] ?? null,
+          columnTasks[targetIndex + 1] ?? null,
         );
-        await moveTask({
+        mutationPromise = moveTask({
           id: dragged._id,
-          before,
-          after,
+          before: before ?? null,
+          after: after ?? null,
           expectedRevision: dragged.revision,
         });
       } else {
@@ -273,11 +297,13 @@ export function Board({
         // handleDragOver でカードは既に遷移先列のドロップ位置へ配置済みなので、
         // その近傍 rank を渡して末尾固定ではなく任意位置へ挿入する。
         const movedIndex = columnTasks.findIndex((t) => t._id === activeId);
-        const { before, after } = neighborRanks(
-          columnTasks.map((t) => t.rank),
-          movedIndex,
+        const { before, after } = neighborRanksInFullColumn(
+          fullColumn,
+          dragged._id,
+          columnTasks[movedIndex - 1] ?? null,
+          columnTasks[movedIndex + 1] ?? null,
         );
-        await transitionStatus({
+        mutationPromise = transitionStatus({
           id: dragged._id,
           to: targetStatus,
           before,
@@ -285,14 +311,19 @@ export function Board({
           expectedRevision: dragged.revision,
         });
       }
+
+      // mutation 未解決の間は同期 effect による resync を止める（Issue #92）。
+      // 参照は resyncFromServer 側の解説を参照。
+      pendingMutationsRef.current++;
+      try {
+        await mutationPromise;
+      } finally {
+        pendingMutationsRef.current--;
+      }
     } catch (e) {
       setError(errorMessage(e));
       // 失敗時は server の真実へ戻す。
-      if (columns) {
-        syncedRef.current = columns;
-        appliedFilterRef.current = filter;
-        setBoard(applyBoardFilter(toLocal(columns), filter));
-      }
+      if (columns) resyncFromServer(columns);
     }
   }
 
@@ -312,23 +343,21 @@ export function Board({
       )}
       {/* タスク皆無でも空列だけが並ぶと次の一手が分からないため案内を出す
           （Issue #29）。列＝droppable は D&D 構造維持のためそのまま描画する。
-          フィルタで全件隠れた場合は作成導線ではなくクリア導線を出す（Issue #92）。 */}
-      {boardIsEmpty && hasActiveFilter && (
-        <p className={s.empty}>
-          フィルタに一致するタスクがありません。
-          <button
-            className={s.emptyClear}
-            onClick={() => setFilter(EMPTY_FILTER)}
-            type="button"
-          >
-            フィルタをクリア
-          </button>
-        </p>
-      )}
-      {boardIsEmpty && !hasActiveFilter && (
+          server snapshot 自体が0件（プロジェクトに本当にタスクが無い）なら
+          フィルタの有無を問わず作成導線を出す。server には既にタスクがあり
+          フィルタで全件隠れた場合のみクリア導線を出す（Issue #92）。 */}
+      {serverIsEmpty && (
         <p className={s.empty}>
           タスクがありません。Issue 一覧の「＋ タスク」または「＋ 新規
           Issue」から作成できます。
+        </p>
+      )}
+      {!serverIsEmpty && boardIsEmpty && (
+        <p className={s.empty}>
+          フィルタに一致するタスクがありません。
+          <FilterClearButton onClick={() => setFilter(EMPTY_FILTER)}>
+            フィルタをクリア
+          </FilterClearButton>
         </p>
       )}
       {/* ドラッグ中は列またぎの再マウントでカードの出現フェード（card-in）が
