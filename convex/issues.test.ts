@@ -287,6 +287,79 @@ describe("issues.list（estimateTotal / actualTotal）", () => {
   });
 });
 
+// --- list（assignees、担当者フィルタ用集計・Issue #91） ---------------------
+
+describe("issues.list（assignees）", () => {
+  it("未割り当ての Task のみなら空配列を返す", async () => {
+    const t = setup();
+    const { project } = await arrangeSingleIssue(t);
+
+    const issue = await statusOf(t, project);
+    expect(issue.assignees).toEqual([]);
+  });
+
+  it("active な Task の担当者を重複なく列挙する", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const alice = await seedMember(t, { name: "Alice" });
+    const bob = await seedMember(t, {
+      name: "Bob",
+      email: "bob@example.com",
+    });
+    const { issue } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: alice,
+      firstTask: { title: "タスク1", assignee: alice },
+    });
+    // Alice への重複割り当て（集計は重複排除されるはず）
+    await t.mutation(api.tasks.create, {
+      issue,
+      title: "タスク2",
+      createdBy: alice,
+      assignee: alice,
+    });
+    await t.mutation(api.tasks.create, {
+      issue,
+      title: "タスク3",
+      createdBy: alice,
+      assignee: bob,
+    });
+    // 未割り当ての Task（assignees に影響しないはず）
+    await t.mutation(api.tasks.create, {
+      issue,
+      title: "タスク4",
+      createdBy: alice,
+    });
+
+    const [found] = await t.query(api.issues.list, { project });
+
+    expect(found.assignees).toHaveLength(2);
+    expect(new Set(found.assignees)).toEqual(new Set([alice, bob]));
+  });
+
+  it("canceled にした Task の担当者は除外する", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const member = await seedMember(t);
+    const { task } = await t.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      createdBy: member,
+      firstTask: { title: "タスク", assignee: member },
+    });
+    await t.mutation(api.tasks.transitionStatus, {
+      id: task,
+      to: "canceled",
+      expectedRevision: 0,
+    });
+
+    const [found] = await t.query(api.issues.list, { project });
+
+    expect(found.assignees).toEqual([]);
+  });
+});
+
 // --- listInProgress（ActiveIssueStrip 向け軽量版） ---------------------------
 
 describe("issues.listInProgress", () => {

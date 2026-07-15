@@ -184,6 +184,14 @@ export const list = query({
         doneCount: active.filter((t) => t.status === "done").length,
         estimateTotal: active.reduce((sum, t) => sum + (t.estimate ?? 0), 0),
         actualTotal: active.reduce((sum, t) => sum + (t.actual ?? 0), 0),
+        // 担当者フィルタ（Issue #91）用: 実行対象 Task の担当者を重複なく列挙する。
+        assignees: [
+          ...new Set(
+            active
+              .map((t) => t.assignee)
+              .filter((a): a is Id<"members"> => a !== undefined),
+          ),
+        ],
       };
     });
   },

@@ -1,0 +1,52 @@
+@layer components {
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+
+  .select {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .select:focus {
+    border-color: var(--color-accent);
+    box-shadow: var(--glow-accent-sm);
+  }
+
+  .clear {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .clear:hover {
+    color: var(--color-accent);
+  }
+}

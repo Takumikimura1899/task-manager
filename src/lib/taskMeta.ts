@@ -17,6 +17,15 @@ export const PRIORITY_LABELS: Record<Priority, string> = Object.fromEntries(
   PRIORITY_OPTIONS.map((o) => [o.value, o.label]),
 ) as Record<Priority, string>;
 
+/**
+ * 優先度の値→比較用の重み（PRIORITY_OPTIONS の並び順 none→urgent から導出、
+ * none=0 … urgent=4）。優先度は文字列のため `<`/`>` で直接比較できず、ソート
+ * （#93）で文字列比較の誤りを防ぐためにこの数値を使う。
+ */
+export const PRIORITY_WEIGHT: Record<Priority, number> = Object.fromEntries(
+  PRIORITY_OPTIONS.map((o, i) => [o.value, i]),
+) as Record<Priority, number>;
+
 /** §5 固定6状態の列順（カンバン列・配下Taskのグルーピングで共有）。 */
 export const TASK_STATUS_ORDER: readonly TaskStatus[] = [
   "backlog",

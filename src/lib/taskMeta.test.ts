@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   PRIORITY_LABELS,
   PRIORITY_OPTIONS,
+  PRIORITY_WEIGHT,
   TASK_STATUS_LABELS,
   TASK_STATUS_ORDER,
 } from "./taskMeta";
@@ -25,6 +26,21 @@ describe("PRIORITY_LABELS", () => {
   it("選択肢の全 value に対応するラベルを持つ（欠落なし）", () => {
     for (const option of PRIORITY_OPTIONS) {
       expect(PRIORITY_LABELS[option.value]).toBe(option.label);
+    }
+  });
+});
+
+describe("PRIORITY_WEIGHT", () => {
+  it("none < low < medium < high < urgent の昇順になる（#93 のソートで文字列比較を避けるため）", () => {
+    expect(PRIORITY_WEIGHT.none).toBeLessThan(PRIORITY_WEIGHT.low);
+    expect(PRIORITY_WEIGHT.low).toBeLessThan(PRIORITY_WEIGHT.medium);
+    expect(PRIORITY_WEIGHT.medium).toBeLessThan(PRIORITY_WEIGHT.high);
+    expect(PRIORITY_WEIGHT.high).toBeLessThan(PRIORITY_WEIGHT.urgent);
+  });
+
+  it("PRIORITY_OPTIONS の全 value に対応する重みを持つ（欠落なし）", () => {
+    for (const option of PRIORITY_OPTIONS) {
+      expect(typeof PRIORITY_WEIGHT[option.value]).toBe("number");
     }
   });
 });

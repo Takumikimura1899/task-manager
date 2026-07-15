@@ -63,6 +63,7 @@ const createIssueSummary = (
   doneCount: 0,
   estimateTotal: 0,
   actualTotal: 0,
+  assignees: [],
   ...overrides,
 });
 
@@ -70,6 +71,7 @@ const renderIssuesView = (
   contextOverrides: {
     members?: Doc<"members">[] | undefined;
     currentMember?: Doc<"members"> | null;
+    initialEntries?: string[];
   } = {},
 ) => {
   const context = {
@@ -82,7 +84,7 @@ const renderIssuesView = (
         : createMember(),
   };
   return render(
-    <MemoryRouter initialEntries={["/"]}>
+    <MemoryRouter initialEntries={contextOverrides.initialEntries ?? ["/"]}>
       <Routes>
         <Route element={<Outlet context={context} />}>
           <Route element={<IssuesView />} path="/" />
@@ -147,6 +149,156 @@ describe("IssuesView の購読値の反映", () => {
     expect(
       screen.getByRole("link", { name: "決済機能を実装する" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("IssuesView の URL からのフィルタ復元（Issue #91）", () => {
+  it("status クエリで指定したステータスの Issue のみ一覧に表示する", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "未着手のIssue",
+        status: "open",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "完了したIssue",
+        status: "done",
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?status=done"] });
+
+    expect(
+      screen.getByRole("heading", { name: "Issue 一覧（1）" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "完了したIssue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "未着手のIssue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("priority クエリで指定した優先度の Issue のみ一覧に表示する", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "緊急のIssue",
+        priority: "urgent",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "通常のIssue",
+        priority: "none",
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?priority=urgent"] });
+
+    expect(
+      screen.getByRole("heading", { name: "Issue 一覧（1）" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "緊急のIssue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "通常のIssue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("assignee クエリで指定した担当者を含む Issue のみ一覧に表示する", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "member_1が担当のIssue",
+        assignees: ["member_1" as Id<"members">],
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "member_2が担当のIssue",
+        assignees: ["member_2" as Id<"members">],
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?assignee=member_1"] });
+
+    expect(
+      screen.getByRole("heading", { name: "Issue 一覧（1）" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "member_1が担当のIssue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "member_2が担当のIssue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("複数のクエリを同時指定すると暗黙 AND で絞り込む", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "両条件に一致するIssue",
+        status: "open",
+        priority: "high",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "ステータスのみ一致するIssue",
+        status: "open",
+        priority: "none",
+      }),
+      createIssueSummary({
+        _id: "issue_3" as Id<"issues">,
+        number: 3,
+        title: "優先度のみ一致するIssue",
+        status: "done",
+        priority: "high",
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?status=open&priority=high"] });
+
+    expect(
+      screen.getByRole("heading", { name: "Issue 一覧（1）" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "両条件に一致するIssue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "ステータスのみ一致するIssue" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "優先度のみ一致するIssue" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("フィルタ結果が0件の場合、IssueStats の総数はフィルタ前の件数を維持しつつ IssueTable は既存の空状態を表示する", () => {
+    mocks.issues = [
+      createIssueSummary({
+        _id: "issue_1" as Id<"issues">,
+        number: 1,
+        title: "未着手のIssue",
+        status: "open",
+      }),
+      createIssueSummary({
+        _id: "issue_2" as Id<"issues">,
+        number: 2,
+        title: "完了したIssue",
+        status: "done",
+      }),
+    ];
+    renderIssuesView({ initialEntries: ["/?status=canceled"] });
+
+    expect(screen.getByText("Issue 合計")).toHaveTextContent("Issue 合計 2");
+    expect(
+      screen.getByRole("heading", { name: "Issue 一覧（0）" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Issue がありません。")).toBeInTheDocument();
   });
 });
 

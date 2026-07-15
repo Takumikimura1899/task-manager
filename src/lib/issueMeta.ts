@@ -1,4 +1,4 @@
-import type { Doc } from "../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { Priority } from "./taskMeta";
 
 /** Issue 派生ステータス（§5.1）の表示ラベル。一覧・詳細で共有する。 */
@@ -23,4 +23,5 @@ export type IssueSummary = Omit<Doc<"issues">, "priority"> & {
   doneCount: number;
   estimateTotal: number;
   actualTotal: number;
+  assignees: Id<"members">[];
 };
