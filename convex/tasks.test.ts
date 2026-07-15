@@ -662,9 +662,9 @@ describe("tasks.listByProject", () => {
 // --- listFiltered（MCP list_tasks 用のサーバー側絞り込み） --------------------
 
 /**
- * listFiltered 用の配置。2プロジェクト・担当者ありなしで Task を配置する:
- * - TASK: 1(todo, Bob) / 2(backlog, Bob) / 3(backlog, 担当なし)
- * - OTHER: 1(backlog, Bob) …… project 絞り込みの検証用
+ * listFiltered 用の配置。2プロジェクト・担当者ありなし・優先度違いで Task を配置する:
+ * - TASK: 1(todo, Bob, urgent) / 2(backlog, Bob, low) / 3(backlog, 担当なし, urgent)
+ * - OTHER: 1(backlog, Bob, none) …… project 絞り込みの検証用
  */
 const arrangeFilteredTasks = async (t: T) => {
   const member = await seedMember(t);
@@ -676,7 +676,7 @@ const arrangeFilteredTasks = async (t: T) => {
     project,
     title: "課題",
     createdBy: member,
-    firstTask: { title: "1つ目", assignee: bob },
+    firstTask: { title: "1つ目", assignee: bob, priority: "urgent" },
   });
   await t.mutation(api.tasks.transitionStatus, {
     id: first,
@@ -687,11 +687,13 @@ const arrangeFilteredTasks = async (t: T) => {
     issue,
     title: "2つ目",
     assignee: bob,
+    priority: "low",
     createdBy: member,
   });
   await t.mutation(api.tasks.create, {
     issue,
     title: "3つ目",
+    priority: "urgent",
     createdBy: member,
   });
   await t.mutation(api.issues.create, {
@@ -764,6 +766,54 @@ describe("tasks.listFiltered", () => {
 
     expect(
       await t.query(api.tasks.listFiltered, { project, status: "done" }),
+    ).toEqual([]);
+  });
+
+  it("priority 指定で該当優先度の Task のみ返す", async () => {
+    const t = setup();
+    const { project } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, {
+      project,
+      priority: "urgent",
+    });
+
+    expect(listed.map((task) => task.number).toSorted()).toEqual([1, 3]);
+    expect(listed.every((task) => task.priority === "urgent")).toBe(true);
+  });
+
+  it("priority と status の同時指定は両条件を満たす Task のみ返す", async () => {
+    const t = setup();
+    const { project } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, {
+      project,
+      status: "backlog",
+      priority: "urgent",
+    });
+
+    expect(listed.map((task) => task.number)).toEqual([3]);
+  });
+
+  it("priority と assignee の同時指定は両条件を満たす Task のみ返す", async () => {
+    const t = setup();
+    const { project, bob } = await arrange(t);
+
+    const listed = await t.query(api.tasks.listFiltered, {
+      project,
+      assignee: bob,
+      priority: "urgent",
+    });
+
+    expect(listed.map((task) => task.number)).toEqual([1]);
+  });
+
+  it("priority に該当する Task がなければ空配列を返す", async () => {
+    const t = setup();
+    const { project } = await arrange(t);
+
+    expect(
+      await t.query(api.tasks.listFiltered, { project, priority: "high" }),
     ).toEqual([]);
   });
 });
