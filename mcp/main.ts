@@ -494,6 +494,37 @@ async function main() {
   );
 
   server.registerTool(
+    "update_issue",
+    {
+      title: "Issue更新",
+      description:
+        "タイトル・説明・優先度を更新する。version には get_issue で得た revision を渡す（楽観ロック）。status は子 Task 群からの派生属性のため更新対象外",
+      inputSchema: {
+        issue_ref: z.string().describe("例: TASK#1"),
+        version: z.number().describe("楽観ロック用 revision"),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        priority: z.enum(PRIORITY_VALUES).optional(),
+      },
+    },
+    async ({ issue_ref, version, title, description, priority }) => {
+      try {
+        const id = await resolveIssueId(issue_ref);
+        await convex.mutation(api.issues.update, {
+          id,
+          expectedRevision: version,
+          title,
+          description,
+          priority,
+        });
+        return ok({ message: "更新しました" });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
     "transition_status",
     {
       title: "ステータス遷移",

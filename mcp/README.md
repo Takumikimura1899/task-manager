@@ -23,9 +23,9 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
 
 ### Tools（実行）
 
-`list_issues` / `get_issue` / `create_issue` / `list_tasks` / `get_task` /
-`create_task` / `update_task` / `transition_status` / `assign_task` /
-`delete_task` / `delete_issue` / `link_git`
+`list_issues` / `get_issue` / `create_issue` / `update_issue` / `list_tasks` /
+`get_task` / `create_task` / `update_task` / `transition_status` /
+`assign_task` / `delete_task` / `delete_issue` / `link_git`
 
 - `create_issue` は最初の Task を必ず伴う（Issue は常に ≥1 Task、INVARIANT-5）。
   引数は `project_key` / `title` / `description?` / `first_task_title` / `first_task_priority?`。
@@ -38,7 +38,8 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
   しているため、対応ホスト（Claude Code 等）では承認プロンプトも表示される。
 - `delete_issue` は配下の Task と関連 GitLink も併せて削除する（カスケード）。
 - 更新系ツールの `version` 引数には `get_task` / `get_issue` で得た `revision` を渡す
-  （楽観ロック）。
+  （楽観ロック）。`update_issue` は title / description / priority のみ更新可能で、
+  status は子 Task 群からの派生属性のため対象外（§5.1）。
 - `link_git` はタスクの所属プロジェクトからリポジトリを解決する（複数ある場合は
   `repository_url` を指定）。`(repository, type, ref)` で冪等。
 
