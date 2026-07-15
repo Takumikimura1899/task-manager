@@ -290,10 +290,14 @@ export function Board({
   // 挿入位置は常にフル列で本当に隣接する2枚の間になるため、rank は一意になる。
   async function handleDragEnd({ active, over }: DragEndEvent) {
     // 幽霊ドラッグのドロップは黙って捨てず、拒否した理由をユーザーへ伝える
-    // （サイレント失敗の回避）。メッセージは直前 mutation の成功時に消す。
+    // （サイレント失敗の回避）。ただし案内を出すのはドロップ時点でまだ
+    // mutation が未解決のときだけ。既に解決済みなら (1) 成功時: ロックは
+    // 解除済みで即座に再試行できるため案内は不要（出すと以後クリアされず
+    // 残留する）、(2) 失敗時: catch が表示した本当のエラーを誤った案内で
+    // 上書きしてはならない。
     if (lockedDragRef.current) {
       lockedDragRef.current = false;
-      setError(DRAG_LOCKED_MESSAGE);
+      if (pendingMutationsRef.current > 0) setError(DRAG_LOCKED_MESSAGE);
       return;
     }
     const dragged = activeTask;
