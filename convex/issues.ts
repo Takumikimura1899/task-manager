@@ -249,6 +249,42 @@ export const listInProgress = query({
 });
 
 /**
+ * {key}#{number} 参照から project と issue を引く共通前段。
+ * どちらかが見つからなければ null（エラーにするかは呼び出し元の契約に委ねる）。
+ * 参照解決の仕様変更（除外条件・インデックス変更等）はここに集約する。
+ */
+async function findIssueByRef(
+  ctx: QueryCtx,
+  projectKey: string,
+  number: number,
+): Promise<{ project: Doc<"projects">; issue: Doc<"issues"> } | null> {
+  const project = await findProjectByKey(ctx, projectKey);
+  if (project === null) return null;
+
+  const issue = await ctx.db
+    .query("issues")
+    .withIndex("by_project_and_number", (q) =>
+      q.eq("project", project._id).eq("number", number),
+    )
+    .unique();
+  if (issue === null) return null;
+  return { project, issue };
+}
+
+/**
+ * {key}#{number} 形式の参照から Issue の _id だけを解決する軽量版。
+ * getByRef は配下 Task と担当者名まで join するため、_id しか要らない
+ * 更新系（MCP の update_issue 等）はこちらを使う。
+ */
+export const getIdByRef = query({
+  args: { projectKey: v.string(), number: v.number() },
+  handler: async (ctx, args) => {
+    const found = await findIssueByRef(ctx, args.projectKey, args.number);
+    return found === null ? null : found.issue._id;
+  },
+});
+
+/**
  * {key}#{number} 形式の参照から Issue を解決し、派生ステータスと配下 Task を返す。
  * 詳細画面の表示用に作成者名と各 Task の担当者名を付与する
  * （member の PII は返さず name のみ）。
@@ -256,16 +292,9 @@ export const listInProgress = query({
 export const getByRef = query({
   args: { projectKey: v.string(), number: v.number() },
   handler: async (ctx, args) => {
-    const project = await findProjectByKey(ctx, args.projectKey);
-    if (project === null) return null;
-
-    const issue = await ctx.db
-      .query("issues")
-      .withIndex("by_project_and_number", (q) =>
-        q.eq("project", project._id).eq("number", args.number),
-      )
-      .unique();
-    if (issue === null) return null;
+    const found = await findIssueByRef(ctx, args.projectKey, args.number);
+    if (found === null) return null;
+    const { project, issue } = found;
 
     const tasks = await tasksOfIssue(ctx, issue._id);
 

@@ -109,8 +109,18 @@ async function resolveIssue(ref: string) {
   return issue;
 }
 
+/**
+ * "TASK#1" 形式の参照から Issue の _id だけを解決する。
+ * getByRef の join（配下 Task・担当者名）を伴わない軽量版。
+ */
 async function resolveIssueId(ref: string): Promise<Id<"issues">> {
-  return (await resolveIssue(ref))._id;
+  const { key, number } = parseIssueRef(ref);
+  const id = await convex.query(api.issues.getIdByRef, {
+    projectKey: key,
+    number,
+  });
+  if (id === null) throw new Error(`Issue が見つかりません: ${ref}`);
+  return id;
 }
 
 async function resolveMemberId(email: string): Promise<Id<"members">> {
@@ -481,6 +491,37 @@ async function main() {
         const task = await resolveTask(task_ref);
         await convex.mutation(api.tasks.updateFields, {
           id: task._id,
+          expectedRevision: version,
+          title,
+          description,
+          priority,
+        });
+        return ok({ message: "更新しました" });
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_issue",
+    {
+      title: "Issue更新",
+      description:
+        "タイトル・説明・優先度を更新する。version には get_issue で得た revision を渡す（楽観ロック）。status は子 Task 群からの派生属性のため更新対象外",
+      inputSchema: {
+        issue_ref: z.string().describe("例: TASK#1"),
+        version: z.number().describe("楽観ロック用 revision"),
+        title: z.string().optional(),
+        description: z.string().optional(),
+        priority: z.enum(PRIORITY_VALUES).optional(),
+      },
+    },
+    async ({ issue_ref, version, title, description, priority }) => {
+      try {
+        const id = await resolveIssueId(issue_ref);
+        await convex.mutation(api.issues.update, {
+          id,
           expectedRevision: version,
           title,
           description,
