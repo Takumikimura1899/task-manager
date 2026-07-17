@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   applyFilterParams,
+  applyListParams,
   applySortParams,
   EMPTY_FILTER,
   type FilterState,
+  type ListParams,
   parseFilterParams,
   parseSortParams,
   type SortState,
@@ -19,6 +21,10 @@ import {
  */
 
 const assigneeId = "member_1" as Id<"members">;
+
+/** URLSearchParams をキー順序に依存せず比較するためのソート済みエントリ配列。 */
+const sortedEntries = (p: URLSearchParams) =>
+  [...p.entries()].toSorted(([a], [b]) => a.localeCompare(b));
 
 describe("parseFilterParams", () => {
   it("有効な status/priority/assignee を復元する", () => {
@@ -198,5 +204,80 @@ describe("applySortParams", () => {
     expect(next.has("sort")).toBe(false);
     expect(next.has("dir")).toBe(false);
     expect(next.get("status")).toBe("open");
+  });
+});
+
+// --- 一括更新（filter/sort を1回の setSearchParams で書く統合経路、Issue #98） ---
+
+describe("applyListParams", () => {
+  it("filter 全属性非 null + sort 非 null の場合、apply 後に parseFilterParams/parseSortParams で完全一致する（往復一致）", () => {
+    const params: ListParams = {
+      filter: { status: "done", priority: "urgent", assignee: assigneeId },
+      sort: { field: "priority", dir: "desc" },
+    };
+
+    const applied = applyListParams(new URLSearchParams(), params);
+
+    expect(parseFilterParams(applied)).toEqual(params.filter);
+    expect(parseSortParams(applied)).toEqual(params.sort);
+  });
+
+  it("filter/sort がともに null の場合、既存の status/priority/assignee/sort/dir キーが全て消える", () => {
+    const sp = new URLSearchParams({
+      status: "open",
+      priority: "high",
+      assignee: assigneeId,
+      sort: "priority",
+      dir: "asc",
+    });
+
+    const cleared = applyListParams(sp, { filter: EMPTY_FILTER, sort: null });
+
+    expect(cleared.toString()).toBe("");
+  });
+
+  it("filter/sort に無関係なキー（例: q）を温存する", () => {
+    const sp = new URLSearchParams({ q: "foo" });
+
+    const applied = applyListParams(sp, {
+      filter: { status: "open", priority: null, assignee: null },
+      sort: { field: "updatedAt", dir: "asc" },
+    });
+
+    expect(applied.get("q")).toBe("foo");
+  });
+
+  it("入力の URLSearchParams を書き換えない（複製して返す）", () => {
+    const sp = new URLSearchParams({
+      status: "open",
+      sort: "priority",
+      dir: "asc",
+    });
+
+    applyListParams(sp, { filter: EMPTY_FILTER, sort: null });
+
+    expect(sp.get("status")).toBe("open");
+    expect(sp.get("sort")).toBe("priority");
+    expect(sp.get("dir")).toBe("asc");
+  });
+
+  it("filter/sort のキー集合が disjoint なため合成順が結果へ影響しない（applyFilterParams/applySortParams の逆順合成と値集合が一致）", () => {
+    // URLSearchParams の toString() はキーの挿入順に依存するため合成順が
+    // 変われば文字列表現は変わりうる。ここで固定したいのは「値の集合が
+    // 一致する（順序に依存しない）」という disjoint キーゆえの可換性であり、
+    // ソート済みエントリ配列で比較する。
+    const sp = new URLSearchParams({ q: "foo" });
+    const params: ListParams = {
+      filter: { status: "open", priority: "high", assignee: assigneeId },
+      sort: { field: "updatedAt", dir: "asc" },
+    };
+
+    const forward = applyListParams(sp, params);
+    const reversed = applyFilterParams(
+      applySortParams(sp, params.sort),
+      params.filter,
+    );
+
+    expect(sortedEntries(forward)).toEqual(sortedEntries(reversed));
   });
 });

@@ -15,6 +15,11 @@ import { type Priority, PRIORITY_OPTIONS } from "./taskMeta";
  *   parse(apply(sp, state)) は state と一致する（往復一致）。
  * - 他キー（sort/dir 等）は温存する。filter と sort は互いに干渉しない
  *   別キーとして直交させる。
+ * - filter/sort を同一 React バッチ内で両方更新する導線では、setter を
+ *   2回に分けて呼ばない（useSearchParams の setter は render 時点の
+ *   スナップショットから URL を組み立てるため、後勝ちで先の書き込みが
+ *   失われる）。1回の setSearchParams で両キー空間を書く
+ *   `applyListParams` / `useIssueListParams` の setter を1回だけ呼ぶこと。
  */
 
 export type FilterState = {
@@ -142,19 +147,41 @@ export function applySortParams(
   return next;
 }
 
-/** URL 外在化済みのソート状態フック（#93 の Issue 一覧ソート UI が使用）。 */
-export function useSortParams(): readonly [
-  SortState,
-  (next: SortState) => void,
+// --- 一括更新（filter/sort を1回の setSearchParams で書く統合経路） --------
+
+export type ListParams = { filter: FilterState; sort: SortState };
+
+/**
+ * 既存2 apply（applyFilterParams / applySortParams）の合成。filter キー
+ * （status/priority/assignee）と sort キー（sort/dir）は disjoint なため
+ * 合成順は結果に影響しない。
+ */
+export function applyListParams(
+  sp: URLSearchParams,
+  params: ListParams,
+): URLSearchParams {
+  return applySortParams(applyFilterParams(sp, params.filter), params.sort);
+}
+
+/**
+ * IssuesView 等、filter と sort を同時に扱う呼び出し側向けの統合フック。
+ * 1回の setSearchParams で両キー空間を書くため、同一 React バッチ内で
+ * filter/sort を両方更新しても後勝ちで一方が失われることがない。
+ */
+export function useIssueListParams(): readonly [
+  ListParams,
+  (next: ListParams) => void,
 ] {
   const [searchParams, setSearchParams] = useSearchParams();
+  const filter = useMemo(() => parseFilterParams(searchParams), [searchParams]);
   const sort = useMemo(() => parseSortParams(searchParams), [searchParams]);
+  const value = useMemo(() => ({ filter, sort }), [filter, sort]);
 
-  const setSort = (next: SortState) => {
-    setSearchParams((prev) => applySortParams(prev, next), {
+  const setListParams = (next: ListParams) => {
+    setSearchParams((prev) => applyListParams(prev, next), {
       replace: true,
     });
   };
 
-  return [sort, setSort] as const;
+  return [value, setListParams] as const;
 }

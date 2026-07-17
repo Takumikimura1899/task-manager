@@ -8,7 +8,7 @@ import { IssueTable } from "../../components/IssueTable/IssueTable";
 import { NewIssueForm } from "../../components/NewIssueForm/NewIssueForm";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { SortBar } from "../../components/SortBar/SortBar";
-import { useFilterParams, useSortParams } from "../../lib/filterParams";
+import { useIssueListParams } from "../../lib/filterParams";
 import type { IssueSummary } from "../../lib/issueMeta";
 import { PRIORITY_WEIGHT } from "../../lib/taskMeta";
 import s from "./IssuesView.module.css";
@@ -24,17 +24,17 @@ import s from "./IssuesView.module.css";
  *
  * フィルタ（Issue #91・何を出すか）とソート（Issue #93・どう見せるか）は
  * 直交する概念として、issues.list の返り値に対し filter → sort の順で
- * メモリ上パイプラインを適用する（状態はそれぞれ useFilterParams /
- * useSortParams で URL search params に外在化。docs/詳細画面設計.md §8
- * 参照）。IssueStats には俯瞰の分母を維持するためフィルタ・ソート前の
- * issues を渡し、IssueTable にはフィルタ→ソート後を渡す
- * （件数表示・並び順が追従する）。
+ * メモリ上パイプラインを適用する（状態は useIssueListParams で URL search
+ * params に一括外在化する。同一 React バッチ内で filter/sort を両方更新
+ * しても後勝ちで一方が失われないよう、1回の setSearchParams で両キー空間を
+ * 書く統合経路を使う。Issue #98・docs/詳細画面設計.md §8 参照）。
+ * IssueStats には俯瞰の分母を維持するためフィルタ・ソート前の issues を渡し、
+ * IssueTable にはフィルタ→ソート後を渡す（件数表示・並び順が追従する）。
  */
 export function IssuesView() {
   const { selected, currentMember, members } = useAppOutletContext();
   const issues = useQuery(api.issues.list, { project: selected._id });
-  const [filter, setFilter] = useFilterParams();
-  const [sort, setSort] = useSortParams();
+  const [{ filter, sort }, setListParams] = useIssueListParams();
 
   const filteredIssues = useMemo(() => {
     if (issues === undefined) return undefined;
@@ -84,13 +84,19 @@ export function IssuesView() {
         <NewIssueForm createdBy={currentMember._id} project={selected._id} />
       )}
       <div className={s.controls}>
+        {/* 各 onChange はもう片方の render 時点の値を閉じ込める（1イベント=
+            1コントロール前提）。filter/sort を同時に変える導線を追加する場合は
+            setListParams を1回だけ呼ぶこと（2回に分けると後勝ちで片方が失われる）。 */}
         <FilterBar
           attributes={["status", "priority", "assignee"]}
           members={members}
-          onChange={setFilter}
+          onChange={(nextFilter) => setListParams({ filter: nextFilter, sort })}
           value={filter}
         />
-        <SortBar onChange={setSort} value={sort} />
+        <SortBar
+          onChange={(nextSort) => setListParams({ filter, sort: nextSort })}
+          value={sort}
+        />
       </div>
       {issues === undefined || sortedIssues === undefined ? (
         <output aria-label="Issue を読み込み中" className={s.loading}>
