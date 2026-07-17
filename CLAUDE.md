@@ -30,9 +30,16 @@ Convex agent skills for common tasks can be installed by running
 - エラー・解析失敗・未知の参照は握り潰さず、ログに残すか呼び出し元へ伝播させる
   （Webhook 処理の方針は基本設計書 §7）。
 
+### UI 文言・配置
+
+- UI 文言（ボタン・見出し・エラー・空状態・確認ダイアログ・aria-label・
+  placeholder 等）とアクション導線（作成・削除・編集・状態遷移・「戻る」）を
+  追加／変更する際は [docs/UI文言・配置規約.md](./docs/UI文言・配置規約.md) に従う。
+
 ### 設計ドキュメント
 
 - [docs/基本設計書.md](./docs/基本設計書.md) — ADR・データモデル・状態機械・MCP 設計
 - [docs/技術スタック定義書.md](./docs/技術スタック定義書.md) — 技術選定と ADR の対応・テスト・デプロイ
 - [docs/フロントエンドCSS規約.md](./docs/フロントエンドCSS規約.md) — CSS 記述規約
 - [docs/詳細画面設計.md](./docs/詳細画面設計.md) — Issue/Task 詳細画面の設計
+- [docs/UI文言・配置規約.md](./docs/UI文言・配置規約.md) — UI 文言の用語統一・ボタン配置規約
