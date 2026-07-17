@@ -15,12 +15,11 @@ import { type Priority, PRIORITY_OPTIONS } from "./taskMeta";
  *   parse(apply(sp, state)) は state と一致する（往復一致）。
  * - 他キー（sort/dir 等）は温存する。filter と sort は互いに干渉しない
  *   別キーとして直交させる。
- * - filter/sort を同一 React バッチ内で両方更新したい場合、
- *   useFilterParams/useSortParams（各々が useSearchParams の setter を
- *   個別に呼ぶ）を併用すると render 時点のスナップショットから URL を
- *   組み立てる仕様上、後勝ちで片方の書き込みが失われる。1回の
- *   setSearchParams で両キー空間を書く `applyListParams` /
- *   `useIssueListParams` を使うこと。
+ * - filter/sort を同一 React バッチ内で両方更新する導線では、setter を
+ *   2回に分けて呼ばない（useSearchParams の setter は render 時点の
+ *   スナップショットから URL を組み立てるため、後勝ちで先の書き込みが
+ *   失われる）。1回の setSearchParams で両キー空間を書く
+ *   `applyListParams` / `useIssueListParams` の setter を1回だけ呼ぶこと。
  */
 
 export type FilterState = {

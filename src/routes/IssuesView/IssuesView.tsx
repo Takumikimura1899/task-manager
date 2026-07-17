@@ -84,6 +84,9 @@ export function IssuesView() {
         <NewIssueForm createdBy={currentMember._id} project={selected._id} />
       )}
       <div className={s.controls}>
+        {/* 各 onChange はもう片方の render 時点の値を閉じ込める（1イベント=
+            1コントロール前提）。filter/sort を同時に変える導線を追加する場合は
+            setListParams を1回だけ呼ぶこと（2回に分けると後勝ちで片方が失われる）。 */}
         <FilterBar
           attributes={["status", "priority", "assignee"]}
           members={members}
