@@ -53,7 +53,7 @@ function toOptionValue(state: SortState): string {
  *
  * filter（何を出すか）とは直交する display option（どう見せるか）のため、
  * FilterState とは混ぜず、独立した SortState を扱う（URL外在化は
- * `useSortParams` 側の責務、詳細は docs/詳細画面設計.md §8 参照）。
+ * `useIssueListParams` 側の責務、詳細は docs/詳細画面設計.md §8 参照）。
  */
 export function SortBar({
   value,
