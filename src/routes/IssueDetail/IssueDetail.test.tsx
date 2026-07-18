@@ -393,4 +393,36 @@ describe("IssueDetail の削除フロー（Issue #104）", () => {
     );
     expect(screen.queryByText("Issue 一覧画面")).not.toBeInTheDocument();
   });
+
+  it("削除確定直後に購読側が read-your-writes で issue を null にしても、not-found を表示せずローディングのまま一覧へ遷移する", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ revision: 3 });
+    let resolveRemove: (() => void) | undefined;
+    mocks.mutate.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRemove = resolve;
+        }),
+    );
+    const { rerender } = renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "Issue を削除" }));
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    // removeIssue がまだ解決していない間に、購読側（getByRef）が
+    // read-your-writes で先に issue=null を返す状況を再現する。
+    mocks.issue = null;
+    rerender(issueDetailUi());
+
+    expect(
+      screen.queryByText("Issue が見つかりませんでした。"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Issue を読み込み中" }),
+    ).toBeInTheDocument();
+
+    resolveRemove?.();
+
+    expect(await screen.findByText("Issue 一覧画面")).toBeVisible();
+  });
 });

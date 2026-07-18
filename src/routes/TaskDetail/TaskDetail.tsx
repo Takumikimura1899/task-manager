@@ -431,17 +431,13 @@ export function TaskDetail() {
         />
       </section>
 
-      <section className={s.dangerSection}>
+      <section className="dangerSection">
         <h2 className={s.sectionTitle}>操作</h2>
-        <button
-          className={s.dangerOutline}
-          onClick={requestDelete}
-          type="button"
-        >
+        <button className="dangerOutline" onClick={requestDelete} type="button">
           Task を削除
         </button>
-        <p className={s.dangerHint}>
-          Issue の最後のタスクは削除できません（Issue ごと削除してください）。
+        <p className="hintSm">
+          Issue の最後の Task は削除できません（Issue ごと削除してください）。
         </p>
         {confirm !== null && confirm.kind === "delete" && confirmPanel}
       </section>

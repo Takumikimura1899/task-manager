@@ -70,38 +70,52 @@ export function IssueDetail() {
   });
 
   // 破壊的操作（削除）の確認待ち状態。busy 中は ConfirmPanel を disabled にし
-  // 二重実行を防ぐ（TaskDetail の削除確認と同方式）。
+  // 二重実行を防ぐ（IssueTable の削除確認と同方式：パネルを開いたまま
+  // await し、busy/error を渡す。IssueTable 側の行内削除導線は #105 で
+  // 撤去され、本画面の danger セクションが唯一の削除導線になる）。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  if (number === null || issue === null) {
-    return (
-      <main className={s.page}>
-        <Link className={s.back} to="/issues">
-          ← 一覧へ
-        </Link>
-        <p className="hint">Issue が見つかりませんでした。</p>
-      </main>
-    );
-  }
+  const notFound = (
+    <main className={s.page}>
+      <Link className={s.back} to="/issues">
+        ← 一覧へ
+      </Link>
+      <p className="hint">Issue が見つかりませんでした。</p>
+    </main>
+  );
 
   // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
   // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
+  const loading = (
+    <main className={s.page}>
+      <Link className={s.back} to="/issues">
+        ← 一覧へ
+      </Link>
+      <output aria-label="Issue を読み込み中" className={s.loading}>
+        <Skeleton className={s.skeletonHeading} />
+        <Skeleton className={s.skeletonTitle} />
+        <Skeleton className={s.skeletonSection} />
+        <Skeleton className={s.skeletonSection} />
+      </output>
+    </main>
+  );
+
+  if (number === null) {
+    return notFound;
+  }
+
   if (issue === undefined) {
-    return (
-      <main className={s.page}>
-        <Link className={s.back} to="/issues">
-          ← 一覧へ
-        </Link>
-        <output aria-label="Issue を読み込み中" className={s.loading}>
-          <Skeleton className={s.skeletonHeading} />
-          <Skeleton className={s.skeletonTitle} />
-          <Skeleton className={s.skeletonSection} />
-          <Skeleton className={s.skeletonSection} />
-        </output>
-      </main>
-    );
+    return loading;
+  }
+
+  if (issue === null) {
+    // 削除確定（confirmDelete）後、navigate 到達までの間に getByRef の
+    // 購読が read-your-writes で先に null を返すことがある。deleting 中は
+    // 「見つかりませんでした」への誤フラッシュを避けローディング表示に留める。
+    // deleting でなければ本当に見つからない（無効な参照・外部での削除等）。
+    return deleting ? loading : notFound;
   }
 
   const status = issue.status;
@@ -128,13 +142,16 @@ export function IssueDetail() {
     setDeleting(true);
     try {
       await removeIssue({ id: issue._id, expectedRevision: issue.revision });
-      navigate("/issues"); // 削除後は Issue 一覧へ戻る
     } catch (err) {
       setDeleteError(
         err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
       );
       setDeleting(false);
+      return;
     }
+    // navigate は try の外で呼ぶ。try 内に置くと navigate 自体が投げた場合に
+    // 削除は成功しているのに「削除に失敗しました」と誤表示してしまう。
+    navigate("/issues"); // 削除後は Issue 一覧へ戻る
   };
 
   return (
@@ -157,9 +174,9 @@ export function IssueDetail() {
             </button>
           )}
         </div>
-        <p className={s.statusHint}>
-          ステータスは配下 Task から自動算出されます
-        </p>
+        {/* ステータスバッジは配下 Task から自動算出される派生値のため、
+            遷移ボタンの代わりに説明文を置く（基本設計書§5.1 ADR-10） */}
+        <p className="hintSm">ステータスは配下 Task から自動算出されます</p>
         {!edit.editing && (
           <>
             <h1 className={s.title}>{issue.title}</h1>
@@ -261,13 +278,9 @@ export function IssueDetail() {
         />
       </section>
 
-      <section className={s.dangerSection}>
+      <section className="dangerSection">
         <h2 className={s.sectionTitle}>操作</h2>
-        <button
-          className={s.dangerOutline}
-          onClick={requestDelete}
-          type="button"
-        >
+        <button className="dangerOutline" onClick={requestDelete} type="button">
           Issue を削除
         </button>
         {confirmingDelete && (
