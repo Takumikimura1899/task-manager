@@ -17,6 +17,7 @@ import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
@@ -408,11 +409,18 @@ export function Board({
           （Issue #29）。列＝droppable は D&D 構造維持のためそのまま描画する。
           server snapshot 自体が0件（プロジェクトに本当にタスクが無い）なら
           フィルタの有無を問わず作成導線を出す。server には既にタスクがあり
-          フィルタで全件隠れた場合のみクリア導線を出す（Issue #92）。 */}
+          フィルタで全件隠れた場合のみクリア導線を出す（Issue #92）。
+          Board 画面自体には作成導線が無いため、Issue 一覧（/issues）への
+          誘導リンクを案内する（Issue #106）。インラインの Issue 作成フォームは
+          置かない——D&D の in-flight mutation 中に別経路の mutation が
+          columns を書き換えると楽観更新が巻き戻る race があるため
+          （UI文言・配置規約.md §5）。 */}
       {serverIsEmpty && (
         <p className={s.empty}>
-          タスクがありません。Issue 一覧の「＋ タスク」または「＋ 新規
-          Issue」から作成できます。
+          Task がありません。Issue 一覧から Issue を作成してください。
+          <Link className={s.emptyLink} to="/issues">
+            Issue 一覧へ
+          </Link>
         </p>
       )}
       {!serverIsEmpty && boardIsEmpty && (
