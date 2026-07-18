@@ -94,6 +94,14 @@
     color: var(--color-text-muted);
   }
 
+  /* 空状態メッセージ文中の Issue 一覧への誘導リンク（Issue #106）の
+     Board 固有部分（前の文言との間隔のみ）。見た目（色・下線・hover・遷移）
+     は utilities の .inline-link と組み合わせて使う（再レビュー: button 用の
+     padding まで引き継ぐと余白が意図せず変わるため分離）。 */
+  .emptyLink {
+    margin-inline-start: var(--space-2);
+  }
+
   .error {
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);
