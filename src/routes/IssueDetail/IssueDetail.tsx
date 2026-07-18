@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { AddTaskForm } from "../../components/AddTaskForm/AddTaskForm";
@@ -45,6 +45,11 @@ export function IssueDetail() {
   const projectKey = params.projectKey ?? "";
   const number = parseRefNumber(params.number);
   const navigate = useNavigate();
+  // 表示中の number を常に最新化する ref。削除確定後の非同期継続処理
+  // （confirmDelete）が、実行中に client-side 遷移で表示先が切り替わって
+  // いないかを判定するために使う（Issue #104 追加対応）。
+  const numberRef = useRef(number);
+  numberRef.current = number;
 
   const issue = useQuery(
     api.issues.getByRef,
@@ -73,8 +78,12 @@ export function IssueDetail() {
   // 二重実行を防ぐ（IssueTable の削除確認と同方式：パネルを開いたまま
   // await し、busy/error を渡す。IssueTable 側の行内削除導線は #105 で
   // 撤去され、本画面の danger セクションが唯一の削除導線になる）。
+  // deletingNumber は「削除確定 = busy」だけでなく削除対象の number も
+  // 保持する。同一マウントのまま別の Issue へ client-side 遷移された場合に、
+  // 別 Issue の表示へ誤って波及させないためのスコープに使う
+  // （Issue #104 追加対応）。
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [deletingNumber, setDeletingNumber] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const notFound = (
@@ -83,6 +92,14 @@ export function IssueDetail() {
         ← 一覧へ
       </Link>
       <p className="hint">Issue が見つかりませんでした。</p>
+      {/* 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
+          issue===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
+          到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。 */}
+      {deleteError !== null && (
+        <p className={s.actionError} role="alert">
+          {deleteError}
+        </p>
+      )}
     </main>
   );
 
@@ -112,10 +129,12 @@ export function IssueDetail() {
 
   if (issue === null) {
     // 削除確定（confirmDelete）後、navigate 到達までの間に getByRef の
-    // 購読が read-your-writes で先に null を返すことがある。deleting 中は
-    // 「見つかりませんでした」への誤フラッシュを避けローディング表示に留める。
-    // deleting でなければ本当に見つからない（無効な参照・外部での削除等）。
-    return deleting ? loading : notFound;
+    // 購読が read-your-writes で先に null を返すことがある。削除対象の
+    // number と現在表示中の number が一致する場合のみローディングに留め、
+    // 一致しなければ本当に見つからない（無効な参照・外部での削除等・
+    // 削除 in-flight 中に別の Issue へ遷移した後にその Issue が存在しない
+    // 場合）。
+    return deletingNumber === number ? loading : notFound;
   }
 
   const status = issue.status;
@@ -137,21 +156,33 @@ export function IssueDetail() {
   };
 
   const confirmDelete = async () => {
-    if (deleting) return;
+    if (deletingNumber !== null) return;
     setDeleteError(null);
-    setDeleting(true);
+    setDeletingNumber(number);
+    const target = number;
     try {
       await removeIssue({ id: issue._id, expectedRevision: issue.revision });
     } catch (err) {
       setDeleteError(
         err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
       );
-      setDeleting(false);
+      setDeletingNumber(null);
       return;
     }
     // navigate は try の外で呼ぶ。try 内に置くと navigate 自体が投げた場合に
     // 削除は成功しているのに「削除に失敗しました」と誤表示してしまう。
-    navigate("/issues"); // 削除後は Issue 一覧へ戻る
+    // さらに、完了時点で表示中の number（numberRef.current）が削除対象
+    // （target）と一致する場合のみ遷移する。in-flight 中に別の Issue へ
+    // client-side 遷移されていた場合、無関係な画面を強制的に一覧へ飛ばす
+    // のを防ぐ（Issue #104 追加対応）。一致しなければ deletingNumber だけ
+    // 戻す（この target を表示中の画面へ戻ってきたとき、既に削除済みの
+    // number に対して deletingNumber===number が成立し続けてローディング
+    // 表示のまま固まるのを防ぐため）。
+    if (numberRef.current === target) {
+      navigate("/issues"); // 削除後は Issue 一覧へ戻る
+    } else {
+      setDeletingNumber(null);
+    }
   };
 
   return (
@@ -285,7 +316,7 @@ export function IssueDetail() {
         </button>
         {confirmingDelete && (
           <ConfirmPanel
-            busy={deleting}
+            busy={deletingNumber !== null}
             confirmLabel="削除する"
             error={deleteError}
             message="この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。"

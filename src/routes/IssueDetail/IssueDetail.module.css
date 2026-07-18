@@ -72,6 +72,13 @@
     color: var(--color-text-muted);
   }
 
+  /* not-found 表示に重ねる削除失敗エラー（TaskDetail の .actionError と同型） */
+  .actionError {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+  }
+
   /* 編集フォームに差し込む優先度フィールド（DetailEditForm の field と同調） */
   .editField {
     display: flex;

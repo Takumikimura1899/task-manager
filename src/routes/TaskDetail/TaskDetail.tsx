@@ -85,6 +85,11 @@ export function TaskDetail() {
   const projectKey = params.projectKey ?? "";
   const number = parseRefNumber(params.number);
   const navigate = useNavigate();
+  // 表示中の number を常に最新化する ref。削除確定後の非同期継続処理
+  // （confirmDeleteTask）が、実行中に client-side 遷移で表示先が切り替わって
+  // いないかを判定するために使う（IssueDetail と対称・Issue #104 追加対応）。
+  const numberRef = useRef(number);
+  numberRef.current = number;
 
   const task = useQuery(
     api.tasks.getDetail,
@@ -135,38 +140,67 @@ export function TaskDetail() {
     },
   });
 
-  // 状態遷移・担当変更・削除（フォーム外の即時操作）のエラー表示。
+  // 状態遷移・担当変更（フォーム外の即時操作）のエラー表示。
   // 競合時も useQuery が最新 revision へ自動更新するため、再操作すればよい。
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
 
-  if (number === null || task === null) {
-    return (
-      <main className={s.page}>
-        <Link className={s.back} to="/">
-          ← 一覧へ
-        </Link>
-        <p className="hint">Task が見つかりませんでした。</p>
-      </main>
-    );
-  }
+  // 破壊的操作（削除）専用の確認待ち状態。deletingNumber は「削除確定 =
+  // busy」だけでなく削除対象の number も保持する。同一マウントのまま別の
+  // Task へ client-side 遷移された場合に、別 Task の表示へ誤って波及させ
+  // ないためのスコープに使う（IssueDetail と対称・Issue #104 追加対応）。
+  const [deletingNumber, setDeletingNumber] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const notFound = (
+    <main className={s.page}>
+      <Link className={s.back} to="/">
+        ← 一覧へ
+      </Link>
+      <p className="hint">Task が見つかりませんでした。</p>
+      {/* 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
+          task===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
+          到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。 */}
+      {deleteError !== null && (
+        <p className={s.actionError} role="alert">
+          {deleteError}
+        </p>
+      )}
+    </main>
+  );
 
   // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
   // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
+  const loading = (
+    <main className={s.page}>
+      <Link className={s.back} to="/">
+        ← 一覧へ
+      </Link>
+      <output aria-label="Task を読み込み中" className={s.loading}>
+        <Skeleton className={s.skeletonHeading} />
+        <Skeleton className={s.skeletonTitle} />
+        <Skeleton className={s.skeletonSection} />
+        <Skeleton className={s.skeletonSection} />
+      </output>
+    </main>
+  );
+
+  if (number === null) {
+    return notFound;
+  }
+
   if (task === undefined) {
-    return (
-      <main className={s.page}>
-        <Link className={s.back} to="/">
-          ← 一覧へ
-        </Link>
-        <output aria-label="Task を読み込み中" className={s.loading}>
-          <Skeleton className={s.skeletonHeading} />
-          <Skeleton className={s.skeletonTitle} />
-          <Skeleton className={s.skeletonSection} />
-          <Skeleton className={s.skeletonSection} />
-        </output>
-      </main>
-    );
+    return loading;
+  }
+
+  if (task === null) {
+    // 削除確定（confirmDeleteTask）後、navigate 到達までの間に getDetail の
+    // 購読が read-your-writes で先に null を返すことがある。削除対象の
+    // number と現在表示中の number が一致する場合のみローディングに留め、
+    // 一致しなければ本当に見つからない（無効な参照・外部での削除等・
+    // 削除 in-flight 中に別の Task へ遷移した後にその Task が存在しない
+    // 場合）。
+    return deletingNumber === number ? loading : notFound;
   }
 
   // 編集の初期値・競合後の再読込は常に最新の購読値から作る。
@@ -206,7 +240,42 @@ export function TaskDetail() {
   };
 
   const requestDelete = () => {
+    setDeleteError(null);
     setConfirm({ kind: "delete" });
+  };
+
+  // 削除専用の確定処理。transition/assign と異なり (a) navigate を伴う、
+  // (b) 削除対象の number スコープが必要なため、runAction 経由の
+  // actionError ではなく専用の deletingNumber/deleteError で扱う
+  // （IssueDetail.confirmDelete と対称・Issue #104 追加対応）。
+  const confirmDeleteTask = async () => {
+    if (deletingNumber !== null) return;
+    setDeleteError(null);
+    setDeletingNumber(number);
+    const target = number;
+    try {
+      await deleteTask({ id: task._id, expectedRevision: task.revision });
+    } catch (err) {
+      setDeleteError(
+        err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
+      );
+      setDeletingNumber(null);
+      return;
+    }
+    // navigate は try の外で呼ぶ。try 内に置くと navigate 自体が投げた場合に
+    // 削除は成功しているのに「削除に失敗しました」と誤表示してしまう。
+    // さらに、完了時点で表示中の number（numberRef.current）が削除対象
+    // （target）と一致する場合のみ遷移する。in-flight 中に別の Task へ
+    // client-side 遷移されていた場合、無関係な画面を強制的に一覧へ飛ばす
+    // のを防ぐ（Issue #104 追加対応）。一致しなければ deletingNumber だけ
+    // 戻す（この target を表示中の画面へ戻ってきたとき、既に削除済みの
+    // number に対して deletingNumber===number が成立し続けてローディング
+    // 表示のまま固まるのを防ぐため）。
+    if (numberRef.current === target) {
+      navigate("/"); // 削除後は一覧へ戻る
+    } else {
+      setDeletingNumber(null);
+    }
   };
 
   // 確定時点の購読値（task）の revision を expectedRevision に使う。編集
@@ -218,29 +287,32 @@ export function TaskDetail() {
     if (confirm === null) return;
     const pending = confirm;
     setConfirm(null);
+    if (pending.kind === "delete") {
+      void confirmDeleteTask();
+      return;
+    }
     void runAction(async () => {
-      if (pending.kind === "transition") {
-        await transitionStatus({
-          id: task._id,
-          to: pending.to,
-          expectedRevision: task.revision,
-        });
-      } else {
-        await deleteTask({ id: task._id, expectedRevision: task.revision });
-        navigate("/"); // 削除後は一覧へ戻る
-      }
+      await transitionStatus({
+        id: task._id,
+        to: pending.to,
+        expectedRevision: task.revision,
+      });
     });
   };
 
   // 破壊的操作の確認パネル。操作した場所（遷移ボタン／削除ボタン）の直下に出す。
-  // message/label は現行文言を維持したまま kind/to から都度導出する。
+  // message/label は現行文言を維持したまま kind/to から都度導出する。削除は
+  // 専用の busy/error（deletingNumber/deleteError）を渡し、遷移は既存どおり
+  // busy/error なし（失敗時は actionError で別途表示）のまま扱う。
   const confirmPanel = confirm !== null && (
     <ConfirmPanel
+      busy={confirm.kind === "delete" && deletingNumber !== null}
       confirmLabel={
         confirm.kind === "transition"
           ? `${TASK_STATUS_LABELS[confirm.to]}にする`
           : "削除する"
       }
+      error={confirm.kind === "delete" ? deleteError : null}
       message={
         confirm.kind === "transition"
           ? `「${TASK_STATUS_LABELS[confirm.to]}」へ遷移します。この操作は取り消せません。`
