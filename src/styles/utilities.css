@@ -6,4 +6,23 @@
   .hint {
     color: var(--color-text-muted);
   }
+
+  /* 文中に埋め込むボタン/リンク共通の「視覚表現」のみ（アクセント色＋下線＋
+     hover ＋遷移）。FilterBar のクリア導線（Issue #92、button）と Board の
+     空状態案内（Issue #106、react-router の Link=a）の双方から使う横断的な
+     スタイルのため utilities に置く（フロントエンドCSS規約.md §3）。
+     余白（padding/margin）・font-size・button 要素リセット
+     （background/border/cursor）は呼び出し元ごとに異なる（button か a か、
+     置かれる文脈の余白が違う）ため、ここには含めずコンポーネント側の
+     ローカルクラスと組み合わせて使う（再レビュー指摘: 一括で複製すると
+     Board 側の余白が意図せず変化した反省）。 */
+  .inline-link {
+    color: var(--color-accent);
+    text-decoration: underline;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .inline-link:hover {
+    color: var(--color-accent-alt);
+  }
 }
