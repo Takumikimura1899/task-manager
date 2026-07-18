@@ -43,5 +43,5 @@ export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   in_progress: "進行中",
   in_review: "レビュー中",
   done: "完了",
-  canceled: "キャンセル",
+  canceled: "中止",
 };
