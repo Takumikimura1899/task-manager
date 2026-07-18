@@ -202,7 +202,7 @@ describe("IssueDetail の AddTaskForm 表示", () => {
     renderIssueDetail();
 
     expect(
-      screen.getByRole("button", { name: "＋ タスク" }),
+      screen.getByRole("button", { name: "＋ Task を作成" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
@@ -213,7 +213,7 @@ describe("IssueDetail の AddTaskForm 表示", () => {
     renderIssueDetail();
 
     expect(
-      screen.queryByRole("button", { name: "＋ タスク" }),
+      screen.queryByRole("button", { name: "＋ Task を作成" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(
       "メンバーが登録されていない",
@@ -226,7 +226,7 @@ describe("IssueDetail の AddTaskForm 表示", () => {
     renderIssueDetail();
 
     expect(
-      screen.queryByRole("button", { name: "＋ タスク" }),
+      screen.queryByRole("button", { name: "＋ Task を作成" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });

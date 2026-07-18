@@ -31,7 +31,7 @@ const createProps = (
 
 const openForm = async (user: ReturnType<typeof userEvent.setup>) => {
   render(<NewIssueForm {...createProps()} />);
-  await user.click(screen.getByRole("button", { name: "＋ 新規 Issue" }));
+  await user.click(screen.getByRole("button", { name: "＋ Issue を作成" }));
 };
 
 beforeEach(() => {
@@ -45,7 +45,7 @@ describe("NewIssueForm", () => {
     await openForm(user);
 
     expect(screen.getByLabelText("Issue のタイトル")).toBeInTheDocument();
-    expect(screen.getByLabelText("最初のタスクのタイトル")).toBeInTheDocument();
+    expect(screen.getByLabelText("最初の Task のタイトル")).toBeInTheDocument();
     expect(screen.getByLabelText("優先度")).toBeInTheDocument();
     expect(screen.getByLabelText("担当者")).toBeInTheDocument();
   });
@@ -60,7 +60,7 @@ describe("NewIssueForm", () => {
       "ログインできない",
     );
     await user.type(
-      screen.getByLabelText("最初のタスクのタイトル"),
+      screen.getByLabelText("最初の Task のタイトル"),
       "原因を調査する",
     );
     await user.click(screen.getByRole("button", { name: "作成" }));
@@ -72,7 +72,7 @@ describe("NewIssueForm", () => {
       "aria-describedby",
       errorId,
     );
-    expect(screen.getByLabelText("最初のタスクのタイトル")).toHaveAttribute(
+    expect(screen.getByLabelText("最初の Task のタイトル")).toHaveAttribute(
       "aria-describedby",
       errorId,
     );

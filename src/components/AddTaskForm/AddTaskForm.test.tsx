@@ -31,7 +31,7 @@ const createProps = (
 
 const openForm = async (user: ReturnType<typeof userEvent.setup>) => {
   render(<AddTaskForm {...createProps()} />);
-  await user.click(screen.getByRole("button", { name: "＋ タスク" }));
+  await user.click(screen.getByRole("button", { name: "＋ Task を作成" }));
 };
 
 beforeEach(() => {
@@ -44,7 +44,7 @@ describe("AddTaskForm", () => {
     const user = userEvent.setup();
     await openForm(user);
 
-    expect(screen.getByLabelText("タスクのタイトル")).toBeInTheDocument();
+    expect(screen.getByLabelText("Task のタイトル")).toBeInTheDocument();
     expect(screen.getByLabelText("優先度")).toBeInTheDocument();
     expect(screen.getByLabelText("担当者")).toBeInTheDocument();
   });
@@ -54,12 +54,12 @@ describe("AddTaskForm", () => {
     const user = userEvent.setup();
     await openForm(user);
 
-    await user.type(screen.getByLabelText("タスクのタイトル"), "バグを直す");
-    await user.click(screen.getByRole("button", { name: "追加" }));
+    await user.type(screen.getByLabelText("Task のタイトル"), "バグを直す");
+    await user.click(screen.getByRole("button", { name: "作成" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("追加に失敗しました");
-    expect(screen.getByLabelText("タスクのタイトル")).toHaveAttribute(
+    expect(alert).toHaveTextContent("作成に失敗しました");
+    expect(screen.getByLabelText("Task のタイトル")).toHaveAttribute(
       "aria-describedby",
       alert.getAttribute("id"),
     );
@@ -69,7 +69,7 @@ describe("AddTaskForm", () => {
     const user = userEvent.setup();
     await openForm(user);
 
-    expect(screen.getByLabelText("タスクのタイトル")).not.toHaveAttribute(
+    expect(screen.getByLabelText("Task のタイトル")).not.toHaveAttribute(
       "aria-describedby",
     );
   });

@@ -29,7 +29,7 @@ export function AddTaskForm({
         createdBy,
       });
     },
-    submitErrorMessage: "追加に失敗しました",
+    submitErrorMessage: "作成に失敗しました",
   });
 
   if (!form.open) {
@@ -39,7 +39,7 @@ export function AddTaskForm({
         onClick={() => form.setOpen(true)}
         type="button"
       >
-        ＋ タスク
+        ＋ Task を作成
       </button>
     );
   }
@@ -48,10 +48,10 @@ export function AddTaskForm({
     <form className={s.form} onSubmit={form.handleSubmit}>
       <input
         aria-describedby={form.error !== null ? errorId : undefined}
-        aria-label="タスクのタイトル"
+        aria-label="Task のタイトル"
         className={s.input}
         onChange={(e) => form.setTitle(e.target.value)}
-        placeholder="タスクのタイトル"
+        placeholder="Task のタイトル"
         value={form.title}
       />
       <TaskMetaFields
@@ -61,10 +61,10 @@ export function AddTaskForm({
         priority={form.priority}
       />
       <button className={s.submit} disabled={!form.canSubmit} type="submit">
-        追加
+        作成
       </button>
       <button className={s.cancel} onClick={form.close} type="button">
-        取消
+        キャンセル
       </button>
       {form.error !== null && (
         <span className={s.error} id={errorId} role="alert">
