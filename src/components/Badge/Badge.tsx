@@ -17,8 +17,8 @@ const STATUS_CLASS: Partial<Record<BadgeStatus, string>> = {
 
 /**
  * Issue / Task のステータスバッジ。ステータスに応じた配色を適用する。
- * 表示ラベルはドメインごとに異なる（例: in_progress は Issue「着手中」／
- * Task「進行中」）ため、呼び出し側が children で渡す。
+ * 表示ラベルはドメインごとにステータス集合が異なる（Task のみ backlog /
+ * in_review を持つ）ため、呼び出し側が children で渡す。
  */
 export function Badge({
   status,

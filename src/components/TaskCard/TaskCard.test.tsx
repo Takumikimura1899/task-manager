@@ -60,7 +60,7 @@ describe("TaskCard", () => {
   });
 
   it.each([
-    ["none", "優先度: —"],
+    ["none", "優先度: なし"],
     ["low", "優先度: 低"],
     ["medium", "優先度: 中"],
     ["high", "優先度: 高"],

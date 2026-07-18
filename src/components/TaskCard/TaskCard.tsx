@@ -2,15 +2,8 @@ import { memo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { formatIssueRef } from "../../lib/formatIssueRef";
+import { PRIORITY_LABELS } from "../../lib/taskMeta";
 import s from "./TaskCard.module.css";
-
-const PRIORITY_LABELS: Record<Doc<"tasks">["priority"], string> = {
-  none: "—",
-  low: "低",
-  medium: "中",
-  high: "高",
-  urgent: "緊急",
-};
 
 /**
  * memo: props が全て不変ならスキップする（#80）。dragHandle は
