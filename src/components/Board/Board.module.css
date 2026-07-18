@@ -94,20 +94,6 @@
     color: var(--color-text-muted);
   }
 
-  /* 空状態メッセージ文中の Issue 一覧への誘導リンク（Issue #106）。
-     文中リンクとしての視認性を FilterClearButton の .clearInline に
-     揃える（アクセント色＋下線）。 */
-  .emptyLink {
-    margin-inline-start: var(--space-2);
-    color: var(--color-accent);
-    text-decoration: underline;
-    transition: color var(--duration-fast) var(--ease-out);
-  }
-
-  .emptyLink:hover {
-    color: var(--color-accent-alt);
-  }
-
   .error {
     margin-bottom: var(--space-3);
     padding: var(--space-2) var(--space-3);

@@ -414,11 +414,12 @@ export function Board({
           誘導リンクを案内する（Issue #106）。インラインの Issue 作成フォームは
           置かない——D&D の in-flight mutation 中に別経路の mutation が
           columns を書き換えると楽観更新が巻き戻る race があるため
-          （UI文言・配置規約.md §5）。 */}
+          （UI文言・配置規約.md §5）。文中リンクの見た目（utilities の
+          .inline-link）は FilterBar のクリア導線と共有する単一ソース。 */}
       {serverIsEmpty && (
         <p className={s.empty}>
           Task がありません。Issue 一覧から Issue を作成してください。
-          <Link className={s.emptyLink} to="/issues">
+          <Link className="inline-link" to="/issues">
             Issue 一覧へ
           </Link>
         </p>

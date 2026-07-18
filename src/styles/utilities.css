@@ -6,4 +6,27 @@
   .hint {
     color: var(--color-text-muted);
   }
+
+  /* 文中に埋め込むボタン/リンク共通の見た目（アクセント色＋下線）。
+     FilterBar のクリア導線（Issue #92、button）と Board の空状態案内
+     （Issue #106、react-router の Link=a）の双方から使う横断的なスタイル
+     のため utilities に置く。コンポーネント側 module.css へ複製すると
+     見た目の調整が伝播しない乖離リスクがあるため単一ソース化する
+     （フロントエンドCSS規約.md §3）。button 由来の要素リセット
+     （background/border/cursor）も含めて一元化する。 */
+  .inline-link {
+    padding: var(--space-1) var(--space-2);
+    margin-inline-start: var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--color-accent);
+    text-decoration: underline;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .inline-link:hover {
+    color: var(--color-accent-alt);
+  }
 }
