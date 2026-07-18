@@ -425,4 +425,25 @@ describe("TaskDetail の削除フロー（Issue #104 追加対応・IssueDetail 
     expect(screen.getByText("Task が見つかりませんでした。")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("削除に失敗しました");
   });
+
+  it("遷移確認パネルを開いたまま別の Task へ遷移すると、確認パネルが閉じる", async () => {
+    const user = userEvent.setup();
+    mocks.task = createTask({ number: 12, status: "in_review" });
+    renderTaskDetailWithNavHelper();
+
+    await user.click(screen.getByRole("button", { name: "→ 完了" }));
+    expect(
+      screen.getByText("「完了」へ遷移します。この操作は取り消せません。"),
+    ).toBeVisible();
+
+    // 確認する前に、別の（実在する）Task 99 へ client-side 遷移する。
+    mocks.task = createTask({ number: 99, title: "別の Task" });
+    await user.click(screen.getByRole("button", { name: "go-to-99" }));
+
+    // Task 12 用の遷移確認パネルが Task 99 の画面に残っていない。
+    expect(
+      screen.queryByText("「完了」へ遷移します。この操作は取り消せません。"),
+    ).not.toBeInTheDocument();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+  });
 });

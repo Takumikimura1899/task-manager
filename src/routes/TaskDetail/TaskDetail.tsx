@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -151,6 +151,17 @@ export function TaskDetail() {
   // ないためのスコープに使う（IssueDetail と対称・Issue #104 追加対応）。
   const [deletingNumber, setDeletingNumber] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // number が変わったら（同一マウントのまま別の Task へ client-side 遷移
+  // した場合）確認パネルの開閉状態（transition/delete 両方の kind）と
+  // 削除エラーをリセットする。放置すると別の Task の画面に前の Task 用の
+  // 遷移確認・削除確認パネルやエラーが残ったまま表示されてしまう
+  // （deletingNumber は削除対象自体を正しくスコープしているためリセット
+  // 対象に含めない・IssueDetail と対称・Issue #104 追加対応）。
+  useEffect(() => {
+    setConfirm(null);
+    setDeleteError(null);
+  }, [number]);
 
   const notFound = (
     <main className={s.page}>

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { AddTaskForm } from "../../components/AddTaskForm/AddTaskForm";
@@ -85,6 +85,16 @@ export function IssueDetail() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletingNumber, setDeletingNumber] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // number が変わったら（同一マウントのまま別の Issue へ client-side 遷移
+  // した場合）確認パネルの開閉状態と削除エラーをリセットする。放置すると
+  // 別の Issue の画面に前の Issue 用の削除確認パネルやエラーが残ったまま
+  // 表示されてしまう（deletingNumber は削除対象自体を正しくスコープして
+  // いるためリセット対象に含めない・Issue #104 追加対応）。
+  useEffect(() => {
+    setConfirmingDelete(false);
+    setDeleteError(null);
+  }, [number]);
 
   const notFound = (
     <main className={s.page}>

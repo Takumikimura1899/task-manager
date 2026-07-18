@@ -507,4 +507,29 @@ describe("IssueDetail の削除フロー（Issue #104）", () => {
     expect(screen.getByText("Issue が見つかりませんでした。")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("削除に失敗しました");
   });
+
+  it("削除確認パネルを開いたまま別の Issue へ遷移すると、確認パネルが閉じる（Issue #104 追加対応）", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ number: 34 });
+    renderIssueDetailWithNavHelper();
+
+    await user.click(screen.getByRole("button", { name: "Issue を削除" }));
+    expect(
+      screen.getByText(
+        "この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。",
+      ),
+    ).toBeVisible();
+
+    // 確認する前に、別の（実在する）Issue 57 へ client-side 遷移する。
+    mocks.issue = createIssue({ number: 57, title: "別の Issue" });
+    await user.click(screen.getByRole("button", { name: "go-to-57" }));
+
+    // Issue 34 用の確認パネルが Issue 57 の画面に残っていない。
+    expect(
+      screen.queryByText(
+        "この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。",
+      ),
+    ).not.toBeInTheDocument();
+    expect(mocks.mutate).not.toHaveBeenCalled();
+  });
 });
