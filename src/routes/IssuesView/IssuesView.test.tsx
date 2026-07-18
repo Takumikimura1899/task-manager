@@ -116,7 +116,7 @@ describe("IssuesView のローディング表示", () => {
     renderIssuesView();
 
     expect(
-      screen.getByRole("button", { name: "＋ 新規 Issue" }),
+      screen.getByRole("button", { name: "＋ Issue を作成" }),
     ).toBeInTheDocument();
   });
 });
@@ -504,7 +504,7 @@ describe("IssuesView の NewIssueForm 表示条件", () => {
     renderIssuesView({ currentMember: null, members: [] });
 
     expect(
-      screen.queryByRole("button", { name: "＋ 新規 Issue" }),
+      screen.queryByRole("button", { name: "＋ Issue を作成" }),
     ).not.toBeInTheDocument();
     // NoMembersNotice は AppLayout 側に責務が一元化されたため、IssuesView 自身は出さない
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
@@ -515,7 +515,7 @@ describe("IssuesView の NewIssueForm 表示条件", () => {
     renderIssuesView();
 
     expect(
-      screen.getByRole("button", { name: "＋ 新規 Issue" }),
+      screen.getByRole("button", { name: "＋ Issue を作成" }),
     ).toBeInTheDocument();
   });
 });

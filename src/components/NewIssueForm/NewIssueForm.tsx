@@ -46,7 +46,7 @@ export function NewIssueForm({
           onClick={() => form.setOpen(true)}
           type="button"
         >
-          ＋ 新規 Issue
+          ＋ Issue を作成
         </button>
       </div>
     );
@@ -60,15 +60,15 @@ export function NewIssueForm({
           aria-label="Issue のタイトル"
           className={s.input}
           onChange={(e) => form.setTitle(e.target.value)}
-          placeholder="Issue のタイトル（解決すべき課題）"
+          placeholder="Issue のタイトル"
           value={form.title}
         />
         <input
           aria-describedby={form.error !== null ? errorId : undefined}
-          aria-label="最初のタスクのタイトル"
+          aria-label="最初の Task のタイトル"
           className={s.input}
           onChange={(e) => setTaskTitle(e.target.value)}
-          placeholder="最初のタスクのタイトル"
+          placeholder="最初の Task のタイトル"
           value={taskTitle}
         />
         <TaskMetaFields
