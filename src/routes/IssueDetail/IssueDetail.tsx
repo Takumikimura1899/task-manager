@@ -1,8 +1,11 @@
 import { useMutation, useQuery } from "convex/react";
-import { Link, useParams } from "react-router-dom";
+import { ConvexError } from "convex/values";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { AddTaskForm } from "../../components/AddTaskForm/AddTaskForm";
 import { Badge } from "../../components/Badge/Badge";
+import { ConfirmPanel } from "../../components/ConfirmPanel/ConfirmPanel";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
@@ -41,6 +44,7 @@ export function IssueDetail() {
   const params = useParams();
   const projectKey = params.projectKey ?? "";
   const number = parseRefNumber(params.number);
+  const navigate = useNavigate();
 
   const issue = useQuery(
     api.issues.getByRef,
@@ -49,6 +53,7 @@ export function IssueDetail() {
   const { members, currentMember } = useCurrentMember();
 
   const updateIssue = useMutation(api.issues.update);
+  const removeIssue = useMutation(api.issues.remove);
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
   // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
   const edit = useEditForm<IssueDraft>({
@@ -64,10 +69,16 @@ export function IssueDetail() {
     },
   });
 
+  // 破壊的操作（削除）の確認待ち状態。busy 中は ConfirmPanel を disabled にし
+  // 二重実行を防ぐ（TaskDetail の削除確認と同方式）。
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   if (number === null || issue === null) {
     return (
       <main className={s.page}>
-        <Link className={s.back} to="/">
+        <Link className={s.back} to="/issues">
           ← 一覧へ
         </Link>
         <p className="hint">Issue が見つかりませんでした。</p>
@@ -80,7 +91,7 @@ export function IssueDetail() {
   if (issue === undefined) {
     return (
       <main className={s.page}>
-        <Link className={s.back} to="/">
+        <Link className={s.back} to="/issues">
           ← 一覧へ
         </Link>
         <output aria-label="Issue を読み込み中" className={s.loading}>
@@ -106,9 +117,29 @@ export function IssueDetail() {
     revision: issue.revision,
   });
 
+  const requestDelete = () => {
+    setDeleteError(null);
+    setConfirmingDelete(true);
+  };
+
+  const confirmDelete = async () => {
+    if (deleting) return;
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      await removeIssue({ id: issue._id, expectedRevision: issue.revision });
+      navigate("/issues"); // 削除後は Issue 一覧へ戻る
+    } catch (err) {
+      setDeleteError(
+        err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
+      );
+      setDeleting(false);
+    }
+  };
+
   return (
     <main className={s.page}>
-      <Link className={s.back} to="/">
+      <Link className={s.back} to="/issues">
         ← 一覧へ
       </Link>
 
@@ -126,11 +157,14 @@ export function IssueDetail() {
             </button>
           )}
         </div>
+        <p className={s.statusHint}>
+          ステータスは配下 Task から自動算出されます
+        </p>
         {!edit.editing && (
           <>
             <h1 className={s.title}>{issue.title}</h1>
             <p className={s.progress}>
-              タスク {doneCount}/{activeTasks.length} 完了
+              Task {doneCount}/{activeTasks.length} 完了
             </p>
           </>
         )}
@@ -180,7 +214,7 @@ export function IssueDetail() {
       )}
 
       <section className={s.section}>
-        <h2 className={s.sectionTitle}>タスク（{issue.tasks.length}）</h2>
+        <h2 className={s.sectionTitle}>Task（{issue.tasks.length}）</h2>
         {TASK_STATUS_ORDER.map((taskStatus) => {
           const tasks = issue.tasks.filter((t) => t.status === taskStatus);
           if (tasks.length === 0) return null;
@@ -225,6 +259,27 @@ export function IssueDetail() {
           createdByName={issue.createdByName}
           updatedAt={issue.updatedAt}
         />
+      </section>
+
+      <section className={s.dangerSection}>
+        <h2 className={s.sectionTitle}>操作</h2>
+        <button
+          className={s.dangerOutline}
+          onClick={requestDelete}
+          type="button"
+        >
+          Issue を削除
+        </button>
+        {confirmingDelete && (
+          <ConfirmPanel
+            busy={deleting}
+            confirmLabel="削除する"
+            error={deleteError}
+            message="この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。"
+            onCancel={() => setConfirmingDelete(false)}
+            onConfirm={() => void confirmDelete()}
+          />
+        )}
       </section>
     </main>
   );

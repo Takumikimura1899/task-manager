@@ -72,6 +72,13 @@
     color: var(--color-text-muted);
   }
 
+  /* ステータスバッジが派生値であることを補足する説明文（§5 状態遷移） */
+  .statusHint {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+
   /* 編集フォームに差し込む優先度フィールド（DetailEditForm の field と同調） */
   .editField {
     display: flex;
@@ -168,6 +175,42 @@
        カードがはみ出さないようにする（CSS規約§4） */
     grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
     gap: var(--space-2);
+  }
+
+  /* 破壊的操作セクション（削除導線） */
+  .dangerSection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-md);
+  }
+
+  .dangerSection .sectionTitle {
+    margin: 0;
+  }
+
+  .dangerOutline {
+    align-self: flex-start;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-danger);
+    background: var(--color-surface);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .dangerOutline:hover {
+    background: color-mix(
+      in srgb,
+      var(--color-danger) 8%,
+      var(--color-surface)
+    );
+    box-shadow: var(--glow-danger);
   }
 
   /* ローディング中のプレースホルダ寸法（参照行・タイトル・セクション） */

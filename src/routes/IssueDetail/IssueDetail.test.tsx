@@ -64,6 +64,7 @@ const createIssue = (overrides: Record<string, unknown> = {}) => ({
 const issueDetailUi = () => (
   <MemoryRouter initialEntries={["/TASK/issues/34"]}>
     <Routes>
+      <Route element={<p>Issue 一覧画面</p>} path="/issues" />
       <Route element={<IssueDetail />} path="/:projectKey/issues/:number" />
     </Routes>
   </MemoryRouter>
@@ -87,7 +88,7 @@ describe("IssueDetail のローディング表示", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "← 一覧へ" })).toHaveAttribute(
       "href",
-      "/",
+      "/issues",
     );
   });
 });
@@ -299,5 +300,97 @@ describe("IssueDetail の楽観ロック（Issue #73）", () => {
     expect(
       screen.queryByRole("form", { name: "Issue を編集" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("IssueDetail のステータス説明・見出し表記（Issue #104）", () => {
+  it("ステータスバッジの下に、配下 Task から自動算出される旨の説明文を表示する", () => {
+    mocks.issue = createIssue();
+    renderIssueDetail();
+
+    expect(
+      screen.getByText("ステータスは配下 Task から自動算出されます"),
+    ).toBeVisible();
+  });
+
+  it("Task セクション見出し・進捗表示が英語表記の Task で統一されている", () => {
+    mocks.issue = createIssue({
+      tasks: [
+        {
+          _id: "task1",
+          number: 1,
+          title: "設計する",
+          priority: "none",
+          status: "done",
+        },
+        {
+          _id: "task2",
+          number: 2,
+          title: "実装する",
+          priority: "none",
+          status: "todo",
+        },
+      ],
+    });
+    renderIssueDetail();
+
+    expect(
+      screen.getByRole("heading", { name: "Task（2）" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Task 1/2 完了")).toBeInTheDocument();
+  });
+});
+
+describe("IssueDetail の削除フロー（Issue #104）", () => {
+  it("danger セクションの削除は確認パネルを挟み、承認すると削除を呼んで Issue 一覧へ戻る", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue({ revision: 3 });
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "Issue を削除" }));
+
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。",
+      ),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    expect(mocks.mutate).toHaveBeenCalledWith({
+      id: "issue1",
+      expectedRevision: 3,
+    });
+    expect(screen.getByText("Issue 一覧画面")).toBeVisible();
+  });
+
+  it("確認パネルのキャンセルは削除を実行しない", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue();
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "Issue を削除" }));
+    await user.click(screen.getByRole("button", { name: "キャンセル" }));
+
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByText("削除する")).not.toBeInTheDocument();
+  });
+
+  it("削除に失敗したらエラーを role=alert で表示し、一覧へは遷移しない", async () => {
+    const user = userEvent.setup();
+    mocks.issue = createIssue();
+    mocks.mutate.mockRejectedValueOnce(
+      new (await import("convex/values")).ConvexError("削除に失敗しました"),
+    );
+    renderIssueDetail();
+
+    await user.click(screen.getByRole("button", { name: "Issue を削除" }));
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "削除に失敗しました",
+    );
+    expect(screen.queryByText("Issue 一覧画面")).not.toBeInTheDocument();
   });
 });

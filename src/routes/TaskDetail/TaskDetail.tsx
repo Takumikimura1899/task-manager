@@ -146,7 +146,7 @@ export function TaskDetail() {
         <Link className={s.back} to="/">
           ← 一覧へ
         </Link>
-        <p className="hint">タスクが見つかりませんでした。</p>
+        <p className="hint">Task が見つかりませんでした。</p>
       </main>
     );
   }
@@ -159,7 +159,7 @@ export function TaskDetail() {
         <Link className={s.back} to="/">
           ← 一覧へ
         </Link>
-        <output aria-label="タスクを読み込み中" className={s.loading}>
+        <output aria-label="Task を読み込み中" className={s.loading}>
           <Skeleton className={s.skeletonHeading} />
           <Skeleton className={s.skeletonTitle} />
           <Skeleton className={s.skeletonSection} />
@@ -244,7 +244,7 @@ export function TaskDetail() {
       message={
         confirm.kind === "transition"
           ? `「${TASK_STATUS_LABELS[confirm.to]}」へ遷移します。この操作は取り消せません。`
-          : "このタスクを削除しますか？関連する Git 連携も併せて削除されます。"
+          : "この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。"
       }
       onCancel={() => setConfirm(null)}
       onConfirm={runConfirmed}
@@ -292,7 +292,7 @@ export function TaskDetail() {
             conflict={edit.conflict}
             description={edit.draft.description}
             error={edit.error}
-            formLabel="タスクを編集"
+            formLabel="Task を編集"
             onCancel={edit.close}
             onDescription={(description) => edit.update({ description })}
             onReload={() => edit.open(toDraft())}
@@ -438,7 +438,7 @@ export function TaskDetail() {
           onClick={requestDelete}
           type="button"
         >
-          タスクを削除
+          Task を削除
         </button>
         <p className={s.dangerHint}>
           Issue の最後のタスクは削除できません（Issue ごと削除してください）。

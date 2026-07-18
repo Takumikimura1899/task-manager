@@ -87,7 +87,7 @@ describe("TaskDetail のローディング表示", () => {
     renderTaskDetail();
 
     expect(
-      screen.getByRole("status", { name: "タスクを読み込み中" }),
+      screen.getByRole("status", { name: "Task を読み込み中" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "← 一覧へ" })).toHaveAttribute(
       "href",
@@ -171,9 +171,14 @@ describe("TaskDetail の編集操作（Issue #32）", () => {
     mocks.task = createTask();
     renderTaskDetail();
 
-    await user.click(screen.getByRole("button", { name: "タスクを削除" }));
+    await user.click(screen.getByRole("button", { name: "Task を削除" }));
 
     expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        "この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。",
+      ),
+    ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "削除する" }));
 
@@ -189,7 +194,7 @@ describe("TaskDetail の編集操作（Issue #32）", () => {
     mocks.task = createTask();
     renderTaskDetail();
 
-    await user.click(screen.getByRole("button", { name: "タスクを削除" }));
+    await user.click(screen.getByRole("button", { name: "Task を削除" }));
     await user.click(screen.getByRole("button", { name: "キャンセル" }));
 
     expect(mocks.mutate).not.toHaveBeenCalled();
@@ -279,7 +284,7 @@ describe("TaskDetail の楽観ロック（Issue #73）", () => {
     );
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("form", { name: "タスクを編集" }),
+      screen.queryByRole("form", { name: "Task を編集" }),
     ).not.toBeInTheDocument();
   });
 });
@@ -290,7 +295,7 @@ describe("TaskDetail の確認パネル revision", () => {
     mocks.task = createTask({ revision: 5 });
     const { rerender } = renderTaskDetail();
 
-    await user.click(screen.getByRole("button", { name: "タスクを削除" }));
+    await user.click(screen.getByRole("button", { name: "Task を削除" }));
 
     // パネル表示中に他クライアントが更新し、購読値の revision が進む
     mocks.task = createTask({ revision: 6 });
