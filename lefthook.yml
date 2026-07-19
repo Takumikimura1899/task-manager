@@ -10,13 +10,15 @@ pre-commit:
     # TS/JS: 整形 → 静的解析 の順
     # Convex 生成コードは対象外（exclude）。除外の結果ファイルが空になっても
     # lefthook はジョブを実行するため、空ガードで oxlint の空入力エラーを防ぐ。
+    # {staged_files} は複数ファイルで複数引数に展開されるため、直接 [ -n ... ] に
+    # 渡さず sh の位置引数として受けて "$@" で扱う（#113）。
     - name: js
       glob: "*.{ts,tsx,js,jsx}"
       exclude: "convex/_generated/"
       run: >-
-        if [ -n "{staged_files}" ]; then
-        bunx oxfmt --write --no-error-on-unmatched-pattern {staged_files} &&
-        bunx oxlint --fix {staged_files}; fi
+        sh -c 'if [ -n "$*" ]; then
+        bunx oxfmt --write --no-error-on-unmatched-pattern "$@" &&
+        bunx oxlint --fix "$@"; fi' _ {staged_files}
       stage_fixed: true
 
     # CSS: lint(stylelint) → 整形(oxfmt) の順
