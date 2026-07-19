@@ -1,3 +1,4 @@
+import { authTables } from "@convex-dev/auth/server";
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
@@ -53,6 +54,9 @@ export const prState = v.union(
 export const memberRole = v.union(v.literal("admin"), v.literal("member"));
 
 export default defineSchema({
+  // Convex Auth 用テーブル（users / authAccounts / authSessions 等）
+  ...authTables,
+
   // Project — 作業の単位
   projects: defineTable({
     // 短縮名（例 "TASK" → 表示は TASK-123）。一意性は Core ロジックで保証する。
@@ -69,7 +73,13 @@ export default defineSchema({
     name: v.string(),
     email: v.string(), // 一意性は Core ロジックで保証する
     role: memberRole,
-  }).index("by_email", ["email"]),
+    // Convex Auth の users への安定リンク（認証済みユーザー⇄Member の対応）。
+    // 招待制リンク（convex/lib/memberLink.ts）で設定される。未認証運用中や
+    // 招待未消化の member は unset のままでよい。
+    authUserId: v.optional(v.id("users")),
+  })
+    .index("by_email", ["email"])
+    .index("by_authUserId", ["authUserId"]),
 
   // Issue — 解決すべき課題（Task の上位概念、基本設計書 ADR-9 / §3）
   // status は保持しない派生属性（子 Task 群から算出、§5.1 / lib/issueStatus.ts）。

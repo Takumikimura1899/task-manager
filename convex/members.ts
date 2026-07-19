@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { memberRole } from "./schema";
@@ -45,6 +46,40 @@ export const getByEmail = query({
       .query("members")
       .withIndex("by_email", (q) => q.eq("email", normalizeEmail(args.email)))
       .unique();
+  },
+});
+
+/**
+ * サインイン中の自分自身の member 情報を返す。
+ *
+ * リンクキーには users._id（authUserId）を使う。Convex Auth の
+ * UserIdentity.tokenIdentifier / subject は `userId|sessionId` 形式で
+ * セッションごとに値が変わるため一意な永続キーにならない（guidelines.md の
+ * 「tokenIdentifier を優先せよ」は外部 IdP を JWT 発行者として使う一般的な
+ * ケース向けの助言で、Convex Auth 自身が発行者のこの構成には当てはまらない）。
+ * users._id はサインアウト・再サインインをまたいで不変な唯一の安定キーであり、
+ * authUserId のリンクにはこちらを用いる。
+ *
+ * 本人自身の情報照会なので email も返す（list と異なり PII 制限は不要）。
+ */
+export const me = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) return null;
+
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_authUserId", (q) => q.eq("authUserId", userId))
+      .unique();
+    if (member === null) return null;
+
+    return {
+      _id: member._id,
+      name: member.name,
+      role: member.role,
+      email: member.email,
+    };
   },
 });
 
