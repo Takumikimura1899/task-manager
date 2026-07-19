@@ -25,4 +25,61 @@
   .inline-link:hover {
     color: var(--color-accent-alt);
   }
+
+  /* 見出し直下・補足説明などの小さめの注記テキスト
+     （Issue/Task 詳細のステータス説明・危険操作注記で共有） */
+  .hintSm {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+
+  /* 即時操作（状態遷移・担当変更・削除）の失敗表示。not-found 画面に重ねる
+     削除失敗エラーと、詳細画面内のインラインエラー表示の双方で共有する
+     （旧 IssueDetail/TaskDetail 各 module.css の byte 同一な .actionError を
+     昇格・Issue #104） */
+  .actionError {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+  }
+
+  /* 詳細画面の破壊的操作セクション（Issue/Task 削除導線で共有・
+     UI文言・配置規約.md §5） */
+  .dangerSection {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-md);
+  }
+
+  /* 直下の見出し（h2.sectionTitle 等）は .dangerSection の gap で間隔を
+     取るため、見出し自身の下マージンは殺す */
+  .dangerSection > h2 {
+    margin: 0;
+  }
+
+  .dangerOutline {
+    align-self: flex-start;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-danger);
+    background: var(--color-surface);
+    border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .dangerOutline:hover {
+    background: color-mix(
+      in srgb,
+      var(--color-danger) 8%,
+      var(--color-surface)
+    );
+    box-shadow: var(--glow-danger);
+  }
 }

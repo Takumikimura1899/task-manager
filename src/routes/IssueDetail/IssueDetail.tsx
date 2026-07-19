@@ -1,8 +1,9 @@
 import { useMutation, useQuery } from "convex/react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { AddTaskForm } from "../../components/AddTaskForm/AddTaskForm";
 import { Badge } from "../../components/Badge/Badge";
+import { ConfirmPanel } from "../../components/ConfirmPanel/ConfirmPanel";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
 import { Markdown } from "../../components/Markdown/Markdown";
@@ -11,6 +12,7 @@ import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotic
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
 import { useCurrentMember } from "../../hooks/useCurrentMember";
+import { useDeleteFlow } from "../../hooks/useDeleteFlow";
 import { useEditForm } from "../../hooks/useEditForm";
 import { formatIssueRef } from "../../lib/formatIssueRef";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
@@ -37,10 +39,30 @@ type IssueDraft = {
   revision: number;
 };
 
+// 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの矩形を
+// スケルトンで示す（Issue #29：全画面差し替えをやめる）。props/state に
+// 依存しない静的な表示のためコンポーネント外に定義する（呼び出し側が
+// サンクとして呼ぶことで、読み込み完了後の再レンダーでは要素木を作らない・
+// Issue #104 レビュー対応）。
+const renderLoading = () => (
+  <main className={s.page}>
+    <Link className={s.back} to="/issues">
+      ← 一覧へ
+    </Link>
+    <output aria-label="Issue を読み込み中" className={s.loading}>
+      <Skeleton className={s.skeletonHeading} />
+      <Skeleton className={s.skeletonTitle} />
+      <Skeleton className={s.skeletonSection} />
+      <Skeleton className={s.skeletonSection} />
+    </output>
+  </main>
+);
+
 export function IssueDetail() {
   const params = useParams();
   const projectKey = params.projectKey ?? "";
   const number = parseRefNumber(params.number);
+  const navigate = useNavigate();
 
   const issue = useQuery(
     api.issues.getByRef,
@@ -49,6 +71,7 @@ export function IssueDetail() {
   const { members, currentMember } = useCurrentMember();
 
   const updateIssue = useMutation(api.issues.update);
+  const removeIssue = useMutation(api.issues.remove);
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
   // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
   const edit = useEditForm<IssueDraft>({
@@ -64,33 +87,54 @@ export function IssueDetail() {
     },
   });
 
-  if (number === null || issue === null) {
-    return (
-      <main className={s.page}>
-        <Link className={s.back} to="/">
-          ← 一覧へ
-        </Link>
-        <p className="hint">Issue が見つかりませんでした。</p>
-      </main>
-    );
+  // 破壊的操作（削除）の確認フロー。busy 中は ConfirmPanel を disabled にし
+  // 二重実行を防ぐ（IssueTable の削除確認と同方式：パネルを開いたまま
+  // await し、busy/error を渡す。IssueTable 側の行内削除導線は #105 で
+  // 撤去され、本画面の danger セクションが唯一の削除導線になる）。
+  // number スコープ・client-side 遷移時のリセットはフック側の責務
+  // （src/hooks/useDeleteFlow.ts・Issue #104）。
+  const deleteFlow = useDeleteFlow({
+    number,
+    remove: async () => {
+      if (issue === null || issue === undefined) return;
+      await removeIssue({ id: issue._id, expectedRevision: issue.revision });
+    },
+    onDeleted: () => navigate("/issues"), // 削除後は Issue 一覧へ戻る
+  });
+
+  const renderNotFound = () => (
+    <main className={s.page}>
+      <Link className={s.back} to="/issues">
+        ← 一覧へ
+      </Link>
+      <p className="hint">Issue が見つかりませんでした。</p>
+      {/* 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
+          issue===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
+          到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。 */}
+      {deleteFlow.error !== null && (
+        <p className="actionError" role="alert">
+          {deleteFlow.error}
+        </p>
+      )}
+    </main>
+  );
+
+  if (number === null) {
+    return renderNotFound();
   }
 
-  // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
-  // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
   if (issue === undefined) {
-    return (
-      <main className={s.page}>
-        <Link className={s.back} to="/">
-          ← 一覧へ
-        </Link>
-        <output aria-label="Issue を読み込み中" className={s.loading}>
-          <Skeleton className={s.skeletonHeading} />
-          <Skeleton className={s.skeletonTitle} />
-          <Skeleton className={s.skeletonSection} />
-          <Skeleton className={s.skeletonSection} />
-        </output>
-      </main>
-    );
+    return renderLoading();
+  }
+
+  if (issue === null) {
+    // 削除確定（useDeleteFlow の remove）後、navigate 到達までの間に
+    // getByRef の購読が read-your-writes で先に null を返すことがある。
+    // 削除対象の number と現在表示中の number が一致する場合のみローディング
+    // に留め、一致しなければ本当に見つからない（無効な参照・外部での削除等・
+    // 削除 in-flight 中に別の Issue へ遷移した後にその Issue が存在しない
+    // 場合）。
+    return deleteFlow.isDeletingCurrent ? renderLoading() : renderNotFound();
   }
 
   const status = issue.status;
@@ -108,7 +152,7 @@ export function IssueDetail() {
 
   return (
     <main className={s.page}>
-      <Link className={s.back} to="/">
+      <Link className={s.back} to="/issues">
         ← 一覧へ
       </Link>
 
@@ -126,11 +170,14 @@ export function IssueDetail() {
             </button>
           )}
         </div>
+        {/* ステータスバッジは配下 Task から自動算出される派生値のため、
+            遷移ボタンの代わりに説明文を置く（基本設計書§5.1 ADR-10） */}
+        <p className="hintSm">ステータスは配下 Task から自動算出されます</p>
         {!edit.editing && (
           <>
             <h1 className={s.title}>{issue.title}</h1>
             <p className={s.progress}>
-              タスク {doneCount}/{activeTasks.length} 完了
+              Task {doneCount}/{activeTasks.length} 完了
             </p>
           </>
         )}
@@ -180,7 +227,7 @@ export function IssueDetail() {
       )}
 
       <section className={s.section}>
-        <h2 className={s.sectionTitle}>タスク（{issue.tasks.length}）</h2>
+        <h2 className={s.sectionTitle}>Task（{issue.tasks.length}）</h2>
         {TASK_STATUS_ORDER.map((taskStatus) => {
           const tasks = issue.tasks.filter((t) => t.status === taskStatus);
           if (tasks.length === 0) return null;
@@ -225,6 +272,27 @@ export function IssueDetail() {
           createdByName={issue.createdByName}
           updatedAt={issue.updatedAt}
         />
+      </section>
+
+      <section className="dangerSection">
+        <h2 className={s.sectionTitle}>操作</h2>
+        <button
+          className="dangerOutline"
+          onClick={deleteFlow.request}
+          type="button"
+        >
+          Issue を削除
+        </button>
+        {deleteFlow.confirming && (
+          <ConfirmPanel
+            busy={deleteFlow.busy}
+            confirmLabel="削除する"
+            error={deleteFlow.error}
+            message="この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。"
+            onCancel={deleteFlow.cancel}
+            onConfirm={deleteFlow.confirm}
+          />
+        )}
       </section>
     </main>
   );
