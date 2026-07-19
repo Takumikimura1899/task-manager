@@ -9,13 +9,15 @@ pre-commit:
   jobs:
     # TS/JS: 整形 → 静的解析 の順
     # Convex 生成コードは対象外。exclude は glob（dir/**）で書く。末尾スラッシュの
-    # ディレクトリ指定はマッチせず素通りする（#115。oxfmt/oxlint 側の ignorePatterns
-    # も同じ範囲を除外しており二層目の防御）。除外の結果 staged が空になると
-    # ジョブ自体が skip される。
+    # ディレクトリ指定はマッチせず素通りする（#115）。oxfmt/oxlint 側の
+    # ignorePatterns も同じ範囲を除外するが、これは生成物の内容書き換えを防ぐ層で、
+    # oxlint は ignore 対象のみを渡されると非ゼロ終了するため実行成否までは守らない
+    # （lefthook 層の exclude が壊れると生成物のみのコミットが失敗する）。
+    # exclude や glob の結果 staged が空になるとジョブ自体が skip される。
     # {staged_files} は複数ファイルで複数引数に展開されるため、直接 [ -n ... ] に
     # 渡さず sh の位置引数として受ける。空判定は引数個数（$#）で行い、
-    # コマンドへは "$@" で個別引数のまま渡す（#113）。空ガードは exclude 有効時
-    # 冗長だが防御的に維持する。
+    # コマンドへは "$@" で個別引数のまま渡す（#113）。空ガードは skip 機構により
+    # 通常到達しないが防御的に維持する。
     - name: js
       glob: "*.{ts,tsx,js,jsx}"
       exclude: ["convex/_generated/**"]
