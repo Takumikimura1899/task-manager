@@ -224,12 +224,6 @@
     box-shadow: var(--glow-accent-sm);
   }
 
-  .actionError {
-    margin: var(--space-3) 0 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-danger);
-  }
-
   /* ローディング中のプレースホルダ寸法（参照行・タイトル・セクション） */
   .loading {
     display: flex;

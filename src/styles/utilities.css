@@ -34,6 +34,16 @@
     color: var(--color-text-muted);
   }
 
+  /* 即時操作（状態遷移・担当変更・削除）の失敗表示。not-found 画面に重ねる
+     削除失敗エラーと、詳細画面内のインラインエラー表示の双方で共有する
+     （旧 IssueDetail/TaskDetail 各 module.css の byte 同一な .actionError を
+     昇格・Issue #104） */
+  .actionError {
+    margin: var(--space-3) 0 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-danger);
+  }
+
   /* 詳細画面の破壊的操作セクション（Issue/Task 削除導線で共有・
      UI文言・配置規約.md §5） */
   .dangerSection {

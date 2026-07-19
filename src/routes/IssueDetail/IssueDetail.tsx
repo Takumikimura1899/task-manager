@@ -1,6 +1,4 @@
 import { useMutation, useQuery } from "convex/react";
-import { ConvexError } from "convex/values";
-import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { AddTaskForm } from "../../components/AddTaskForm/AddTaskForm";
@@ -14,6 +12,7 @@ import { NoMembersNotice } from "../../components/NoMembersNotice/NoMembersNotic
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
 import { useCurrentMember } from "../../hooks/useCurrentMember";
+import { useDeleteFlow } from "../../hooks/useDeleteFlow";
 import { useEditForm } from "../../hooks/useEditForm";
 import { formatIssueRef } from "../../lib/formatIssueRef";
 import { ISSUE_STATUS_LABELS } from "../../lib/issueMeta";
@@ -40,16 +39,30 @@ type IssueDraft = {
   revision: number;
 };
 
+// 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの矩形を
+// スケルトンで示す（Issue #29：全画面差し替えをやめる）。props/state に
+// 依存しない静的な表示のためコンポーネント外に定義する（呼び出し側が
+// サンクとして呼ぶことで、読み込み完了後の再レンダーでは要素木を作らない・
+// Issue #104 レビュー対応）。
+const renderLoading = () => (
+  <main className={s.page}>
+    <Link className={s.back} to="/issues">
+      ← 一覧へ
+    </Link>
+    <output aria-label="Issue を読み込み中" className={s.loading}>
+      <Skeleton className={s.skeletonHeading} />
+      <Skeleton className={s.skeletonTitle} />
+      <Skeleton className={s.skeletonSection} />
+      <Skeleton className={s.skeletonSection} />
+    </output>
+  </main>
+);
+
 export function IssueDetail() {
   const params = useParams();
   const projectKey = params.projectKey ?? "";
   const number = parseRefNumber(params.number);
   const navigate = useNavigate();
-  // 表示中の number を常に最新化する ref。削除確定後の非同期継続処理
-  // （confirmDelete）が、実行中に client-side 遷移で表示先が切り替わって
-  // いないかを判定するために使う（Issue #104 追加対応）。
-  const numberRef = useRef(number);
-  numberRef.current = number;
 
   const issue = useQuery(
     api.issues.getByRef,
@@ -74,29 +87,22 @@ export function IssueDetail() {
     },
   });
 
-  // 破壊的操作（削除）の確認待ち状態。busy 中は ConfirmPanel を disabled にし
+  // 破壊的操作（削除）の確認フロー。busy 中は ConfirmPanel を disabled にし
   // 二重実行を防ぐ（IssueTable の削除確認と同方式：パネルを開いたまま
   // await し、busy/error を渡す。IssueTable 側の行内削除導線は #105 で
   // 撤去され、本画面の danger セクションが唯一の削除導線になる）。
-  // deletingNumber は「削除確定 = busy」だけでなく削除対象の number も
-  // 保持する。同一マウントのまま別の Issue へ client-side 遷移された場合に、
-  // 別 Issue の表示へ誤って波及させないためのスコープに使う
-  // （Issue #104 追加対応）。
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deletingNumber, setDeletingNumber] = useState<number | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // number スコープ・client-side 遷移時のリセットはフック側の責務
+  // （src/hooks/useDeleteFlow.ts・Issue #104）。
+  const deleteFlow = useDeleteFlow({
+    number,
+    remove: async () => {
+      if (issue === null || issue === undefined) return;
+      await removeIssue({ id: issue._id, expectedRevision: issue.revision });
+    },
+    onDeleted: () => navigate("/issues"), // 削除後は Issue 一覧へ戻る
+  });
 
-  // number が変わったら（同一マウントのまま別の Issue へ client-side 遷移
-  // した場合）確認パネルの開閉状態と削除エラーをリセットする。放置すると
-  // 別の Issue の画面に前の Issue 用の削除確認パネルやエラーが残ったまま
-  // 表示されてしまう（deletingNumber は削除対象自体を正しくスコープして
-  // いるためリセット対象に含めない・Issue #104 追加対応）。
-  useEffect(() => {
-    setConfirmingDelete(false);
-    setDeleteError(null);
-  }, [number]);
-
-  const notFound = (
+  const renderNotFound = () => (
     <main className={s.page}>
       <Link className={s.back} to="/issues">
         ← 一覧へ
@@ -105,46 +111,30 @@ export function IssueDetail() {
       {/* 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
           issue===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
           到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。 */}
-      {deleteError !== null && (
-        <p className={s.actionError} role="alert">
-          {deleteError}
+      {deleteFlow.error !== null && (
+        <p className="actionError" role="alert">
+          {deleteFlow.error}
         </p>
       )}
     </main>
   );
 
-  // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
-  // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
-  const loading = (
-    <main className={s.page}>
-      <Link className={s.back} to="/issues">
-        ← 一覧へ
-      </Link>
-      <output aria-label="Issue を読み込み中" className={s.loading}>
-        <Skeleton className={s.skeletonHeading} />
-        <Skeleton className={s.skeletonTitle} />
-        <Skeleton className={s.skeletonSection} />
-        <Skeleton className={s.skeletonSection} />
-      </output>
-    </main>
-  );
-
   if (number === null) {
-    return notFound;
+    return renderNotFound();
   }
 
   if (issue === undefined) {
-    return loading;
+    return renderLoading();
   }
 
   if (issue === null) {
-    // 削除確定（confirmDelete）後、navigate 到達までの間に getByRef の
-    // 購読が read-your-writes で先に null を返すことがある。削除対象の
-    // number と現在表示中の number が一致する場合のみローディングに留め、
-    // 一致しなければ本当に見つからない（無効な参照・外部での削除等・
+    // 削除確定（useDeleteFlow の remove）後、navigate 到達までの間に
+    // getByRef の購読が read-your-writes で先に null を返すことがある。
+    // 削除対象の number と現在表示中の number が一致する場合のみローディング
+    // に留め、一致しなければ本当に見つからない（無効な参照・外部での削除等・
     // 削除 in-flight 中に別の Issue へ遷移した後にその Issue が存在しない
     // 場合）。
-    return deletingNumber === number ? loading : notFound;
+    return deleteFlow.isDeletingCurrent ? renderLoading() : renderNotFound();
   }
 
   const status = issue.status;
@@ -159,41 +149,6 @@ export function IssueDetail() {
     priority: issue.priority,
     revision: issue.revision,
   });
-
-  const requestDelete = () => {
-    setDeleteError(null);
-    setConfirmingDelete(true);
-  };
-
-  const confirmDelete = async () => {
-    if (deletingNumber !== null) return;
-    setDeleteError(null);
-    setDeletingNumber(number);
-    const target = number;
-    try {
-      await removeIssue({ id: issue._id, expectedRevision: issue.revision });
-    } catch (err) {
-      setDeleteError(
-        err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
-      );
-      setDeletingNumber(null);
-      return;
-    }
-    // navigate は try の外で呼ぶ。try 内に置くと navigate 自体が投げた場合に
-    // 削除は成功しているのに「削除に失敗しました」と誤表示してしまう。
-    // さらに、完了時点で表示中の number（numberRef.current）が削除対象
-    // （target）と一致する場合のみ遷移する。in-flight 中に別の Issue へ
-    // client-side 遷移されていた場合、無関係な画面を強制的に一覧へ飛ばす
-    // のを防ぐ（Issue #104 追加対応）。一致しなければ deletingNumber だけ
-    // 戻す（この target を表示中の画面へ戻ってきたとき、既に削除済みの
-    // number に対して deletingNumber===number が成立し続けてローディング
-    // 表示のまま固まるのを防ぐため）。
-    if (numberRef.current === target) {
-      navigate("/issues"); // 削除後は Issue 一覧へ戻る
-    } else {
-      setDeletingNumber(null);
-    }
-  };
 
   return (
     <main className={s.page}>
@@ -321,17 +276,21 @@ export function IssueDetail() {
 
       <section className="dangerSection">
         <h2 className={s.sectionTitle}>操作</h2>
-        <button className="dangerOutline" onClick={requestDelete} type="button">
+        <button
+          className="dangerOutline"
+          onClick={deleteFlow.request}
+          type="button"
+        >
           Issue を削除
         </button>
-        {confirmingDelete && (
+        {deleteFlow.confirming && (
           <ConfirmPanel
-            busy={deletingNumber !== null}
+            busy={deleteFlow.busy}
             confirmLabel="削除する"
-            error={deleteError}
+            error={deleteFlow.error}
             message="この Issue と配下の Task・Git 連携をすべて削除します。取り消せません。"
-            onCancel={() => setConfirmingDelete(false)}
-            onConfirm={() => void confirmDelete()}
+            onCancel={deleteFlow.cancel}
+            onConfirm={deleteFlow.confirm}
           />
         )}
       </section>

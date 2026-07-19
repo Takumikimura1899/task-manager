@@ -16,6 +16,7 @@ import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
+import { useDeleteFlow } from "../../hooks/useDeleteFlow";
 import { useEditForm } from "../../hooks/useEditForm";
 import { formatHours } from "../../lib/formatHours";
 import { formatIssueRef } from "../../lib/formatIssueRef";
@@ -68,28 +69,30 @@ function parseHoursDraft(label: string, raw: string): number | null {
   return n;
 }
 
-/**
- * 破壊的操作（done/canceled への遷移・削除）の確認待ち状態（§6）。
- * 「実行内容のクロージャ」ではなく意図の宣言として持つ。run() クロージャに
- * 確定時点の task._id / revision を固定すると、パネル表示中に他クライアントが
- * 同タスクを更新した際 stale な expectedRevision を送ってしまう。確定処理
- * （runConfirmed）は kind/to から必要な値を導出し、実行時点の購読値
- * （task）から revision を読む（IssueTable の削除確認と同方式）。
- */
-type PendingConfirm =
-  | { kind: "transition"; to: TaskStatus }
-  | { kind: "delete" };
+// 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの矩形を
+// スケルトンで示す（Issue #29：全画面差し替えをやめる）。props/state に
+// 依存しない静的な表示のためコンポーネント外に定義する（呼び出し側が
+// サンクとして呼ぶことで、読み込み完了後の再レンダーでは要素木を作らない・
+// Issue #104 レビュー対応）。
+const renderLoading = () => (
+  <main className={s.page}>
+    <Link className={s.back} to="/">
+      ← 一覧へ
+    </Link>
+    <output aria-label="Task を読み込み中" className={s.loading}>
+      <Skeleton className={s.skeletonHeading} />
+      <Skeleton className={s.skeletonTitle} />
+      <Skeleton className={s.skeletonSection} />
+      <Skeleton className={s.skeletonSection} />
+    </output>
+  </main>
+);
 
 export function TaskDetail() {
   const params = useParams();
   const projectKey = params.projectKey ?? "";
   const number = parseRefNumber(params.number);
   const navigate = useNavigate();
-  // 表示中の number を常に最新化する ref。削除確定後の非同期継続処理
-  // （confirmDeleteTask）が、実行中に client-side 遷移で表示先が切り替わって
-  // いないかを判定するために使う（IssueDetail と対称・Issue #104 追加対応）。
-  const numberRef = useRef(number);
-  numberRef.current = number;
 
   const task = useQuery(
     api.tasks.getDetail,
@@ -143,27 +146,38 @@ export function TaskDetail() {
   // 状態遷移・担当変更（フォーム外の即時操作）のエラー表示。
   // 競合時も useQuery が最新 revision へ自動更新するため、再操作すればよい。
   const [actionError, setActionError] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
-
-  // 破壊的操作（削除）専用の確認待ち状態。deletingNumber は「削除確定 =
-  // busy」だけでなく削除対象の number も保持する。同一マウントのまま別の
-  // Task へ client-side 遷移された場合に、別 Task の表示へ誤って波及させ
-  // ないためのスコープに使う（IssueDetail と対称・Issue #104 追加対応）。
-  const [deletingNumber, setDeletingNumber] = useState<number | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  // 破壊的遷移（done/canceled）の確認待ち状態（§6）。「実行内容のクロージャ」
+  // ではなく意図の宣言として持つ。run() クロージャに確定時点の task._id /
+  // revision を固定すると、パネル表示中に他クライアントが同タスクを更新した際
+  // stale な expectedRevision を送ってしまう。確定処理（confirmTransition）は
+  // to から必要な値を導出し、実行時点の購読値（task）から revision を読む
+  // （IssueTable の削除確認と同方式）。削除確認は useDeleteFlow に分離した
+  // （Issue #104）。
+  const [pendingTransition, setPendingTransition] = useState<TaskStatus | null>(
+    null,
+  );
 
   // number が変わったら（同一マウントのまま別の Task へ client-side 遷移
-  // した場合）確認パネルの開閉状態（transition/delete 両方の kind）と
-  // 削除エラーをリセットする。放置すると別の Task の画面に前の Task 用の
-  // 遷移確認・削除確認パネルやエラーが残ったまま表示されてしまう
-  // （deletingNumber は削除対象自体を正しくスコープしているためリセット
-  // 対象に含めない・IssueDetail と対称・Issue #104 追加対応）。
+  // した場合）遷移確認パネルをリセットする。放置すると別の Task の画面に
+  // 前の Task 用の遷移確認パネルが残ったまま表示されてしまう（削除確認の
+  // リセットは useDeleteFlow 側の責務・IssueDetail と対称・Issue #104 追加対応）。
   useEffect(() => {
-    setConfirm(null);
-    setDeleteError(null);
+    setPendingTransition(null);
   }, [number]);
 
-  const notFound = (
+  // 破壊的操作（削除）の確認フロー。busy 中は ConfirmPanel を disabled にし
+  // 二重実行を防ぐ（IssueDetail と対称・Issue #104）。number スコープ・
+  // client-side 遷移時のリセットはフック側の責務（src/hooks/useDeleteFlow.ts）。
+  const deleteFlow = useDeleteFlow({
+    number,
+    remove: async () => {
+      if (task === null || task === undefined) return;
+      await deleteTask({ id: task._id, expectedRevision: task.revision });
+    },
+    onDeleted: () => navigate("/"), // 削除後は一覧へ戻る
+  });
+
+  const renderNotFound = () => (
     <main className={s.page}>
       <Link className={s.back} to="/">
         ← 一覧へ
@@ -172,46 +186,30 @@ export function TaskDetail() {
       {/* 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
           task===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
           到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。 */}
-      {deleteError !== null && (
-        <p className={s.actionError} role="alert">
-          {deleteError}
+      {deleteFlow.error !== null && (
+        <p className="actionError" role="alert">
+          {deleteFlow.error}
         </p>
       )}
     </main>
   );
 
-  // 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの
-  // 矩形をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
-  const loading = (
-    <main className={s.page}>
-      <Link className={s.back} to="/">
-        ← 一覧へ
-      </Link>
-      <output aria-label="Task を読み込み中" className={s.loading}>
-        <Skeleton className={s.skeletonHeading} />
-        <Skeleton className={s.skeletonTitle} />
-        <Skeleton className={s.skeletonSection} />
-        <Skeleton className={s.skeletonSection} />
-      </output>
-    </main>
-  );
-
   if (number === null) {
-    return notFound;
+    return renderNotFound();
   }
 
   if (task === undefined) {
-    return loading;
+    return renderLoading();
   }
 
   if (task === null) {
-    // 削除確定（confirmDeleteTask）後、navigate 到達までの間に getDetail の
-    // 購読が read-your-writes で先に null を返すことがある。削除対象の
-    // number と現在表示中の number が一致する場合のみローディングに留め、
-    // 一致しなければ本当に見つからない（無効な参照・外部での削除等・
+    // 削除確定（useDeleteFlow の remove）後、navigate 到達までの間に
+    // getDetail の購読が read-your-writes で先に null を返すことがある。
+    // 削除対象の number と現在表示中の number が一致する場合のみローディング
+    // に留め、一致しなければ本当に見つからない（無効な参照・外部での削除等・
     // 削除 in-flight 中に別の Task へ遷移した後にその Task が存在しない
     // 場合）。
-    return deletingNumber === number ? loading : notFound;
+    return deleteFlow.isDeletingCurrent ? renderLoading() : renderNotFound();
   }
 
   // 編集の初期値・競合後の再読込は常に最新の購読値から作る。
@@ -238,7 +236,7 @@ export function TaskDetail() {
   const requestTransition = (to: TaskStatus) => {
     // 破壊的遷移（done/canceled）は確認を挟む（§6 Human-in-the-Loop）。
     if (requiresApproval(to)) {
-      setConfirm({ kind: "transition", to });
+      setPendingTransition(to);
     } else {
       void runAction(async () => {
         await transitionStatus({
@@ -250,89 +248,23 @@ export function TaskDetail() {
     }
   };
 
-  const requestDelete = () => {
-    setDeleteError(null);
-    setConfirm({ kind: "delete" });
-  };
-
-  // 削除専用の確定処理。transition/assign と異なり (a) navigate を伴う、
-  // (b) 削除対象の number スコープが必要なため、runAction 経由の
-  // actionError ではなく専用の deletingNumber/deleteError で扱う
-  // （IssueDetail.confirmDelete と対称・Issue #104 追加対応）。
-  const confirmDeleteTask = async () => {
-    if (deletingNumber !== null) return;
-    setDeleteError(null);
-    setDeletingNumber(number);
-    const target = number;
-    try {
-      await deleteTask({ id: task._id, expectedRevision: task.revision });
-    } catch (err) {
-      setDeleteError(
-        err instanceof ConvexError ? String(err.data) : "削除に失敗しました",
-      );
-      setDeletingNumber(null);
-      return;
-    }
-    // navigate は try の外で呼ぶ。try 内に置くと navigate 自体が投げた場合に
-    // 削除は成功しているのに「削除に失敗しました」と誤表示してしまう。
-    // さらに、完了時点で表示中の number（numberRef.current）が削除対象
-    // （target）と一致する場合のみ遷移する。in-flight 中に別の Task へ
-    // client-side 遷移されていた場合、無関係な画面を強制的に一覧へ飛ばす
-    // のを防ぐ（Issue #104 追加対応）。一致しなければ deletingNumber だけ
-    // 戻す（この target を表示中の画面へ戻ってきたとき、既に削除済みの
-    // number に対して deletingNumber===number が成立し続けてローディング
-    // 表示のまま固まるのを防ぐため）。
-    if (numberRef.current === target) {
-      navigate("/"); // 削除後は一覧へ戻る
-    } else {
-      setDeletingNumber(null);
-    }
-  };
-
   // 確定時点の購読値（task）の revision を expectedRevision に使う。編集
   // フォームが draft.revision（編集開始時点、Issue #73）を使うのとは対照的
   // ――確認パネルは開いてから確定までが短い即時操作なので、パネル表示中に
   // 他クライアントが更新していれば最新値を送るほうが自然に成功する
   // （IssueTable の削除確認と同方式）。
-  const runConfirmed = () => {
-    if (confirm === null) return;
-    const pending = confirm;
-    setConfirm(null);
-    if (pending.kind === "delete") {
-      void confirmDeleteTask();
-      return;
-    }
+  const confirmTransition = () => {
+    if (pendingTransition === null) return;
+    const to = pendingTransition;
+    setPendingTransition(null);
     void runAction(async () => {
       await transitionStatus({
         id: task._id,
-        to: pending.to,
+        to,
         expectedRevision: task.revision,
       });
     });
   };
-
-  // 破壊的操作の確認パネル。操作した場所（遷移ボタン／削除ボタン）の直下に出す。
-  // message/label は現行文言を維持したまま kind/to から都度導出する。削除は
-  // 専用の busy/error（deletingNumber/deleteError）を渡し、遷移は既存どおり
-  // busy/error なし（失敗時は actionError で別途表示）のまま扱う。
-  const confirmPanel = confirm !== null && (
-    <ConfirmPanel
-      busy={confirm.kind === "delete" && deletingNumber !== null}
-      confirmLabel={
-        confirm.kind === "transition"
-          ? `${TASK_STATUS_LABELS[confirm.to]}にする`
-          : "削除する"
-      }
-      error={confirm.kind === "delete" ? deleteError : null}
-      message={
-        confirm.kind === "transition"
-          ? `「${TASK_STATUS_LABELS[confirm.to]}」へ遷移します。この操作は取り消せません。`
-          : "この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。"
-      }
-      onCancel={() => setConfirm(null)}
-      onConfirm={runConfirmed}
-    />
-  );
 
   return (
     <main className={s.page}>
@@ -493,13 +425,20 @@ export function TaskDetail() {
           </dd>
         </dl>
         {actionError !== null && (
-          <p className={s.actionError} role="alert">
+          <p className="actionError" role="alert">
             {actionError}
           </p>
         )}
       </section>
 
-      {confirm !== null && confirm.kind === "transition" && confirmPanel}
+      {pendingTransition !== null && (
+        <ConfirmPanel
+          confirmLabel={`${TASK_STATUS_LABELS[pendingTransition]}にする`}
+          message={`「${TASK_STATUS_LABELS[pendingTransition]}」へ遷移します。この操作は取り消せません。`}
+          onCancel={() => setPendingTransition(null)}
+          onConfirm={confirmTransition}
+        />
+      )}
 
       <section className={s.section}>
         <h2 className={s.sectionTitle}>Git 連携</h2>
@@ -516,13 +455,26 @@ export function TaskDetail() {
 
       <section className="dangerSection">
         <h2 className={s.sectionTitle}>操作</h2>
-        <button className="dangerOutline" onClick={requestDelete} type="button">
+        <button
+          className="dangerOutline"
+          onClick={deleteFlow.request}
+          type="button"
+        >
           Task を削除
         </button>
         <p className="hintSm">
           Issue の最後の Task は削除できません（Issue ごと削除してください）。
         </p>
-        {confirm !== null && confirm.kind === "delete" && confirmPanel}
+        {deleteFlow.confirming && (
+          <ConfirmPanel
+            busy={deleteFlow.busy}
+            confirmLabel="削除する"
+            error={deleteFlow.error}
+            message="この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。"
+            onCancel={deleteFlow.cancel}
+            onConfirm={deleteFlow.confirm}
+          />
+        )}
       </section>
     </main>
   );

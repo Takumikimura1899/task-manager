@@ -334,6 +334,33 @@ describe("TaskDetail の確認パネル revision", () => {
 });
 
 describe("TaskDetail の削除フロー（Issue #104 追加対応・IssueDetail と対称）", () => {
+  it("task が見つかっている状態で削除に失敗すると、確認パネルを開いたままエラーを role=alert で表示する（レビュー指摘: 確定前にパネルを閉じるとエラーの表示先が消えサイレント失敗になっていた）", async () => {
+    const user = userEvent.setup();
+    mocks.task = createTask();
+    mocks.mutate.mockRejectedValueOnce(
+      new (await import("convex/values")).ConvexError(
+        "Issue の最後の Task は削除できません",
+      ),
+    );
+    renderTaskDetail();
+
+    await user.click(screen.getByRole("button", { name: "Task を削除" }));
+    await user.click(screen.getByRole("button", { name: "削除する" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Issue の最後の Task は削除できません",
+    );
+    // 確認パネルが閉じずに開いたままエラーを表示する（削除する／キャンセルの
+    // 両ボタンが残っている＝ConfirmPanel がアンマウントされていない）。
+    expect(
+      screen.getByRole("button", { name: "削除する" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "キャンセル" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("一覧画面")).not.toBeInTheDocument();
+  });
+
   it("削除確定直後に購読側が read-your-writes で task を null にしても、not-found を表示せずローディングのまま一覧へ遷移する", async () => {
     const user = userEvent.setup();
     mocks.task = createTask({ revision: 5 });
