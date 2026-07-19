@@ -1,6 +1,6 @@
-import { ConvexError } from "convex/values";
 import { type FormEvent, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
+import { convexErrorMessage } from "../lib/convexErrorMessage";
 import type { Priority } from "../lib/taskMeta";
 
 /** 送信時に確定した入力値。title は trim 済み。 */
@@ -58,9 +58,7 @@ export function useCreateForm({
       await onSubmit({ title: title.trim(), priority, assignee });
       close();
     } catch (err) {
-      setError(
-        err instanceof ConvexError ? String(err.data) : submitErrorMessage,
-      );
+      setError(convexErrorMessage(err, submitErrorMessage));
     } finally {
       setSubmitting(false);
     }

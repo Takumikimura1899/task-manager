@@ -1,5 +1,5 @@
-import { ConvexError } from "convex/values";
 import { type FormEvent, useState } from "react";
+import { convexErrorMessage } from "../lib/convexErrorMessage";
 
 /**
  * 詳細画面（Issue / Task）共通の編集モード状態管理フック。
@@ -53,13 +53,9 @@ export function useEditForm<T>({
       await save(draft);
       close();
     } catch (err) {
-      if (err instanceof ConvexError) {
-        const message = String(err.data);
-        setError(message);
-        setConflict(message.includes("競合"));
-      } else {
-        setError("保存に失敗しました");
-      }
+      const message = convexErrorMessage(err, "保存に失敗しました");
+      setError(message);
+      setConflict(message.includes("競合"));
     } finally {
       setSaving(false);
     }

@@ -236,6 +236,10 @@ export function TaskDetail() {
   const requestTransition = (to: TaskStatus) => {
     // 破壊的遷移（done/canceled）は確認を挟む（§6 Human-in-the-Loop）。
     if (requiresApproval(to)) {
+      // 遷移確認パネルと削除確認パネルは同時に1つだけ表示する（相互排他）。
+      // 旧実装は単一の union state でこれを保証していたが、削除確認を
+      // useDeleteFlow へ分離した際に抜けていた（レビュー指摘・Issue #104）。
+      deleteFlow.cancel();
       setPendingTransition(to);
     } else {
       void runAction(async () => {
@@ -264,6 +268,13 @@ export function TaskDetail() {
         expectedRevision: task.revision,
       });
     });
+  };
+
+  // 削除確認パネルの起動。遷移確認パネルと相互排他にするため、開く前に
+  // 遷移確認をリセットする（上記 requestTransition と対称・Issue #104）。
+  const requestDelete = () => {
+    setPendingTransition(null);
+    deleteFlow.request();
   };
 
   return (
@@ -455,11 +466,7 @@ export function TaskDetail() {
 
       <section className="dangerSection">
         <h2 className={s.sectionTitle}>操作</h2>
-        <button
-          className="dangerOutline"
-          onClick={deleteFlow.request}
-          type="button"
-        >
+        <button className="dangerOutline" onClick={requestDelete} type="button">
           Task を削除
         </button>
         <p className="hintSm">

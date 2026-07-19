@@ -473,4 +473,50 @@ describe("TaskDetail の削除フロー（Issue #104 追加対応・IssueDetail 
     ).not.toBeInTheDocument();
     expect(mocks.mutate).not.toHaveBeenCalled();
   });
+
+  it("遷移確認パネルを開いた状態で削除を要求すると、遷移確認パネルが閉じ削除確認パネルに切り替わる（相互排他・レビュー指摘対応）", async () => {
+    const user = userEvent.setup();
+    mocks.task = createTask({ status: "in_review" });
+    renderTaskDetail();
+
+    await user.click(screen.getByRole("button", { name: "→ 完了" }));
+    expect(
+      screen.getByText("「完了」へ遷移します。この操作は取り消せません。"),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Task を削除" }));
+
+    expect(
+      screen.queryByText("「完了」へ遷移します。この操作は取り消せません。"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。",
+      ),
+    ).toBeVisible();
+  });
+
+  it("削除確認パネルを開いた状態で遷移を要求すると、削除確認パネルが閉じ遷移確認パネルに切り替わる（相互排他・レビュー指摘対応）", async () => {
+    const user = userEvent.setup();
+    mocks.task = createTask({ status: "in_review" });
+    renderTaskDetail();
+
+    await user.click(screen.getByRole("button", { name: "Task を削除" }));
+    expect(
+      screen.getByText(
+        "この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。",
+      ),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "→ 完了" }));
+
+    expect(
+      screen.queryByText(
+        "この Task を削除します。関連する Git 連携も併せて削除されます。取り消せません。",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("「完了」へ遷移します。この操作は取り消せません。"),
+    ).toBeVisible();
+  });
 });

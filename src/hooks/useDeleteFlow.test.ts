@@ -139,6 +139,38 @@ describe("useDeleteFlow", () => {
     expect(result.current.busy).toBe(false);
   });
 
+  it("削除失敗時点で表示中の number が削除対象と異なる場合は error を反映しない（stale なエラーの漏れ防止・レビュー指摘対応）", async () => {
+    let rejectRemove: ((err: unknown) => void) | undefined;
+    const remove = createRemove(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectRemove = reject;
+        }),
+    );
+    const { result, rerender } = renderHook(
+      ({ number }) =>
+        useDeleteFlow({ number, remove, onDeleted: vi.fn<() => void>() }),
+      { initialProps: { number: 1 } },
+    );
+
+    act(() => result.current.request());
+    act(() => result.current.confirm());
+    expect(result.current.busy).toBe(true);
+
+    // 削除 in-flight のまま、表示中の number が別の値へ切り替わる
+    // （同一マウントのまま別エンティティへ client-side 遷移した状況）。
+    rerender({ number: 2 });
+
+    await act(async () => {
+      rejectRemove?.(new ConvexError("削除に失敗しました"));
+      await Promise.resolve();
+    });
+
+    // number=1 の削除失敗が、現在表示中（number=2）の画面へ漏れ出さない。
+    expect(result.current.error).toBeNull();
+    expect(result.current.busy).toBe(false);
+  });
+
   it("number が変わると確認パネルの開閉状態とエラーをリセットする", async () => {
     const remove = createRemove(async () => {
       throw new ConvexError("削除に失敗しました");
