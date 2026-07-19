@@ -2,9 +2,11 @@ import s from "./ConfirmPanel.module.css";
 
 /**
  * 破壊的操作（削除・done/canceled への遷移）の確認パネル。
- * IssueTable（行内・エラー再試行のためパネルを開いたまま await）と
- * TaskDetail（確認時に即パネルを閉じてから実行）の両方で共有する。
- * busy 中は確定・キャンセルとも disabled にし、二重実行や取り消しを防ぐ。
+ * IssueDetail / TaskDetail の削除確認（useDeleteFlow 経由・エラー再試行の
+ * ためパネルを開いたまま await し busy/error を表示する）と、TaskDetail の
+ * 状態遷移確認（確定時に即パネルを閉じてから実行し、busy/error は渡さない）
+ * の両方で共有する。busy 中は確定・キャンセルとも disabled にし、二重実行や
+ * 取り消しを防ぐ。
  */
 export function ConfirmPanel({
   message,
