@@ -29,10 +29,13 @@ export type CurrentMember = NonNullable<
  * members はロード中判定（`members !== undefined`）と担当者選択肢に
  * 呼び出し側が必要なため、currentMember と合わせて返す。api.members.list は
  * PII（email 等）を含まない最小限のフィールド（_id, name）のみ返す
- * （convex/members.ts 参照）。
+ * （convex/members.ts 参照）。currentMember だけが必要な呼び出し側は
+ * `withMembers: false` で members.list の購読を止められる（不要な購読は
+ * member の追加・改名のたびに画面全体を再レンダーさせる）。
  */
-export function useCurrentMember() {
-  const members = useQuery(api.members.list);
+export function useCurrentMember(options?: { withMembers?: boolean }) {
+  const withMembers = options?.withMembers ?? true;
+  const members = useQuery(api.members.list, withMembers ? {} : "skip");
   const me = useQuery(api.members.me);
 
   return {

@@ -38,9 +38,17 @@ export type MutateMock = (args: unknown) => Promise<unknown>;
  * vi.mock("convex/react", ...) の factory 本体。
  * 呼び出し側は `vi.hoisted` で作った useQueryMock / mutate をそのまま渡す。
  */
+/** 認証ゲート（App.tsx）の分岐制御に使う認証状態。 */
+export type MockAuthState = "authenticated" | "unauthenticated" | "loading";
+
 export const buildConvexReactMock = async (
   useQueryMock: QueryMock,
   mutate: MutateMock,
+  // 認証ゲート（App.tsx の AuthLoading / Unauthenticated / Authenticated）の
+  // 分岐制御。既定は「認証済み」= Authenticated だけが children を描画する。
+  // 未認証・ロード中の分岐を検証するテストは vi.hoisted のホルダー経由で
+  // getAuthState を渡し、テストごとに値を差し替える。
+  getAuthState: () => MockAuthState = () => "authenticated",
 ) => {
   const { getFunctionName } = await import("convex/server");
   return {
@@ -49,12 +57,12 @@ export const buildConvexReactMock = async (
       args?: Record<string, unknown>,
     ) => useQueryMock(getFunctionName(query), args),
     useMutation: () => mutate,
-    // 認証ゲート（App.tsx の AuthLoading / Unauthenticated / Authenticated）。
-    // テストは「認証済み」を既定とし、Authenticated だけが children を描画する。
-    // 未認証・ロード中の分岐を検証するテストは vi.mock で個別に差し替える。
-    Authenticated: ({ children }: { children?: unknown }) => children ?? null,
-    Unauthenticated: () => null,
-    AuthLoading: () => null,
+    Authenticated: ({ children }: { children?: unknown }) =>
+      getAuthState() === "authenticated" ? (children ?? null) : null,
+    Unauthenticated: ({ children }: { children?: unknown }) =>
+      getAuthState() === "unauthenticated" ? (children ?? null) : null,
+    AuthLoading: ({ children }: { children?: unknown }) =>
+      getAuthState() === "loading" ? (children ?? null) : null,
   };
 };
 

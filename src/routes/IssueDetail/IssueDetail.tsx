@@ -68,7 +68,10 @@ export function IssueDetail() {
     api.issues.getByRef,
     number !== null ? { projectKey, number } : "skip",
   );
-  const { currentMember, currentMemberLoading } = useCurrentMember();
+  // 担当者選択肢（members）は AddTaskForm 側で不要のため購読しない
+  const { currentMember, currentMemberLoading } = useCurrentMember({
+    withMembers: false,
+  });
 
   const updateIssue = useMutation(api.issues.update);
   const removeIssue = useMutation(api.issues.remove);

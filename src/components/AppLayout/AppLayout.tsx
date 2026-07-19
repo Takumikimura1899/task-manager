@@ -8,6 +8,7 @@ import {
   type MemberSummary,
   useCurrentMember,
 } from "../../hooks/useCurrentMember";
+import { convexErrorMessage } from "../../lib/convexErrorMessage";
 import { NoMembersNotice } from "../NoMembersNotice/NoMembersNotice";
 import { Skeleton } from "../Skeleton/Skeleton";
 import s from "./AppLayout.module.css";
@@ -65,6 +66,8 @@ export function AppLayout() {
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
+  const [signingOut, setSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
 
   function selectProject(id: Id<"projects">) {
     setSelectedId(id);
@@ -72,14 +75,47 @@ export function AppLayout() {
   }
 
   async function handleSignOut() {
+    setSigningOut(true);
+    setSignOutError(null);
     try {
       await signOut();
+      // 成功時は Unauthenticated ゲート（App.tsx）が画面ごと切り替えるため、
+      // アンマウント後の setState を避けて signingOut は戻さない。
     } catch (err) {
-      // 失敗時は画面がログイン状態のまま残るため再操作可能。握り潰さず
-      // ログに残す（CLAUDE.md「サイレント失敗の回避」）。
-      console.error("ログアウトに失敗しました", err);
+      // 失敗を console だけに出して黙らない（CLAUDE.md「サイレント失敗の回避」）。
+      // 画面はログイン状態のまま残るので、エラーを見せて再操作させる。
+      setSignOutError(
+        convexErrorMessage(
+          err,
+          "ログアウトに失敗しました。再度お試しください。",
+        ),
+      );
+      setSigningOut(false);
     }
   }
+
+  // ヘッダー右端のセッション表示。プロジェクト 0 件分岐でも認証済みのため、
+  // ログアウト導線は常に維持する（無いと別アカウントへ切り替えられず詰む）。
+  const session = (
+    <div className={s.session}>
+      {currentMember !== null && (
+        <span className={s.user}>{currentMember.name}</span>
+      )}
+      <button
+        className={s.logout}
+        disabled={signingOut}
+        onClick={handleSignOut}
+        type="button"
+      >
+        ログアウト
+      </button>
+      {signOutError !== null && (
+        <p className={s.sessionError} role="alert">
+          {signOutError}
+        </p>
+      )}
+    </div>
+  );
 
   // 読み込み中もタイトルと画面枠を維持し、プロジェクト選択・Issue 一覧・
   // ボードが入る領域をスケルトンで示す（Issue #29：全画面差し替えをやめる）。
@@ -101,18 +137,9 @@ export function AppLayout() {
   if (projects.length === 0) {
     return (
       <main className={s.app}>
-        {/* プロジェクト 0 件でも認証済みのため、ログアウト導線は維持する
-            （これが無いと別アカウントへ切り替えられず詰む）。 */}
         <header className={s.header}>
           <h1 className={s.title}>Task Manager</h1>
-          <div className={s.session}>
-            {currentMember !== null && (
-              <span className={s.user}>{currentMember.name}</span>
-            )}
-            <button className={s.logout} onClick={handleSignOut} type="button">
-              ログアウト
-            </button>
-          </div>
+          {session}
         </header>
         <p className="hint">
           プロジェクトがありません。MCP もしくは Convex
@@ -150,14 +177,7 @@ export function AppLayout() {
             ))}
           </select>
         </label>
-        <div className={s.session}>
-          {currentMember !== null && (
-            <span className={s.user}>{currentMember.name}</span>
-          )}
-          <button className={s.logout} onClick={handleSignOut} type="button">
-            ログアウト
-          </button>
-        </div>
+        {session}
       </header>
       {/* 認証済みでも対応する Member が未リンクだと作成手段が消えるため、
           黙って隠さず理由を案内する（Issue #16 / #1）。/ と /issues の両方を
