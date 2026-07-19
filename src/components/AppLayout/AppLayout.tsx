@@ -101,7 +101,19 @@ export function AppLayout() {
   if (projects.length === 0) {
     return (
       <main className={s.app}>
-        <h1 className={s.title}>Task Manager</h1>
+        {/* プロジェクト 0 件でも認証済みのため、ログアウト導線は維持する
+            （これが無いと別アカウントへ切り替えられず詰む）。 */}
+        <header className={s.header}>
+          <h1 className={s.title}>Task Manager</h1>
+          <div className={s.session}>
+            {currentMember !== null && (
+              <span className={s.user}>{currentMember.name}</span>
+            )}
+            <button className={s.logout} onClick={handleSignOut} type="button">
+              ログアウト
+            </button>
+          </div>
+        </header>
         <p className="hint">
           プロジェクトがありません。MCP もしくは Convex
           ダッシュボードから作成してください。
