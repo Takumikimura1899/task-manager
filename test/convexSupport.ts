@@ -47,6 +47,7 @@ export const seedMember = (
     name: string;
     email: string;
     role: "admin" | "member";
+    authUserId: Id<"users">;
   }> = {},
 ) =>
   t.run((ctx) =>
@@ -57,6 +58,19 @@ export const seedMember = (
       ...overrides,
     }),
   );
+
+/**
+ * Convex Auth の users を1件 seed する（Issue #1 認証基盤）。
+ * email 未設定（プロフィール取得前の状態を模したケース）も overrides で表現できる。
+ */
+export const seedUser = (t: T, overrides: Partial<{ email: string }> = {}) =>
+  t.run((ctx) => ctx.db.insert("users", { ...overrides }));
+
+/**
+ * `t.withIdentity` に渡す subject を組み立てる。@convex-dev/auth の getAuthUserId は
+ * subject を `|` で分割した前半を users._id として解釈する（セッションIDは任意の値でよい）。
+ */
+export const authSubject = (userId: Id<"users">) => `${userId}|test-session`;
 
 /**
  * 「実体のないメンバー参照」を作る：seed 直後に delete し、Id だけを残す。

@@ -4,7 +4,7 @@ import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { seedMember } from "../test/convexSupport";
+import { authSubject, seedMember, seedUser } from "../test/convexSupport";
 
 /**
  * Member Core API の結合テスト（基本設計書 §3 / Issue #22）。
@@ -102,5 +102,42 @@ describe("members.list（PII 除外）", () => {
       { _id: alice, name: "Alice" },
       { _id: bob, name: "Bob" },
     ]);
+  });
+});
+
+describe("members.me（Issue #1: 招待制リンクの照会）", () => {
+  it("未認証なら null を返す", async () => {
+    const t = setup();
+
+    expect(await t.query(api.members.me, {})).toBeNull();
+  });
+
+  it("認証済みでも member にリンクされていなければ null を返す（email 一致では代替しない）", async () => {
+    const t = setup();
+    const userId = await seedUser(t, { email: "alice@example.com" });
+    // 同じ email の member が存在していても、authUserId が未設定なら me は解決しない
+    await seedMember(t, { email: "alice@example.com" });
+    const asAlice = t.withIdentity({ subject: authSubject(userId) });
+
+    expect(await asAlice.query(api.members.me, {})).toBeNull();
+  });
+
+  it("リンク済みなら _id・name・role・email を返す", async () => {
+    const t = setup();
+    const userId = await seedUser(t, { email: "alice@example.com" });
+    const memberId = await seedMember(t, {
+      name: "Alice",
+      email: "alice@example.com",
+      role: "admin",
+      authUserId: userId,
+    });
+    const asAlice = t.withIdentity({ subject: authSubject(userId) });
+
+    expect(await asAlice.query(api.members.me, {})).toEqual({
+      _id: memberId,
+      name: "Alice",
+      role: "admin",
+      email: "alice@example.com",
+    });
   });
 });
