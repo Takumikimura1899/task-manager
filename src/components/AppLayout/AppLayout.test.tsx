@@ -13,7 +13,7 @@ import { AppLayout } from "./AppLayout";
 
 /**
  * AppLayout のローディング表示（Issue #29）・プロジェクト0件分岐・
- * タブナビ（/ タスク・/issues Issue）・プロジェクト選択 select を検証する。
+ * タブナビ（/ Task・/issues Issue）・プロジェクト選択 select を検証する。
  * Convex は外部依存のためモックする。projects.list / members.list はいずれも
  * 引数なしで呼ばれるため args では区別できず、api の関数参照（anyApi）も
  * 参照同一性を持たない。ディスパッチの詳細は test/reactQuerySupport.ts 参照。
@@ -96,8 +96,8 @@ describe("AppLayout のタブナビ", () => {
   });
 
   it.each([
-    ["/", "タスク", "Issue"],
-    ["/issues", "Issue", "タスク"],
+    ["/", "Task", "Issue"],
+    ["/issues", "Issue", "Task"],
   ] as const)(
     "現在地 %s では %s タブに aria-current=page が付く",
     (path, activeLabel, inactiveLabel) => {
