@@ -88,9 +88,10 @@ export function IssueDetail() {
   });
 
   // 破壊的操作（削除）の確認フロー。busy 中は ConfirmPanel を disabled にし
-  // 二重実行を防ぐ（IssueTable の削除確認と同方式：パネルを開いたまま
-  // await し、busy/error を渡す。IssueTable 側の行内削除導線は #105 で
-  // 撤去され、本画面の danger セクションが唯一の削除導線になる）。
+  // 二重実行を防ぐ。パネルを開いたまま await し busy/error を表示する
+  // （確定前に閉じると失敗がサイレントになるため）。一覧行末の削除導線
+  // （旧 IssueTable）は #105 で撤去済みで、本画面の danger セクションが
+  // Issue の唯一の削除導線になっている。
   // number スコープ・client-side 遷移時のリセットはフック側の責務
   // （src/hooks/useDeleteFlow.ts・Issue #104）。
   const deleteFlow = useDeleteFlow({

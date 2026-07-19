@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConfirmPanel } from "./ConfirmPanel";
 
 /**
- * 破壊的操作の確認パネル（IssueTable の削除確認・TaskDetail の遷移/削除確認で
+ * 破壊的操作の確認パネル（Issue/Task 詳細の削除確認・TaskDetail の遷移確認で
  * 共有）。表示内容・確定/キャンセルの呼び出し・busy 時の disabled・
  * role=alert のエラー表示を検証する。
  */

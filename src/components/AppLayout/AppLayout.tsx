@@ -106,7 +106,7 @@ export function AppLayout() {
         <h1 className={s.title}>Task Manager</h1>
         <nav className={s.nav}>
           <NavLink className={s.navLink} end to="/">
-            タスク
+            Task
           </NavLink>
           <NavLink className={s.navLink} to="/issues">
             Issue
