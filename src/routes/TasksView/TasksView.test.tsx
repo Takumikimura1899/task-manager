@@ -36,6 +36,14 @@ vi.mock("convex/react", async () => {
   return buildConvexReactMock(useQueryMock, mutate);
 });
 
+// AppLayout がログアウト導線で useAuthActions を呼ぶため差し替える
+// （押下検証は AppLayout.test.tsx 側の責務）。
+vi.mock("@convex-dev/auth/react", async () => {
+  const { buildConvexAuthActionsMock } =
+    await import("../../../test/reactQuerySupport");
+  return buildConvexAuthActionsMock({});
+});
+
 const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
   _id: "task_1" as Id<"tasks">,
   _creationTime: 1000,

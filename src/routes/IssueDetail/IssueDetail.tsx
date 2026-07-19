@@ -68,7 +68,7 @@ export function IssueDetail() {
     api.issues.getByRef,
     number !== null ? { projectKey, number } : "skip",
   );
-  const { members, currentMember } = useCurrentMember();
+  const { currentMember, currentMemberLoading } = useCurrentMember();
 
   const updateIssue = useMutation(api.issues.update);
   const removeIssue = useMutation(api.issues.remove);
@@ -253,10 +253,10 @@ export function IssueDetail() {
         {currentMember !== null ? (
           <AddTaskForm createdBy={currentMember._id} issue={issue._id} />
         ) : (
-          // メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
-          // （Issue #16、AppLayout.tsx と同方針）。members 読み込み中（undefined）は
+          // Member 未リンクでは作成手段が消えるため、黙って隠さず理由を案内する
+          // （Issue #16 / #1、AppLayout.tsx と同方針）。members.me 読み込み中は
           // 判定できないため何も出さない。
-          members !== undefined && <NoMembersNotice />
+          !currentMemberLoading && <NoMembersNotice />
         )}
       </section>
 

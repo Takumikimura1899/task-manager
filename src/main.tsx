@@ -1,4 +1,5 @@
-import { ConvexProvider, ConvexReactClient } from "convex/react";
+import { ConvexAuthProvider } from "@convex-dev/auth/react";
+import { ConvexReactClient } from "convex/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
@@ -22,10 +23,13 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <ConvexProvider client={convex}>
+    {/* 認証トークンをリクエストへ付与するため ConvexProvider ではなく
+        ConvexAuthProvider を使う（素の ConvexProvider はトークンを送らず、
+        ctx.auth が常に null になる）。 */}
+    <ConvexAuthProvider client={convex}>
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </ConvexProvider>
+    </ConvexAuthProvider>
   </StrictMode>,
 );

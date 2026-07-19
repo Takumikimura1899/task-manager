@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createCurrentMember,
   createMember,
   createProject,
   createQueryDispatcher,
@@ -31,6 +32,14 @@ const { useQueryMock, mutate } = vi.hoisted(() => ({
 vi.mock("convex/react", async () => {
   const { buildConvexReactMock } = await import("../test/reactQuerySupport");
   return buildConvexReactMock(useQueryMock, mutate);
+});
+
+// AppLayout がログアウト導線で useAuthActions を呼ぶため差し替える
+// （既定の spy で十分。押下検証は AppLayout.test.tsx 側の責務）。
+vi.mock("@convex-dev/auth/react", async () => {
+  const { buildConvexAuthActionsMock } =
+    await import("../test/reactQuerySupport");
+  return buildConvexAuthActionsMock({});
 });
 
 beforeEach(() => {
@@ -68,6 +77,7 @@ describe("App の /issues ルート", () => {
       createQueryDispatcher({
         "projects:list": [project],
         "members:list": [member],
+        "members:me": createCurrentMember(),
         "issues:list": [],
       }),
     );

@@ -15,14 +15,27 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 const mocks = vi.hoisted(() => ({
   issue: undefined as unknown,
   members: [] as unknown,
+  me: null as unknown,
   mutate: vi.fn<(args: Record<string, unknown>) => Promise<unknown>>(),
 }));
 
-vi.mock("convex/react", () => ({
-  useQuery: (_query: unknown, args?: unknown) =>
-    args === undefined ? mocks.members : mocks.issue,
-  useMutation: () => mocks.mutate,
-}));
+// members.list / members.me はいずれも引数なしで呼ばれ args では区別できない
+// ため、関数名で出し分ける（App.test.tsx 等と同方式）。issue（getByRef）は
+// フォールバックで受ける。
+vi.mock("convex/react", async () => {
+  const { getFunctionName } = await import("convex/server");
+  return {
+    useQuery: (query: unknown, _args?: unknown) => {
+      const name = getFunctionName(
+        query as Parameters<typeof getFunctionName>[0],
+      );
+      if (name === "members:list") return mocks.members;
+      if (name === "members:me") return mocks.me;
+      return mocks.issue;
+    },
+    useMutation: () => mocks.mutate,
+  };
+});
 
 // Markdown エディタは jsdom で不安定な重量ライブラリのため textarea スタブへ差し替える
 vi.mock("../../components/MarkdownEditor/MarkdownEditor", () => ({
@@ -97,6 +110,9 @@ const renderIssueDetailWithNavHelper = () =>
 beforeEach(() => {
   mocks.issue = undefined;
   mocks.members = [];
+  // 既定は「リンク済み Member でログイン中」。未リンク・ロード中の分岐は
+  // AddTaskForm 表示のテストが個別に上書きする。
+  mocks.me = { _id: "member_1", name: "Alice", role: "member" };
   mocks.mutate.mockReset();
   mocks.mutate.mockResolvedValue(undefined);
 });
@@ -219,9 +235,10 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
 });
 
 describe("IssueDetail の AddTaskForm 表示", () => {
-  it("メンバーがいる場合はタスク一覧末尾に AddTaskForm を表示し、NoMembersNotice は出さない", () => {
+  it("Member がリンク済みの場合はタスク一覧末尾に AddTaskForm を表示し、NoMembersNotice は出さない", () => {
     mocks.issue = createIssue();
     mocks.members = [{ _id: "member_1", name: "Alice" }];
+    mocks.me = { _id: "member_1", name: "Alice", role: "member" };
     renderIssueDetail();
 
     expect(
@@ -230,22 +247,24 @@ describe("IssueDetail の AddTaskForm 表示", () => {
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
-  it("メンバーが0件（ロード完了）の場合は AddTaskForm の代わりに NoMembersNotice を表示する（Issue #16）", () => {
+  it("Member 未リンク（members.me が null）の場合は AddTaskForm の代わりに NoMembersNotice を表示する（Issue #16 / #1）", () => {
     mocks.issue = createIssue();
     mocks.members = [];
+    mocks.me = null;
     renderIssueDetail();
 
     expect(
       screen.queryByRole("button", { name: "＋ Task を作成" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("note")).toHaveTextContent(
-      "メンバーが登録されていない",
+      "対応するメンバーが登録されていない",
     );
   });
 
-  it("メンバーがロード中（undefined）は AddTaskForm も NoMembersNotice も出さない", () => {
+  it("members.me がロード中（undefined）は AddTaskForm も NoMembersNotice も出さない", () => {
     mocks.issue = createIssue();
     mocks.members = undefined;
+    mocks.me = undefined;
     renderIssueDetail();
 
     expect(

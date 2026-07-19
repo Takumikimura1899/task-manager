@@ -1,3 +1,4 @@
+import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
 import { useState } from "react";
 import { NavLink, Outlet, useOutletContext } from "react-router-dom";
@@ -59,7 +60,8 @@ export function useAppOutletContext(): AppOutletContext {
 
 export function AppLayout() {
   const projects = useQuery(api.projects.list);
-  const { members, currentMember } = useCurrentMember();
+  const { members, currentMember, currentMemberLoading } = useCurrentMember();
+  const { signOut } = useAuthActions();
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
@@ -67,6 +69,16 @@ export function AppLayout() {
   function selectProject(id: Id<"projects">) {
     setSelectedId(id);
     writeSelectedProject(id);
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut();
+    } catch (err) {
+      // 失敗時は画面がログイン状態のまま残るため再操作可能。握り潰さず
+      // ログに残す（CLAUDE.md「サイレント失敗の回避」）。
+      console.error("ログアウトに失敗しました", err);
+    }
   }
 
   // 読み込み中もタイトルと画面枠を維持し、プロジェクト選択・Issue 一覧・
@@ -126,11 +138,20 @@ export function AppLayout() {
             ))}
           </select>
         </label>
+        <div className={s.session}>
+          {currentMember !== null && (
+            <span className={s.user}>{currentMember.name}</span>
+          )}
+          <button className={s.logout} onClick={handleSignOut} type="button">
+            ログアウト
+          </button>
+        </div>
       </header>
-      {/* メンバー 0 件では作成手段が消えるため、黙って隠さず理由を案内する
-          （Issue #16）。/ と /issues の両方をここで一元的にカバーする。
-          members 読み込み中（undefined）は判定できないため何も出さない。 */}
-      {currentMember === null && members !== undefined && <NoMembersNotice />}
+      {/* 認証済みでも対応する Member が未リンクだと作成手段が消えるため、
+          黙って隠さず理由を案内する（Issue #16 / #1）。/ と /issues の両方を
+          ここで一元的にカバーする。members.me 読み込み中は判定できないため
+          何も出さない。 */}
+      {!currentMemberLoading && currentMember === null && <NoMembersNotice />}
       {/* 画面本体（タスク一覧 / Issue 一覧）は子ルートが描画する。main
           ランドマークは各子ルート（TasksView / IssuesView）側が持つため、
           ここでは main にしない（Issue #17 の ErrorBoundary フォールバックも
