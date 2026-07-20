@@ -14,6 +14,14 @@ const INVITE_CODE_REJECTED_MESSAGE =
   "招待コードが確認できませんでした。管理者に招待の再発行を依頼してください。";
 
 /**
+ * inviteTokenHash 未設定 member への照合で使うダミー値（sha256 hex と同じ64文字）。
+ * timingSafeEqual を常に実行し、「トークン発行済みか否か」で比較の有無という
+ * タイミング差を作らないためのもの。
+ */
+const DUMMY_INVITE_TOKEN_HASH =
+  "0000000000000000000000000000000000000000000000000000000000000000";
+
+/**
  * Convex Auth の users を既存 member にリンクする招待制ゲート（Issue #1 PR1・招待
  * トークン方式は #1 追補）。
  *
@@ -59,13 +67,15 @@ export async function linkAuthUserToMember(
 
   if (existing !== null) {
     if (existing.authUserId === undefined) {
-      // オラクル低減: inviteTokenHash の有無に関わらず常に sha256Hex を通してから
-      // 判定する（早期 return しない）。分岐 (a)(b) のタイミング差を作らないため。
+      // オラクル低減: inviteTokenHash の有無に関わらず常に sha256Hex と
+      // timingSafeEqual の両方を通してから判定する（早期 return も短絡もしない）。
+      // 分岐 (a)(b) のタイミング差を作らないため、hash 未設定時はダミー値と比較する
+      // （sha256Hex がオール0の digest を返すことは事実上ないため必ず不一致になる）。
       const providedHash = await sha256Hex(inviteCode ?? "");
-      const expectedHash = existing.inviteTokenHash;
+      const expectedHash = existing.inviteTokenHash ?? DUMMY_INVITE_TOKEN_HASH;
       const matched =
-        expectedHash !== undefined &&
-        timingSafeEqual(providedHash, expectedHash);
+        timingSafeEqual(providedHash, expectedHash) &&
+        existing.inviteTokenHash !== undefined;
       if (!matched) {
         throw new ConvexError(INVITE_CODE_REJECTED_MESSAGE);
       }
