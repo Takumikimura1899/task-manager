@@ -59,6 +59,51 @@ export const create = mutation({
   },
 });
 
+/**
+ * 招待トークンの再発行（Issue #1 追補・救済経路）。
+ *
+ * 招待トークン方式の導入前に招待された member（inviteTokenHash 未設定）や、
+ * 招待コードを紛失した member はこのままだとサインアップ不能なまま詰む
+ * （member を削除して members.create で作り直す以外にアプリ内から救済する
+ * 手段がなかった）。admin がこのミューテーションで新しいトークンを発行し
+ * 直せるようにする。
+ *
+ * - actor（呼び出し元）が role: "admin" であることを要求する。
+ * - 既に authUserId がリンク済みの member への再発行は拒否する（乗っ取り
+ *   防止。リンク済み member に新しい招待トークンを発行できてしまうと、
+ *   別の authUserId へ付け替える横取り経路になってしまう）。
+ * - members.create と同一の設計: 平文トークンは呼び出し元へこの一度だけ返し、
+ *   DB には SHA-256 ハッシュのみを保存する。
+ */
+export const reissueInviteToken = mutation({
+  args: {
+    memberId: v.id("members"),
+    accessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireActor(ctx, args.accessToken);
+    if (actor.role !== "admin") {
+      throw new ConvexError("この操作には admin 権限が必要です");
+    }
+
+    const target = await ctx.db.get(args.memberId);
+    if (target === null) {
+      throw new ConvexError("指定された Member が存在しません");
+    }
+    if (target.authUserId !== undefined) {
+      throw new ConvexError(
+        "既にサインアップ済みの Member には招待トークンを再発行できません",
+      );
+    }
+
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = await sha256Hex(inviteToken);
+    await ctx.db.patch(target._id, { inviteTokenHash });
+
+    return { memberId: target._id, inviteToken };
+  },
+});
+
 export const getByEmail = query({
   args: { email: v.string(), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
