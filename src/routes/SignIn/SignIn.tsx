@@ -99,7 +99,7 @@ export function SignIn() {
           />
           <p className={s.hint}>パスワードは 8 文字以上です。</p>
           {error !== null && (
-            <p className={s.error} id={errorId} role="alert">
+            <p className="actionError" id={errorId} role="alert">
               {error}
             </p>
           )}

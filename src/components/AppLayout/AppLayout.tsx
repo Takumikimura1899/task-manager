@@ -82,8 +82,9 @@ export function AppLayout() {
       // 成功時は Unauthenticated ゲート（App.tsx）が画面ごと切り替えるため、
       // アンマウント後の setState を避けて signingOut は戻さない。
     } catch (err) {
-      // 失敗を console だけに出して黙らない（CLAUDE.md「サイレント失敗の回避」）。
-      // 画面はログイン状態のまま残るので、エラーを見せて再操作させる。
+      // 画面表示（再操作の促し）と console（実例外の調査ログ）の両方に残す
+      // （CLAUDE.md「サイレント失敗の回避」。定型文言だけでは原因調査ができない）。
+      console.error("ログアウトに失敗しました", err);
       setSignOutError(
         convexErrorMessage(
           err,
@@ -110,7 +111,7 @@ export function AppLayout() {
         ログアウト
       </button>
       {signOutError !== null && (
-        <p className={s.sessionError} role="alert">
+        <p className="actionError" role="alert">
           {signOutError}
         </p>
       )}

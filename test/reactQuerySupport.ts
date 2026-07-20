@@ -34,13 +34,13 @@ export type QueryMock = (
 
 export type MutateMock = (args: unknown) => Promise<unknown>;
 
+/** 認証ゲート（App.tsx）の分岐制御に使う認証状態。 */
+export type MockAuthState = "authenticated" | "unauthenticated" | "loading";
+
 /**
  * vi.mock("convex/react", ...) の factory 本体。
  * 呼び出し側は `vi.hoisted` で作った useQueryMock / mutate をそのまま渡す。
  */
-/** 認証ゲート（App.tsx）の分岐制御に使う認証状態。 */
-export type MockAuthState = "authenticated" | "unauthenticated" | "loading";
-
 export const buildConvexReactMock = async (
   useQueryMock: QueryMock,
   mutate: MutateMock,

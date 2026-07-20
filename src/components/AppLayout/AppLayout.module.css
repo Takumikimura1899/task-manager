@@ -142,12 +142,6 @@
     cursor: not-allowed;
   }
 
-  .sessionError {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--color-danger);
-  }
-
   /* ローディング中のプレースホルダ寸法（picker / Issue パネル / ボード領域） */
   .loading {
     display: flex;
