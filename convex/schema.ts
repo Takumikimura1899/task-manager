@@ -57,19 +57,16 @@ export default defineSchema({
   // Convex Auth 用テーブル（users / authAccounts / authSessions 等）
   ...authTables,
 
-  // users は authTables のフィールド（インデックスも含め漏れなく再現。email
-  // インデックスは auth 内部の実装が依存する）に、招待トークン方式（招待ウィンドウ
-  // 乗っ取り対策・Issue #1）で使い捨てで受け渡す inviteCode を追加する。
+  // users は authTables.users のフィールド定義をそのまま spread し（インデックスは
+  // 手動で再現。email インデックスは auth 内部の実装が依存する）、招待トークン方式
+  // （招待ウィンドウ乗っ取り対策・Issue #1）で使い捨てで受け渡す inviteCode を追加する。
   // convex/auth.ts の profile() が signUp 引数から一度だけ書き込み、
   // convex/lib/memberLink.ts の linkAuthUserToMember が照合後に必ず除去する。
+  // フィールドを手書きで複製しないため、@convex-dev/auth のバージョンアップに
+  // 伴うフィールド変更にも追随できる（インデックス定義側は library が公開する
+  // 型がなく spread できないため、手動で維持する）。
   users: defineTable({
-    name: v.optional(v.string()),
-    image: v.optional(v.string()),
-    email: v.optional(v.string()),
-    emailVerificationTime: v.optional(v.number()),
-    phone: v.optional(v.string()),
-    phoneVerificationTime: v.optional(v.number()),
-    isAnonymous: v.optional(v.boolean()),
+    ...authTables.users.validator.fields,
     inviteCode: v.optional(v.string()),
   })
     .index("email", ["email"])
