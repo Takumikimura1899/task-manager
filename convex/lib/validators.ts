@@ -36,6 +36,23 @@ export function isValidHours(n: number): boolean {
   return Number.isFinite(n) && n >= 0;
 }
 
+/** 招待コードの受理上限。正規トークンは 64 文字（generateInviteToken の hex）。 */
+export const MAX_INVITE_CODE_LENGTH = 128;
+
+/**
+ * サインアップ時の招待コード引数の検証・取り出し（convex/auth.ts の Password
+ * profile() で使用）。上限を超える入力は users doc へ書き込む前に ConvexError で
+ * 拒否し、巨大文字列の書き込みによる容量・リソース濫用を防ぐ（どのみち照合には
+ * 一致し得ない）。文字列以外（signIn フロー等の未指定含む）は undefined を返す。
+ */
+export function extractInviteCodeParam(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value.length > MAX_INVITE_CODE_LENGTH) {
+    throw new ConvexError("招待コードが不正です");
+  }
+  return value;
+}
+
 /**
  * 見積・実績工数フィールドの検証（tasks.updateFields の estimate/actual で共有）。
  * undefined/null（未指定・クリア）は素通しし、数値が isValidHours を満たさない

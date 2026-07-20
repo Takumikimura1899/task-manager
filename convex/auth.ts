@@ -2,10 +2,11 @@ import { Password } from "@convex-dev/auth/providers/Password";
 import { convexAuth } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 import { linkAuthUserToMember } from "./lib/memberLink";
-import { isValidEmail, normalizeEmail } from "./lib/validators";
-
-/** 招待コードの受理上限。正規トークンは 64 文字（generateInviteToken の hex）。 */
-const MAX_INVITE_CODE_LENGTH = 128;
+import {
+  extractInviteCodeParam,
+  isValidEmail,
+  normalizeEmail,
+} from "./lib/validators";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
@@ -18,20 +19,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         // inviteCode は招待トークン方式（招待ウィンドウ乗っ取り対策・Issue #1）で
         // signUp 時のみ渡される。undefined は Convex 値として不正なため、
         // string のときだけ条件付き spread で users doc へ書き込む。
-        // 正規トークンは 64 文字（32 バイトの hex）固定。上限（余裕をみて 128 文字）を
-        // 超える入力は users doc へ書き込む前に拒否し、巨大文字列の書き込みによる
-        // 容量・リソース濫用を防ぐ（どのみち照合には一致し得ない）。
-        if (
-          typeof params.inviteCode === "string" &&
-          params.inviteCode.length > MAX_INVITE_CODE_LENGTH
-        ) {
-          throw new ConvexError("招待コードが不正です");
-        }
+        // 長さ上限の検証（巨大文字列の書き込み拒否）は extractInviteCodeParam 側。
+        const inviteCode = extractInviteCodeParam(params.inviteCode);
         return {
           email,
-          ...(typeof params.inviteCode === "string"
-            ? { inviteCode: params.inviteCode }
-            : {}),
+          ...(inviteCode !== undefined ? { inviteCode } : {}),
         };
       },
     }),
