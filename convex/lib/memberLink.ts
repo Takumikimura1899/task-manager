@@ -34,22 +34,22 @@ export async function linkAuthUserToMember(
   userId: Id<"users">,
 ): Promise<void> {
   const user = await ctx.db.get(userId);
-  if (user === null) {
+  if (user === null || user.email === undefined) {
     throw new ConvexError("認証ユーザーにメールアドレスが設定されていません");
   }
 
   // 冒頭で無条件クリア（defense-in-depth）: この関数を通る限り、リンクの成否や
   // この後の分岐に関わらず users.inviteCode は必ず除去する。照合に使う値は
   // 消す前にローカル変数へ退避しておく。将来 verify/OAuth 等の経路が追加されても
-  // 平文の inviteCode が users doc に残留しないよう、経路によらず先回りで防ぐ。
+  // 平文の inviteCode が users doc に残留しないよう、経路によらず先回りで防ぐ
+  // （上のガードを通った throw 経路はどのみちトランザクションごとロールバック
+  // されるため、クリアより前に置いても後に置いても観測結果は変わらない。
+  // ガード自体は単一箇所にまとめ、エラーメッセージの重複を避ける）。
   const inviteCode = user.inviteCode;
   if (inviteCode !== undefined) {
     await ctx.db.patch(userId, { inviteCode: undefined });
   }
 
-  if (user.email === undefined) {
-    throw new ConvexError("認証ユーザーにメールアドレスが設定されていません");
-  }
   const email = normalizeEmail(user.email);
 
   const existing = await ctx.db
