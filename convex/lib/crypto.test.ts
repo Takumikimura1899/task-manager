@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { decryptSecret, encryptSecret, timingSafeTokenEqual } from "./crypto";
+import {
+  decryptSecret,
+  encryptSecret,
+  generateInviteToken,
+  timingSafeTokenEqual,
+} from "./crypto";
 
 /**
  * 対称暗号化（AES-256-GCM）・MCP アクセストークン比較の振る舞いを検証する。
@@ -75,5 +80,21 @@ describe("timingSafeTokenEqual（MCP アクセストークン比較・Issue #1 P
 
   it("空文字同士は一致と判定する（fail closed は呼び出し側の責務・convex/lib/auth.ts）", async () => {
     expect(await timingSafeTokenEqual("", "")).toBe(true);
+  });
+});
+
+describe("generateInviteToken（招待トークン生成・招待ウィンドウ乗っ取り対策）", () => {
+  it("16進文字列（0-9a-f）を返す", () => {
+    expect(generateInviteToken()).toMatch(/^[0-9a-f]+$/);
+  });
+
+  it("64文字（32byte 相当）を返す", () => {
+    expect(generateInviteToken()).toHaveLength(64);
+  });
+
+  it("呼び出しごとに異なるトークンを返す", () => {
+    const a = generateInviteToken();
+    const b = generateInviteToken();
+    expect(a).not.toBe(b);
   });
 });

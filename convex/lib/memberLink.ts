@@ -1,25 +1,53 @@
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { sha256Hex, timingSafeEqual } from "./crypto";
 import { normalizeEmail } from "./validators";
 
 /**
- * Convex Auth の users を既存 member にリンクする招待制ゲート（Issue #1 PR1）。
+ * 招待コード拒否時の文言（オラクル低減）。member.inviteTokenHash が未設定の
+ * ケースと inviteCode 不一致のケースを同一文言にし、レスポンスから
+ * 「member は存在するがコードが違う」と「そもそも招待トークンが発行されていない」
+ * を区別させない（招待ウィンドウ乗っ取り対策、gemini security-high 3611654753）。
+ */
+const INVITE_CODE_REJECTED_MESSAGE =
+  "招待コードが確認できませんでした。管理者に招待の再発行を依頼してください。";
+
+/**
+ * Convex Auth の users を既存 member にリンクする招待制ゲート（Issue #1 PR1・招待
+ * トークン方式は #1 追補）。
  *
  * Password provider のサインアップ（convex/auth.ts の afterUserCreatedOrUpdated
  * コールバック）から呼ばれる、convex-test から直接検証できる純関数的ヘルパ。
  *
- * - メールアドレスが事前に members へ登録済み（招待済み） → その member にリンクする。
+ * - メールアドレスが事前に members へ登録済み（招待済み） → members.create が
+ *   発行した招待トークン（SHA-256 ハッシュを member.inviteTokenHash に保存済み）を
+ *   users.inviteCode と照合し、一致した場合のみリンクする。不一致・未提示は拒否する
+ *   （招待済み未サインアップ member を、同一 email の先行サインアップで第三者が
+ *   横取りできてしまう「招待ウィンドウ乗っ取り」への対策）。
  * - 未登録 → ブートストラップ条件（後述）を満たす初回サインアップのみ admin として
  *   自己登録できる。それ以外は「招待されていません」で拒否し、signUp トランザクション
- *   ごとロールバックさせる（＝招待制の強制）。
+ *   ごとロールバックさせる（＝招待制の強制）。ブートストラップは招待トークン不要。
  */
 export async function linkAuthUserToMember(
   ctx: MutationCtx,
   userId: Id<"users">,
 ): Promise<void> {
   const user = await ctx.db.get(userId);
-  if (user === null || user.email === undefined) {
+  if (user === null) {
+    throw new ConvexError("認証ユーザーにメールアドレスが設定されていません");
+  }
+
+  // 冒頭で無条件クリア（defense-in-depth）: この関数を通る限り、リンクの成否や
+  // この後の分岐に関わらず users.inviteCode は必ず除去する。照合に使う値は
+  // 消す前にローカル変数へ退避しておく。将来 verify/OAuth 等の経路が追加されても
+  // 平文の inviteCode が users doc に残留しないよう、経路によらず先回りで防ぐ。
+  const inviteCode = user.inviteCode;
+  if (inviteCode !== undefined) {
+    await ctx.db.patch(userId, { inviteCode: undefined });
+  }
+
+  if (user.email === undefined) {
     throw new ConvexError("認証ユーザーにメールアドレスが設定されていません");
   }
   const email = normalizeEmail(user.email);
@@ -31,7 +59,20 @@ export async function linkAuthUserToMember(
 
   if (existing !== null) {
     if (existing.authUserId === undefined) {
-      await ctx.db.patch(existing._id, { authUserId: userId });
+      // オラクル低減: inviteTokenHash の有無に関わらず常に sha256Hex を通してから
+      // 判定する（早期 return しない）。分岐 (a)(b) のタイミング差を作らないため。
+      const providedHash = await sha256Hex(inviteCode ?? "");
+      const expectedHash = existing.inviteTokenHash;
+      const matched =
+        expectedHash !== undefined &&
+        timingSafeEqual(providedHash, expectedHash);
+      if (!matched) {
+        throw new ConvexError(INVITE_CODE_REJECTED_MESSAGE);
+      }
+      await ctx.db.patch(existing._id, {
+        authUserId: userId,
+        inviteTokenHash: undefined, // 使い捨て: リンク成功時に除去する
+      });
       return;
     }
     if (existing.authUserId === userId) {

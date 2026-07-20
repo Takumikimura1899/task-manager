@@ -5,10 +5,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 import { seedMember, seedUser, type T } from "../../test/convexSupport";
+import { generateInviteToken, sha256Hex } from "./crypto";
 import { linkAuthUserToMember } from "./memberLink";
 
 /**
- * linkAuthUserToMember の結合テスト（Issue #1 PR1）。
+ * linkAuthUserToMember の結合テスト（Issue #1 PR1・招待トークン方式は #1 追補）。
  *
  * Convex Auth の users → 既存 members への招待制リンクを convex-test の
  * インメモリ DB を実物として通して検証する（内部モック禁止・古典学派）。
@@ -21,6 +22,8 @@ const setup = () => convexTest(schema, modules);
 
 const getMember = (t: T, id: Id<"members">) => t.run((ctx) => ctx.db.get(id));
 
+const getUser = (t: T, id: Id<"users">) => t.run((ctx) => ctx.db.get(id));
+
 const findMemberByEmail = (t: T, email: string) =>
   t.run((ctx) =>
     ctx.db
@@ -32,21 +35,103 @@ const findMemberByEmail = (t: T, email: string) =>
 const countMembers = async (t: T) =>
   (await t.run((ctx) => ctx.db.query("members").collect())).length;
 
+/**
+ * 招待トークンの平文とハッシュのペアを生成する（members.create が発行する
+ * ものと同じ形。DB には hash のみ、users.inviteCode には token を渡す）。
+ */
+const makeInvite = async () => {
+  const token = generateInviteToken();
+  const hash = await sha256Hex(token);
+  return { token, hash };
+};
+
 describe("linkAuthUserToMember", () => {
-  it("招待済み email の member に authUserId をリンクする", async () => {
+  it("正しい招待コードで招待済み email の member に authUserId をリンクし、inviteTokenHash と users.inviteCode を両方除去する", async () => {
     const t = setup();
-    const memberId = await seedMember(t, { email: "alice@example.com" });
-    const userId = await seedUser(t, { email: "alice@example.com" });
+    const { token, hash } = await makeInvite();
+    const memberId = await seedMember(t, {
+      email: "alice@example.com",
+      inviteTokenHash: hash,
+    });
+    const userId = await seedUser(t, {
+      email: "alice@example.com",
+      inviteCode: token,
+    });
 
     await t.run((ctx) => linkAuthUserToMember(ctx, userId));
 
     expect(await getMember(t, memberId)).toMatchObject({ authUserId: userId });
+    expect((await getMember(t, memberId))?.inviteTokenHash).toBeUndefined();
+    expect((await getUser(t, userId))?.inviteCode).toBeUndefined();
+  });
+
+  it.each([
+    { name: "inviteCode を提示しない", inviteCode: undefined },
+    { name: "誤った inviteCode を提示する", inviteCode: "wrong-code" },
+  ])(
+    "招待コード不一致（$name）は拒否し、member をリンクしない（横取り対策）",
+    async ({ inviteCode }) => {
+      const t = setup();
+      const { hash } = await makeInvite();
+      const memberId = await seedMember(t, {
+        email: "alice@example.com",
+        inviteTokenHash: hash,
+      });
+      const userId = await seedUser(t, {
+        email: "alice@example.com",
+        inviteCode,
+      });
+
+      await expect(
+        t.run((ctx) => linkAuthUserToMember(ctx, userId)),
+      ).rejects.toThrowError("招待コードが確認できませんでした");
+
+      const member = await getMember(t, memberId);
+      expect(member?.authUserId).toBeUndefined(); // リンクされていない
+      expect(member?.inviteTokenHash).toBe(hash); // 拒否時は member 側のハッシュも不変
+    },
+  );
+
+  it("招待コードを見ないブートストラップ経路でも、提示された inviteCode は無条件クリアにより除去される（defense-in-depth）", async () => {
+    // 拒否（throw）する経路は Convex のトランザクション（t.run も同様）が
+    // 呼び出しごと丸ごとロールバックするため、事後に inviteCode の消去だけを
+    // 単独では観測できない（signUp ごとロールバック・孤児レコードなしという
+    // 本来の設計どおり）。無条件クリアの効果が実際に観測できるのは、
+    // このようにトランザクションがコミットされる経路——招待コードを一切
+    // 参照しないブートストラップ経路でも、無条件クリアの構造により
+    // 消えていること。
+    const t = setup();
+    const userId = await seedUser(t, {
+      email: "founder@example.com",
+      inviteCode: "stray-code-unrelated-to-bootstrap",
+    });
+
+    await t.run((ctx) => linkAuthUserToMember(ctx, userId));
+
+    expect((await getUser(t, userId))?.inviteCode).toBeUndefined();
+  });
+
+  it("inviteTokenHash 未設定の member（招待トークン未発行）は、正コードなしのサインアップでも拒否する（bot 相当の推測攻撃対策）", async () => {
+    const t = setup();
+    await seedMember(t, { email: "alice@example.com" }); // inviteTokenHash 未設定
+    const userId = await seedUser(t, { email: "alice@example.com" }); // inviteCode 未提示
+
+    await expect(
+      t.run((ctx) => linkAuthUserToMember(ctx, userId)),
+    ).rejects.toThrowError("招待コードが確認できませんでした");
   });
 
   it("同一 userId で再実行しても冪等（状態不変・エラーにならない）", async () => {
     const t = setup();
-    const memberId = await seedMember(t, { email: "alice@example.com" });
-    const userId = await seedUser(t, { email: "alice@example.com" });
+    const { token, hash } = await makeInvite();
+    const memberId = await seedMember(t, {
+      email: "alice@example.com",
+      inviteTokenHash: hash,
+    });
+    const userId = await seedUser(t, {
+      email: "alice@example.com",
+      inviteCode: token,
+    });
     await t.run((ctx) => linkAuthUserToMember(ctx, userId));
 
     // t.run の返り値は Convex 値として直列化されるため undefined は null になる
@@ -61,8 +146,15 @@ describe("linkAuthUserToMember", () => {
 
   it("既に別 userId にリンク済みの member への横取りリンクを拒否する", async () => {
     const t = setup();
-    const memberId = await seedMember(t, { email: "alice@example.com" });
-    const firstUserId = await seedUser(t, { email: "alice@example.com" });
+    const { token, hash } = await makeInvite();
+    const memberId = await seedMember(t, {
+      email: "alice@example.com",
+      inviteTokenHash: hash,
+    });
+    const firstUserId = await seedUser(t, {
+      email: "alice@example.com",
+      inviteCode: token,
+    });
     await t.run((ctx) => linkAuthUserToMember(ctx, firstUserId));
     const secondUserId = await seedUser(t, { email: "alice@example.com" });
 
@@ -96,9 +188,9 @@ describe("linkAuthUserToMember", () => {
       vi.unstubAllEnvs();
     });
 
-    it("members が0件のとき、email のローカル部を name とする admin member を作成しリンクする", async () => {
+    it("members が0件のとき、招待コードなしでも email のローカル部を name とする admin member を作成しリンクする", async () => {
       const t = setup();
-      const userId = await seedUser(t, { email: "founder@example.com" });
+      const userId = await seedUser(t, { email: "founder@example.com" }); // inviteCode 未提示
 
       await t.run((ctx) => linkAuthUserToMember(ctx, userId));
 
@@ -162,8 +254,15 @@ describe("linkAuthUserToMember", () => {
 
   it("email を正規化して照合する（大文字混じり・前後空白でも登録済み member にリンクされる）", async () => {
     const t = setup();
-    const memberId = await seedMember(t, { email: "alice@example.com" });
-    const userId = await seedUser(t, { email: " Alice@Example.COM " });
+    const { token, hash } = await makeInvite();
+    const memberId = await seedMember(t, {
+      email: "alice@example.com",
+      inviteTokenHash: hash,
+    });
+    const userId = await seedUser(t, {
+      email: " Alice@Example.COM ",
+      inviteCode: token,
+    });
 
     await t.run((ctx) => linkAuthUserToMember(ctx, userId));
 

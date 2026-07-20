@@ -99,6 +99,57 @@ describe("SignIn の新規登録フロー", () => {
     });
   });
 
+  it("ログインフローでは招待コード欄を表示しない", () => {
+    render(<SignIn />);
+
+    expect(screen.queryByLabelText("招待コード")).not.toBeInTheDocument();
+  });
+
+  it("新規登録フローでは招待コード欄を表示する", async () => {
+    const user = userEvent.setup();
+    render(<SignIn />);
+
+    await user.click(screen.getByRole("button", { name: "新規登録へ" }));
+
+    expect(screen.getByLabelText("招待コード")).toBeInTheDocument();
+  });
+
+  it("招待コードを入力すると trim して送信する", async () => {
+    const user = userEvent.setup();
+    render(<SignIn />);
+
+    await user.click(screen.getByRole("button", { name: "新規登録へ" }));
+    await fillCredentials(user);
+    await user.type(screen.getByLabelText("招待コード"), "  abc123  ");
+    await user.click(screen.getByRole("button", { name: "新規登録" }));
+
+    expect(signIn).toHaveBeenCalledWith("password", {
+      email: "taro@example.com",
+      password: "password1234",
+      flow: "signUp",
+      inviteCode: "abc123",
+    });
+  });
+
+  it("招待コードが空欄のときは inviteCode キー自体を送らない（ブートストラップ用）", async () => {
+    const user = userEvent.setup();
+    render(<SignIn />);
+
+    await user.click(screen.getByRole("button", { name: "新規登録へ" }));
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "新規登録" }));
+
+    expect(signIn).toHaveBeenCalledWith("password", {
+      email: "taro@example.com",
+      password: "password1234",
+      flow: "signUp",
+    });
+    expect(signIn).not.toHaveBeenCalledWith(
+      "password",
+      expect.objectContaining({ inviteCode: expect.anything() }),
+    );
+  });
+
   it("サーバが意図して投げた ConvexError はその文言をそのまま表示する", async () => {
     const user = userEvent.setup();
     const invited =

@@ -31,10 +31,12 @@ export function SignIn() {
   const [flow, setFlow] = useState<Flow>("signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const emailId = useId();
   const passwordId = useId();
+  const inviteCodeId = useId();
   const errorId = useId();
 
   const canSubmit = email.trim() !== "" && password !== "" && !submitting;
@@ -45,7 +47,17 @@ export function SignIn() {
     setSubmitting(true);
     setError(null);
     try {
-      await signIn("password", { email: email.trim(), password, flow });
+      const trimmedInviteCode = inviteCode.trim();
+      await signIn("password", {
+        email: email.trim(),
+        password,
+        flow,
+        // 空欄のときはキー自体を送らない（初回登録＝ブートストラップは
+        // 招待コード不要。convex/lib/memberLink.ts のブートストラップ判定）。
+        ...(flow === "signUp" && trimmedInviteCode !== ""
+          ? { inviteCode: trimmedInviteCode }
+          : {}),
+      });
       // 成功時は Authenticated ゲート（App.tsx）が画面ごと切り替えるため、
       // アンマウント後の setState を避けて submitting は戻さない。
     } catch (err) {
@@ -98,6 +110,25 @@ export function SignIn() {
             value={password}
           />
           <p className={s.hint}>パスワードは 8 文字以上です。</p>
+          {flow === "signUp" && (
+            <>
+              <label className={s.label} htmlFor={inviteCodeId}>
+                招待コード
+              </label>
+              <input
+                autoComplete="off"
+                className={s.input}
+                id={inviteCodeId}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="招待メールに記載のコード"
+                type="text"
+                value={inviteCode}
+              />
+              <p className={s.hint}>
+                管理者から招待された場合のみ入力してください。初回登録は不要です。
+              </p>
+            </>
+          )}
           {error !== null && (
             <p className="actionError" id={errorId} role="alert">
               {error}

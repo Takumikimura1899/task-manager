@@ -10,6 +10,7 @@ import {
   requireAgentToken,
   requireAuthed,
 } from "./lib/auth";
+import { generateInviteToken, sha256Hex } from "./lib/crypto";
 import { isValidEmail, normalizeEmail } from "./lib/validators";
 
 /**
@@ -42,11 +43,19 @@ export const create = mutation({
       throw new ConvexError(`メールアドレス "${email}" は既に登録されています`);
     }
 
-    return await ctx.db.insert("members", {
+    // 招待トークン方式（招待ウィンドウ乗っ取り対策・Issue #1）。DB には
+    // sha256Hex したハッシュのみを保存し、平文は呼び出し元へこの一度だけ返す
+    // （signUp 時の照合は convex/lib/memberLink.ts）。
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = await sha256Hex(inviteToken);
+
+    const memberId = await ctx.db.insert("members", {
       name: args.name,
       email, // 正規化済みの値を保存する
       role: args.role,
+      inviteTokenHash,
     });
+    return { memberId, inviteToken };
   },
 });
 

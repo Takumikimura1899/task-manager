@@ -35,17 +35,34 @@ describe("members.create", () => {
     const t = setup();
     const { as } = await seedAuthedMember(t);
 
-    const id = await as.mutation(api.members.create, {
+    const { memberId } = await as.mutation(api.members.create, {
       name: "Alice2",
       email: "  Alice2@Example.COM ",
       role: "admin",
     });
 
-    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+    expect(await t.run((ctx) => ctx.db.get(memberId))).toMatchObject({
       name: "Alice2",
       email: "alice2@example.com", // 正規化済みの値で保存される
       role: "admin",
     });
+  });
+
+  it("招待トークンを返し、DB にはハッシュのみを保存する（平文は保存しない・招待ウィンドウ乗っ取り対策）", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+
+    const { memberId, inviteToken } = await as.mutation(api.members.create, {
+      name: "Bob",
+      email: "bob@example.com",
+      role: "member",
+    });
+
+    expect(inviteToken).toMatch(/^[0-9a-f]{64}$/);
+    const stored = await t.run((ctx) => ctx.db.get(memberId));
+    expect(stored?.inviteTokenHash).toBeDefined();
+    expect(stored?.inviteTokenHash).not.toBe(inviteToken);
+    expect(JSON.stringify(stored)).not.toContain(inviteToken);
   });
 
   it("正規化後に一致する email の重複を拒否し、Member を追加しない", async () => {
