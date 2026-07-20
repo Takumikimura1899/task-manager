@@ -14,6 +14,7 @@ import type * as gitLinks from "../gitLinks.js";
 import type * as http from "../http.js";
 import type * as issues from "../issues.js";
 import type * as lib_approval from "../lib/approval.js";
+import type * as lib_auth from "../lib/auth.js";
 import type * as lib_crypto from "../lib/crypto.js";
 import type * as lib_gitAutomation from "../lib/gitAutomation.js";
 import type * as lib_gitRef from "../lib/gitRef.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   issues: typeof issues;
   "lib/approval": typeof lib_approval;
+  "lib/auth": typeof lib_auth;
   "lib/crypto": typeof lib_crypto;
   "lib/gitAutomation": typeof lib_gitAutomation;
   "lib/gitRef": typeof lib_gitRef;

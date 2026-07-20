@@ -6,14 +6,15 @@ import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import {
+  type As,
   TEST_REPO_REMOTE_URL,
   TEST_WEBHOOK_ENCRYPTION_KEY,
   TEST_WEBHOOK_SECRET,
   getTask,
   listTaskGitLinks,
   listWebhookDeliveries,
+  seedAuthedMember,
   seedGitLink,
-  seedMember,
   seedProject,
   seedRepository,
   type T,
@@ -161,23 +162,26 @@ const createPullRequestPayload = (
 
 // --- シナリオ seed ------------------------------------------------------------
 
-/** key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。 */
+/**
+ * key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。
+ * Issue 作成は公開 API（認証ゲート配下）なので seedAuthedMember の `as` を使う。
+ * Webhook 受信自体（postWebhook）は internal 関数のため無認証のままでよい。
+ */
 const seedScenario = async (t: T) => {
+  const { as, memberId: member } = await seedAuthedMember(t);
   const project = await seedProject(t);
-  const member = await seedMember(t);
-  const { issue, task } = await t.mutation(api.issues.create, {
+  const { issue, task } = await as.mutation(api.issues.create, {
     project,
     title: "課題",
-    createdBy: member,
     firstTask: { title: "最初のタスク" },
   });
   const repository = await seedRepository(t, project);
-  return { project, member, issue, task, repository };
+  return { as, project, member, issue, task, repository };
 };
 
 /** Task を todo へ進める（branch_created / pr_opened の自動遷移が効く状態にする）。 */
-const toTodo = (t: T, task: Id<"tasks">) =>
-  t.mutation(api.tasks.transitionStatus, {
+const toTodo = (as: As, task: Id<"tasks">) =>
+  as.mutation(api.tasks.transitionStatus, {
     id: task,
     to: "todo",
     expectedRevision: 0,
@@ -415,8 +419,8 @@ describe("POST /webhooks/github の重複配信", () => {
 describe("POST /webhooks/github のイベントディスパッチ", () => {
   it("create(branch) イベントでタスクが todo → in_progress に自動遷移する", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
-    await toTodo(t, task);
+    const { as, task } = await seedScenario(t);
+    await toTodo(as, task);
 
     const res = await postWebhook(t, {
       event: "create",
@@ -429,8 +433,8 @@ describe("POST /webhooks/github のイベントディスパッチ", () => {
 
   it("create イベントでも ref_type が branch 以外（tag）は無視する", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
-    await toTodo(t, task);
+    const { as, task } = await seedScenario(t);
+    await toTodo(as, task);
 
     const res = await postWebhook(t, {
       event: "create",
@@ -443,8 +447,8 @@ describe("POST /webhooks/github のイベントディスパッチ", () => {
 
   it("pull_request イベントで GitLink(pull_request) と自動遷移を反映する", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
-    await toTodo(t, task);
+    const { as, task } = await seedScenario(t);
+    await toTodo(as, task);
 
     const res = await postWebhook(t, {
       event: "pull_request",

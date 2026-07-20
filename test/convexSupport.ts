@@ -1,4 +1,5 @@
 import type { TestConvex } from "convex-test";
+import { vi } from "vitest";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { encryptSecret } from "../convex/lib/crypto";
 import schema from "../convex/schema";
@@ -19,6 +20,9 @@ import schema from "../convex/schema";
  */
 
 export type T = TestConvex<typeof schema>;
+
+/** `t.withIdentity(...)` が返す、特定ユーザーとして呼び出せる版の T。 */
+export type As = ReturnType<T["withIdentity"]>;
 
 /** projects を1件 seed する。採番カウンタは既定で 1 から。 */
 export const seedProject = (
@@ -73,6 +77,37 @@ export const seedUser = (t: T, overrides: Partial<{ email: string }> = {}) =>
 export const authSubject = (userId: Id<"users">) => `${userId}|test-session`;
 
 /**
+ * 全公開関数の認証ゲート（Issue #1 PR2 / convex/lib/auth.ts）に対応する、
+ * ブラウザ経路のテスト用ヘルパ。users を1件 seed し、authUserId でリンクした
+ * members を1件 seed した上で、そのユーザーとして呼び出せる `as` を返す。
+ * 呼び出し側は `as.mutation(api.tasks.create, {...})` のように使う。
+ * email は users/members 双方に同じ値を使う（実際のリンク済み Member と
+ * 同じ状態を再現するため。overrides.email 未指定時は seedMember と同じ
+ * 既定値 "alice@example.com" に揃える）。
+ */
+export const seedAuthedMember = async (
+  t: T,
+  overrides: Partial<{
+    name: string;
+    email: string;
+    role: "admin" | "member";
+  }> = {},
+) => {
+  const email = overrides.email ?? "alice@example.com";
+  const userId = await seedUser(t, { email });
+  const memberId = await seedMember(t, {
+    ...overrides,
+    email,
+    authUserId: userId,
+  });
+  return {
+    as: t.withIdentity({ subject: authSubject(userId) }),
+    memberId,
+    userId,
+  };
+};
+
+/**
  * 「実体のないメンバー参照」を作る：seed 直後に delete し、Id だけを残す。
  * 参照整合性（存在しないメンバーの拒否）テスト用のゴースト生成ヘルパー。
  * email は既定の seedMember と衝突しない値にしてあるため、通常メンバーと併用できる。
@@ -88,6 +123,39 @@ export const seedGhostMember = async (
   });
   await t.run((ctx) => ctx.db.delete(id));
   return id;
+};
+
+// --- MCP 経路（accessToken）のテスト用ヘルパ ---------------------------------
+
+/** requireAgentToken / requireActor の MCP 経路が期待する固定テストトークン。 */
+export const AGENT_TOKEN = "test-mcp-access-token";
+
+/**
+ * MCP_ACCESS_TOKEN / MCP_AGENT_EMAIL を注入する（Member は seed しない）。
+ * 「MCP_AGENT_EMAIL の Member が未登録」ケースの検証用に、Member seed から
+ * 分離してある。呼び出し側の afterEach で `vi.unstubAllEnvs()` を忘れないこと。
+ */
+export const stubAgentTokenEnv = (email = "agent@example.com") => {
+  vi.stubEnv("MCP_ACCESS_TOKEN", AGENT_TOKEN);
+  vi.stubEnv("MCP_AGENT_EMAIL", email);
+};
+
+/**
+ * MCP 経路の env 注入（stubAgentTokenEnv）に加え、対応する Member を seed する。
+ * requireActor がエージェント Member を解決できる状態を一括で用意する。
+ * 呼び出し側の afterEach で `vi.unstubAllEnvs()` を忘れないこと。
+ */
+export const seedAgentMember = async (
+  t: T,
+  overrides: Partial<{ name: string; email: string }> = {},
+) => {
+  const email = overrides.email ?? "agent@example.com";
+  stubAgentTokenEnv(email);
+  const memberId = await seedMember(t, {
+    name: overrides.name ?? "Agent",
+    email,
+  });
+  return { memberId, accessToken: AGENT_TOKEN };
 };
 
 /** id から素の Task ドキュメントを取得する（最終状態の検証用）。 */
