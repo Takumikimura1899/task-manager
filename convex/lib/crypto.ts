@@ -89,15 +89,23 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * バイト列を小文字16進文字列に変換する（sha256Hex / generateInviteToken の
+ * ほか、http.ts の GitHub Webhook 署名検証からも共有する）。
+ */
+export function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 /** 入力文字列の SHA-256 ダイジェストを16進文字列（64文字）で返す。 */
 export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new Uint8Array(new TextEncoder().encode(input)),
   );
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return bytesToHex(new Uint8Array(digest));
 }
 
 /**
@@ -109,9 +117,7 @@ export async function sha256Hex(input: string): Promise<string> {
  */
 export function generateInviteToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  return bytesToHex(bytes);
 }
 
 /**

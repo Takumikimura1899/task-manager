@@ -7,7 +7,7 @@ import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { timingSafeEqual } from "./lib/crypto";
+import { bytesToHex, timingSafeEqual } from "./lib/crypto";
 
 /**
  * GitHub Webhook の受信エンドポイント（基本設計書 §7）。
@@ -49,9 +49,7 @@ async function verifySignature(
     key,
     new Uint8Array(new TextEncoder().encode(body)),
   );
-  const hex = Array.from(new Uint8Array(sig))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const hex = bytesToHex(new Uint8Array(sig));
   return timingSafeEqual(`sha256=${hex}`, signatureHeader);
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bytesToHex,
   decryptSecret,
   encryptSecret,
   generateInviteToken,
@@ -80,6 +81,16 @@ describe("timingSafeTokenEqual（MCP アクセストークン比較・Issue #1 P
 
   it("空文字同士は一致と判定する（fail closed は呼び出し側の責務・convex/lib/auth.ts）", async () => {
     expect(await timingSafeTokenEqual("", "")).toBe(true);
+  });
+});
+
+describe("bytesToHex（sha256Hex / generateInviteToken / http.ts 署名検証の共有ヘルパ）", () => {
+  it("バイト列を小文字16進文字列に変換する", () => {
+    expect(bytesToHex(new Uint8Array([0, 1, 15, 16, 255]))).toBe("00010f10ff");
+  });
+
+  it("空のバイト列は空文字列を返す", () => {
+    expect(bytesToHex(new Uint8Array([]))).toBe("");
   });
 });
 
