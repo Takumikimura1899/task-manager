@@ -15,11 +15,12 @@ import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import type { GitHubCommit, GitHubPullRequest } from "./lib/githubReconcile";
 import {
+  type As,
   TEST_WEBHOOK_ENCRYPTION_KEY,
   getTask,
   listTaskGitLinks,
   listWebhookDeliveries,
-  seedMember,
+  seedAuthedMember,
   seedProject,
   seedRepository,
   type T,
@@ -121,18 +122,21 @@ const createGitHubCommit = (
 
 // --- シナリオ ----------------------------------------------------------------
 
-/** key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。 */
+/**
+ * key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。
+ * Issue 作成は公開 API（認証ゲート配下）なので seedAuthedMember の `as` を使う。
+ * reconcile.run 自体（internalAction）は無認証のままでよい。
+ */
 const seedScenario = async (t: T) => {
+  const { as, memberId: member } = await seedAuthedMember(t);
   const project = await seedProject(t);
-  const member = await seedMember(t);
-  const { issue, task } = await t.mutation(api.issues.create, {
+  const { issue, task } = await as.mutation(api.issues.create, {
     project,
     title: "課題",
-    createdBy: member,
     firstTask: { title: "最初のタスク" },
   });
   const repository = await seedRepository(t, project); // acme/repo
-  return { project, member, issue, task, repository };
+  return { as, project, member, issue, task, repository };
 };
 
 /** active な Task の線形な前進経路（backlog はこの手前の初期状態）。 */
@@ -140,13 +144,13 @@ const FORWARD_PATH = ["todo", "in_progress", "in_review", "done"] as const;
 
 /** Task を状態機械に沿って target まで前進させる（revision を追跡）。 */
 const driveTo = async (
-  t: T,
+  as: As,
   taskId: Id<"tasks">,
   target: (typeof FORWARD_PATH)[number],
 ) => {
   let rev = 0;
   for (const to of FORWARD_PATH) {
-    await t.mutation(api.tasks.transitionStatus, {
+    await as.mutation(api.tasks.transitionStatus, {
       id: taskId,
       to,
       expectedRevision: rev,
@@ -168,8 +172,8 @@ const loadTask = async (t: T, id: Id<"tasks">) => {
 describe("reconcile.run — 取りこぼしイベントの補正", () => {
   it("取りこぼした merged PR を補正する（in_review → done + GitLink 記録 + 冪等マーカー）", async () => {
     const t = setup();
-    const { task, repository } = await seedScenario(t);
-    await driveTo(t, task, "in_review");
+    const { as, task, repository } = await seedScenario(t);
+    await driveTo(as, task, "in_review");
     stubGitHubApi({ "acme/repo": { pulls: [createMergedPr()] } });
 
     await t.action(internal.reconcile.run, {});
@@ -186,8 +190,8 @@ describe("reconcile.run — 取りこぼしイベントの補正", () => {
 
   it("取りこぼした open PR を補正する（todo → in_progress）", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
-    await driveTo(t, task, "todo");
+    const { as, task } = await seedScenario(t);
+    await driveTo(as, task, "todo");
     stubGitHubApi({ "acme/repo": { pulls: [createGitHubPr()] } });
 
     await t.action(internal.reconcile.run, {});
@@ -213,8 +217,8 @@ describe("reconcile.run — 取りこぼしイベントの補正", () => {
 
   it("ウィンドウ外（lookback より古い更新）の PR は補正対象にしない", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
-    await driveTo(t, task, "in_review");
+    const { as, task } = await seedScenario(t);
+    await driveTo(as, task, "in_review");
     const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     stubGitHubApi({
       "acme/repo": { pulls: [createMergedPr({ updated_at: twoHoursAgo })] },
@@ -233,8 +237,8 @@ describe("reconcile.run — 取りこぼしイベントの補正", () => {
 describe("reconcile.run — 冪等性", () => {
   it("Webhook で処理済みのイベントを二重適用しない（状態・revision・GitLink が不変）", async () => {
     const t = setup();
-    const { project, task, repository } = await seedScenario(t);
-    await driveTo(t, task, "in_review");
+    const { as, project, task, repository } = await seedScenario(t);
+    await driveTo(as, task, "in_review");
     // Webhook 経路（GitHub の delivery UUID）で merged イベントを処理済みにする
     await t.mutation(internal.webhooks.processEvent, {
       deliveryId: "gh-delivery-uuid-1",
@@ -266,8 +270,8 @@ describe("reconcile.run — 冪等性", () => {
 
   it("同一スナップショットの再実行は冪等マーカーでスキップされる", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
-    await driveTo(t, task, "in_review");
+    const { as, task } = await seedScenario(t);
+    await driveTo(as, task, "in_review");
     stubGitHubApi({
       "acme/repo": {
         pulls: [createMergedPr()],
@@ -292,12 +296,11 @@ describe("reconcile.run — 冪等性", () => {
 describe("reconcile.run — エラー処理", () => {
   it("1リポジトリの失敗は他リポジトリの補正を止めず、エラーとして伝播する", async () => {
     const t = setup();
+    const { as } = await seedAuthedMember(t);
     const project = await seedProject(t);
-    const member = await seedMember(t);
-    const { task } = await t.mutation(api.issues.create, {
+    const { task } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
-      createdBy: member,
       firstTask: { title: "最初のタスク" },
     });
     // 失敗するリポジトリを先に登録し、後続の補正が継続されることを確かめる
@@ -305,7 +308,7 @@ describe("reconcile.run — エラー処理", () => {
       remoteUrl: "https://github.com/acme/bad",
     });
     await seedRepository(t, project); // acme/repo
-    await driveTo(t, task, "in_review");
+    await driveTo(as, task, "in_review");
     stubGitHubApi({
       "acme/bad": { status: 500 },
       "acme/repo": { pulls: [createMergedPr()] },

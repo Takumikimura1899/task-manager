@@ -10,13 +10,7 @@ import s from "./AddTaskForm.module.css";
  * 既存 Issue に Task を追加するインラインフォーム（tasks.create）。
  * Issue 行から開閉する。新規 Task は backlog の末尾に入る（Core 側で決定）。
  */
-export function AddTaskForm({
-  issue,
-  createdBy,
-}: {
-  issue: Id<"issues">;
-  createdBy: Id<"members">;
-}) {
+export function AddTaskForm({ issue }: { issue: Id<"issues"> }) {
   const createTask = useMutation(api.tasks.create);
   const errorId = useId();
   const form = useCreateForm({
@@ -26,7 +20,6 @@ export function AddTaskForm({
         title,
         priority,
         assignee: assignee ?? undefined,
-        createdBy,
       });
     },
     submitErrorMessage: "作成に失敗しました",

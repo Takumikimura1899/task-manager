@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireActor, requireAuthed } from "./lib/auth";
 import { findProjectByKey } from "./lib/projects";
 import { isValidProjectKey } from "./lib/validators";
 
@@ -14,8 +15,11 @@ export const create = mutation({
     key: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     if (!isValidProjectKey(args.key)) {
       throw new ConvexError(
         `プロジェクトキーが不正です: "${args.key}"（大文字英字2〜10文字）`,
@@ -41,15 +45,19 @@ export const create = mutation({
 });
 
 export const getByKey = query({
-  args: { key: v.string() },
+  args: { key: v.string(), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireAuthed(ctx, args.accessToken);
+
     return await findProjectByKey(ctx, args.key);
   },
 });
 
 export const list = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { accessToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    await requireAuthed(ctx, args.accessToken);
+
     return await ctx.db.query("projects").collect();
   },
 });

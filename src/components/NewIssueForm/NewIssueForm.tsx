@@ -10,13 +10,7 @@ import s from "./NewIssueForm.module.css";
  * Issue 作成フォーム。Issue は最初の Task を必ず伴う（INVARIANT-5）ため、
  * Issue タイトルと最初の Task タイトルを同時に受け取り issues.create を呼ぶ。
  */
-export function NewIssueForm({
-  project,
-  createdBy,
-}: {
-  project: Id<"projects">;
-  createdBy: Id<"members">;
-}) {
+export function NewIssueForm({ project }: { project: Id<"projects"> }) {
   const createIssue = useMutation(api.issues.create);
   const errorId = useId();
   const [taskTitle, setTaskTitle] = useState("");
@@ -25,7 +19,6 @@ export function NewIssueForm({
       await createIssue({
         project,
         title,
-        createdBy,
         firstTask: {
           title: taskTitle.trim(),
           priority,

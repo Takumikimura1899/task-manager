@@ -60,7 +60,7 @@ export function useAppOutletContext(): AppOutletContext {
 }
 
 export function AppLayout() {
-  const projects = useQuery(api.projects.list);
+  const projects = useQuery(api.projects.list, {});
   const { members, currentMember, currentMemberLoading } = useCurrentMember();
   const { signOut } = useAuthActions();
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(

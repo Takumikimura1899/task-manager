@@ -7,6 +7,7 @@ import schema from "./schema";
 import { decryptSecret } from "./lib/crypto";
 import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
+  seedAuthedMember,
   seedProject,
   seedRepository,
   type T,
@@ -38,10 +39,11 @@ const listRepositories = (t: T) =>
 describe("repositories.create", () => {
   it("webhookSecret を暗号化して保存する（平文は残らず、鍵で復号すると元に戻る）", async () => {
     const t = setup();
+    const { as } = await seedAuthedMember(t);
     const project = await seedProject(t);
     const plaintext = "ghs_supersecret_webhook_token";
 
-    const id = await t.mutation(api.repositories.create, {
+    const id = await as.mutation(api.repositories.create, {
       project,
       remoteUrl: "https://github.com/acme/repo",
       webhookSecret: plaintext,
@@ -64,11 +66,12 @@ describe("repositories.create", () => {
 
   it("存在しないプロジェクトを指定すると拒否する（参照整合性）", async () => {
     const t = setup();
+    const { as } = await seedAuthedMember(t);
     const project = await seedProject(t);
     await t.run((ctx) => ctx.db.delete(project));
 
     await expect(
-      t.mutation(api.repositories.create, {
+      as.mutation(api.repositories.create, {
         project,
         remoteUrl: "https://github.com/acme/repo",
         webhookSecret: "s",
@@ -83,11 +86,12 @@ describe("repositories.create", () => {
     "WEBHOOK_ENCRYPTION_KEY が $name の場合はエラーになり、保存しない",
     async ({ value }) => {
       const t = setup();
+      const { as } = await seedAuthedMember(t);
       const project = await seedProject(t);
       vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", value);
 
       await expect(
-        t.mutation(api.repositories.create, {
+        as.mutation(api.repositories.create, {
           project,
           remoteUrl: "https://github.com/acme/repo",
           webhookSecret: "s",
@@ -103,10 +107,13 @@ describe("repositories.create", () => {
 describe("repositories.listByProject", () => {
   it("webhookSecret を除外して返す（PII/機密のクライアント露出防止）", async () => {
     const t = setup();
+    const { as } = await seedAuthedMember(t);
     const project = await seedProject(t);
     const id = await seedRepository(t, project);
 
-    const listed = await t.query(api.repositories.listByProject, { project });
+    const listed = await as.query(api.repositories.listByProject, {
+      project,
+    });
 
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
@@ -119,6 +126,7 @@ describe("repositories.listByProject", () => {
 
   it("指定プロジェクトのリポジトリのみ返す", async () => {
     const t = setup();
+    const { as } = await seedAuthedMember(t);
     const project = await seedProject(t, { key: "TASK" });
     const other = await seedProject(t, { key: "OTHER" });
     const mine = await seedRepository(t, project);
@@ -126,7 +134,9 @@ describe("repositories.listByProject", () => {
       remoteUrl: "https://github.com/acme/other",
     });
 
-    const listed = await t.query(api.repositories.listByProject, { project });
+    const listed = await as.query(api.repositories.listByProject, {
+      project,
+    });
 
     expect(listed.map((r) => r._id)).toEqual([mine]);
   });

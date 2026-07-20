@@ -98,7 +98,7 @@ export function TaskDetail() {
     api.tasks.getDetail,
     number !== null ? { projectKey, number } : "skip",
   );
-  const members = useQuery(api.members.list);
+  const members = useQuery(api.members.list, {});
 
   const updateFields = useMutation(api.tasks.updateFields);
   const transitionStatus = useMutation(api.tasks.transitionStatus);

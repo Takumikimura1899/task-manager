@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { decryptSecret, encryptSecret } from "./crypto";
+import { decryptSecret, encryptSecret, timingSafeTokenEqual } from "./crypto";
 
 /**
- * 対称暗号化（AES-256-GCM）の振る舞いを検証する。
+ * 対称暗号化（AES-256-GCM）・MCP アクセストークン比較の振る舞いを検証する。
  * Web Crypto API（crypto.subtle）は Node のグローバルで利用可能なためモック不要。
  */
 
@@ -51,5 +51,29 @@ describe("webhookSecret の暗号化", () => {
   it("鍵長が不正な場合はエラー", async () => {
     const shortKey = btoa("too-short");
     await expect(encryptSecret("x", shortKey)).rejects.toThrow(/32バイト/);
+  });
+});
+
+describe("timingSafeTokenEqual（MCP アクセストークン比較・Issue #1 PR2）", () => {
+  it("同じ文字列は一致と判定する", async () => {
+    expect(await timingSafeTokenEqual("secret-token", "secret-token")).toBe(
+      true,
+    );
+  });
+
+  it("異なる文字列は不一致と判定する", async () => {
+    expect(await timingSafeTokenEqual("secret-token", "other-token")).toBe(
+      false,
+    );
+  });
+
+  it("長さが異なる文字列も不一致と判定する（SHA-256 で固定長化されるため長さ差では早期 false にならない）", async () => {
+    expect(await timingSafeTokenEqual("short", "much-longer-token")).toBe(
+      false,
+    );
+  });
+
+  it("空文字同士は一致と判定する（fail closed は呼び出し側の責務・convex/lib/auth.ts）", async () => {
+    expect(await timingSafeTokenEqual("", "")).toBe(true);
   });
 });

@@ -6,12 +6,13 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
 import {
+  type As,
   TEST_WEBHOOK_ENCRYPTION_KEY,
   getTask,
   listTaskGitLinks,
   listWebhookDeliveries,
+  seedAuthedMember,
   seedGitLink,
-  seedMember,
   seedProject,
   seedRepository,
   type T,
@@ -50,40 +51,37 @@ const loadTask = async (t: T, id: Id<"tasks">) => {
 
 /**
  * key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。
+ * Issue 作成は公開 API（認証ゲート配下）なので seedAuthedMember の `as` を使う。
+ * internal ミューテーション（handleBranchCreated 等）自体は無認証のままでよい。
  */
 const seedScenario = async (t: T) => {
+  const { as, memberId: member } = await seedAuthedMember(t);
   const project = await seedProject(t);
-  const member = await seedMember(t);
-  const { issue, task } = await t.mutation(api.issues.create, {
+  const { issue, task } = await as.mutation(api.issues.create, {
     project,
     title: "課題",
-    createdBy: member,
     firstTask: { title: "最初のタスク" },
   });
   const repository = await seedRepository(t, project);
-  return { project, member, issue, task, repository };
+  return { as, project, member, issue, task, repository };
 };
 
 /** 同じ Issue に Task を1件追加する（連番で TASK-2, TASK-3, … になる）。 */
-const addTask = (
-  t: T,
-  issue: Id<"issues">,
-  member: Id<"members">,
-  title = "追加タスク",
-) => t.mutation(api.tasks.create, { issue, title, createdBy: member });
+const addTask = (as: As, issue: Id<"issues">, title = "追加タスク") =>
+  as.mutation(api.tasks.create, { issue, title });
 
 /** active な Task の線形な前進経路（backlog はこの手前の初期状態）。 */
 const FORWARD_PATH = ["todo", "in_progress", "in_review", "done"] as const;
 
 /** Task を状態機械に沿って target まで前進させる（revision を追跡）。 */
 const driveTo = async (
-  t: T,
+  as: As,
   taskId: Id<"tasks">,
   target: (typeof FORWARD_PATH)[number],
 ) => {
   let rev = 0;
   for (const to of FORWARD_PATH) {
-    await t.mutation(api.tasks.transitionStatus, {
+    await as.mutation(api.tasks.transitionStatus, {
       id: taskId,
       to,
       expectedRevision: rev,
@@ -98,8 +96,8 @@ const driveTo = async (
 describe("webhooks.handleBranchCreated", () => {
   it("ブランチ名の参照に一致するタスクを todo → in_progress に進める", async () => {
     const t = setup();
-    const { project, task } = await seedScenario(t);
-    await driveTo(t, task, "todo");
+    const { as, project, task } = await seedScenario(t);
+    await driveTo(as, task, "todo");
 
     await t.mutation(internal.webhooks.handleBranchCreated, {
       projectId: project,
@@ -120,8 +118,8 @@ describe("webhooks.handleBranchCreated", () => {
     { name: "タスク参照を含まない", branchName: "feature/login" },
   ])("$name ブランチ名は無視し、タスクを変更しない", async ({ branchName }) => {
     const t = setup();
-    const { project, task } = await seedScenario(t);
-    await driveTo(t, task, "todo");
+    const { as, project, task } = await seedScenario(t);
+    await driveTo(as, task, "todo");
 
     await t.mutation(internal.webhooks.handleBranchCreated, {
       projectId: project,
@@ -145,8 +143,8 @@ describe("Git イベントによる自動遷移（applyTransition）", () => {
     "branch_created は $name タスク（$from）を上書きしない（前進のみ）",
     async ({ from }) => {
       const t = setup();
-      const { project, task } = await seedScenario(t);
-      await driveTo(t, task, from);
+      const { as, project, task } = await seedScenario(t);
+      await driveTo(as, task, from);
       const before = await loadTask(t, task);
 
       await t.mutation(internal.webhooks.handleBranchCreated, {
@@ -174,10 +172,10 @@ describe("Git イベントによる自動遷移（applyTransition）", () => {
 
   it("自動遷移したタスクは遷移先列の末尾 rank に置かれる", async () => {
     const t = setup();
-    const { project, member, issue, task } = await seedScenario(t);
-    const second = await addTask(t, issue, member); // TASK-2
-    await driveTo(t, second, "in_progress"); // 遷移先列に既存タスクを置いておく
-    await driveTo(t, task, "todo");
+    const { as, project, issue, task } = await seedScenario(t);
+    const second = await addTask(as, issue); // TASK-2
+    await driveTo(as, second, "in_progress"); // 遷移先列に既存タスクを置いておく
+    await driveTo(as, task, "todo");
 
     await t.mutation(internal.webhooks.handleBranchCreated, {
       projectId: project,
@@ -230,8 +228,8 @@ describe("webhooks.handlePush", () => {
 
   it("複数コミットの参照をそれぞれのタスクへ GitLink として追加する", async () => {
     const t = setup();
-    const { project, member, issue, task, repository } = await seedScenario(t);
-    const second = await addTask(t, issue, member); // TASK-2
+    const { as, project, issue, task, repository } = await seedScenario(t);
+    const second = await addTask(as, issue); // TASK-2
 
     await t.mutation(internal.webhooks.handlePush, {
       repositoryId: repository,
@@ -254,8 +252,8 @@ describe("webhooks.handlePush", () => {
     // upsertGitLink は (task, repository, type, externalRef=sha) で同定するため、
     // 同一 sha でも参照されたタスクごとに独立したリンクが作られる。
     const t = setup();
-    const { project, member, issue, task, repository } = await seedScenario(t);
-    const second = await addTask(t, issue, member); // TASK-2
+    const { as, project, issue, task, repository } = await seedScenario(t);
+    const second = await addTask(as, issue); // TASK-2
 
     await t.mutation(internal.webhooks.handlePush, {
       repositoryId: repository,
@@ -273,8 +271,8 @@ describe("webhooks.handlePush", () => {
 
   it("複数タスク参照コミットの再送は各タスクのリンクを増やさない（upsert）", async () => {
     const t = setup();
-    const { project, member, issue, task, repository } = await seedScenario(t);
-    const second = await addTask(t, issue, member); // TASK-2
+    const { as, project, issue, task, repository } = await seedScenario(t);
+    const second = await addTask(as, issue); // TASK-2
     const args = {
       repositoryId: repository,
       projectId: project,
@@ -464,8 +462,8 @@ describe("webhooks.handlePullRequest", () => {
     },
   ] as const)("$name", async ({ action, merged, from, expected }) => {
     const t = setup();
-    const { project, task, repository } = await seedScenario(t);
-    await driveTo(t, task, from);
+    const { as, project, task, repository } = await seedScenario(t);
+    await driveTo(as, task, from);
 
     await t.mutation(
       internal.webhooks.handlePullRequest,
@@ -480,8 +478,8 @@ describe("webhooks.handlePullRequest", () => {
 
   it("参照はタイトルを最優先で解決する（本文の参照より優先）", async () => {
     const t = setup();
-    const { project, member, issue, task, repository } = await seedScenario(t);
-    const second = await addTask(t, issue, member); // TASK-2
+    const { as, project, issue, task, repository } = await seedScenario(t);
+    const second = await addTask(as, issue); // TASK-2
 
     await t.mutation(
       internal.webhooks.handlePullRequest,

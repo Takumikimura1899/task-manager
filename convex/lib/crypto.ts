@@ -74,3 +74,42 @@ export async function decryptSecret(
   );
   return new TextDecoder().decode(plaintext);
 }
+
+/**
+ * 一定時間比較で文字列を検証する（タイミング攻撃対策）。
+ * GitHub Webhook の署名検証（http.ts）と MCP アクセストークン検証
+ * （lib/auth.ts の timingSafeTokenEqual）の双方から共有する。
+ */
+export function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new Uint8Array(new TextEncoder().encode(input)),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * トークンを SHA-256 でハッシュしてから一定時間比較する（MCP アクセストークン検証用）。
+ *
+ * timingSafeEqual は長さが異なると即座に false を返すため、比較対象の長さの
+ * 違いがタイミングから漏洩し得る。SHA-256 で双方を固定長 32byte に揃えてから
+ * 比較することで、元の入力長に関する情報漏えいも防ぐ。
+ */
+export async function timingSafeTokenEqual(
+  a: string,
+  b: string,
+): Promise<boolean> {
+  const [hashA, hashB] = await Promise.all([sha256Hex(a), sha256Hex(b)]);
+  return timingSafeEqual(hashA, hashB);
+}

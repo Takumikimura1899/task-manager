@@ -45,11 +45,36 @@ MCP サーバー（基本設計書 §6・ADR-4 の MVP クサビ）。
 
 ## 環境変数
 
+MCP プロセス側（`.mcp.json` 等）で設定する。
+
 | 変数 | 説明 | デフォルト |
 |---|---|---|
 | `CONVEX_URL` | Convex デプロイ URL（`.env.local` から自動ロード） | 必須 |
-| `MCP_AGENT_EMAIL` | エージェントが動作する Member の email（無ければ自動作成） | `agent@example.com` |
-| `MCP_AGENT_NAME` | 同上の表示名 | `AI Agent` |
+| `MCP_ACCESS_TOKEN` | 全 Convex 呼び出しに同梱する共有シークレット。Convex 側の `MCP_ACCESS_TOKEN` と同じ値を設定する（未設定・空なら起動時に拒否） | 必須 |
+| `MCP_AGENT_NAME` | エージェント Member の表示名 | `AI Agent` |
+
+エージェントの email（`MCP_AGENT_EMAIL`）は Convex デプロイメント側の環境変数に
+移行した。MCP プロセスからは送信しない（env 書き換えで他人の Member になりすませる
+抜け道を作らないため。設定はサーバー管理者のみが持つ Convex 側の権限で行う）。
+
+```sh
+bunx convex env set MCP_AGENT_EMAIL agent@example.com        # dev
+bunx convex env set MCP_AGENT_EMAIL agent@example.com --prod # prod
+bunx convex env set MCP_ACCESS_TOKEN <shared-secret>          # dev
+bunx convex env set MCP_ACCESS_TOKEN <shared-secret> --prod   # prod
+```
+
+MCP サーバーは起動時に `members.ensureAgent` を呼び、`MCP_AGENT_EMAIL` に対応する
+Member を解決・登録する（初回は自動作成、以降は既存 Member を再利用）。
+
+### 注意
+
+- `accessToken` は Convex の関数引数として渡るため、Convex ダッシュボードの
+  関数ログに残りうる（dev 用途の割り切り）。漏えいした場合は
+  `MCP_ACCESS_TOKEN` を再設定すれば、古い値を使う全クライアントを同時に失効できる。
+- Convex ダッシュボードから手動で関数を叩く場合も、他の引数と同様に
+  `accessToken` を渡す必要がある（省略するとブラウザ経路として扱われ、
+  Convex Auth のセッションが無ければ拒否される）。
 
 ## 起動
 

@@ -8,8 +8,10 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 /**
  * Task 詳細のローディング表示（Issue #29）と編集操作（Issue #32:
  * ステータス遷移・破壊的操作の確認・削除）を検証する。
- * Convex は外部依存のためモックする。getDetail は引数付き・members.list は
- * 引数なしで呼ばれる性質を使って購読値を出し分ける。
+ * Convex は外部依存のためモックする。members.list は認証ゲート対応で
+ * `{}` 引数付き呼び出しになったため（Issue #1）、getDetail と args の有無では
+ * 区別できない。getFunctionName による名前ベースディスパッチで出し分ける
+ * （IssueDetail.test.tsx と同方式）。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -18,11 +20,19 @@ const mocks = vi.hoisted(() => ({
   mutate: vi.fn<(args: Record<string, unknown>) => Promise<unknown>>(),
 }));
 
-vi.mock("convex/react", () => ({
-  useQuery: (_query: unknown, args?: unknown) =>
-    args === undefined ? mocks.members : mocks.task,
-  useMutation: () => mocks.mutate,
-}));
+vi.mock("convex/react", async () => {
+  const { getFunctionName } = await import("convex/server");
+  return {
+    useQuery: (query: unknown, _args?: unknown) => {
+      const name = getFunctionName(
+        query as Parameters<typeof getFunctionName>[0],
+      );
+      if (name === "members:list") return mocks.members;
+      return mocks.task;
+    },
+    useMutation: () => mocks.mutate,
+  };
+});
 
 // Markdown エディタは jsdom で不安定な重量ライブラリのため textarea スタブへ差し替える
 vi.mock("../../components/MarkdownEditor/MarkdownEditor", () => ({
