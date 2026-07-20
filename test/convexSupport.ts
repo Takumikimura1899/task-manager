@@ -52,6 +52,9 @@ export const seedMember = (
     email: string;
     role: "admin" | "member";
     authUserId: Id<"users">;
+    // 招待トークンの SHA-256 ハッシュ（招待ウィンドウ乗っ取り対策・Issue #1）。
+    // linkAuthUserToMember の照合対象を明示的に用意したいテストで使う。
+    inviteTokenHash: string;
   }> = {},
 ) =>
   t.run((ctx) =>
@@ -66,9 +69,13 @@ export const seedMember = (
 /**
  * Convex Auth の users を1件 seed する（Issue #1 認証基盤）。
  * email 未設定（プロフィール取得前の状態を模したケース）も overrides で表現できる。
+ * inviteCode は招待トークン方式（signUp 時のみ users doc に一時的に載る使い捨ての値、
+ * convex/auth.ts profile() 経由）を模したテストで使う。
  */
-export const seedUser = (t: T, overrides: Partial<{ email: string }> = {}) =>
-  t.run((ctx) => ctx.db.insert("users", { ...overrides }));
+export const seedUser = (
+  t: T,
+  overrides: Partial<{ email: string; inviteCode: string }> = {},
+) => t.run((ctx) => ctx.db.insert("users", { ...overrides }));
 
 /**
  * `t.withIdentity` に渡す subject を組み立てる。@convex-dev/auth の getAuthUserId は

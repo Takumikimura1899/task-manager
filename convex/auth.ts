@@ -12,7 +12,15 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         if (!isValidEmail(email)) {
           throw new ConvexError("メールアドレスが不正です");
         }
-        return { email };
+        // inviteCode は招待トークン方式（招待ウィンドウ乗っ取り対策・Issue #1）で
+        // signUp 時のみ渡される。undefined は Convex 値として不正なため、
+        // string のときだけ条件付き spread で users doc へ書き込む。
+        return {
+          email,
+          ...(typeof params.inviteCode === "string"
+            ? { inviteCode: params.inviteCode }
+            : {}),
+        };
       },
     }),
   ],

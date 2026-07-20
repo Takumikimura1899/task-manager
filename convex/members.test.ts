@@ -9,6 +9,7 @@ import {
   authSubject,
   seedAgentMember,
   seedAuthedMember,
+  seedGhostMember,
   seedMember,
   seedUser,
   stubAgentTokenEnv,
@@ -35,17 +36,34 @@ describe("members.create", () => {
     const t = setup();
     const { as } = await seedAuthedMember(t);
 
-    const id = await as.mutation(api.members.create, {
+    const { memberId } = await as.mutation(api.members.create, {
       name: "Alice2",
       email: "  Alice2@Example.COM ",
       role: "admin",
     });
 
-    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+    expect(await t.run((ctx) => ctx.db.get(memberId))).toMatchObject({
       name: "Alice2",
       email: "alice2@example.com", // 正規化済みの値で保存される
       role: "admin",
     });
+  });
+
+  it("招待トークンを返し、DB にはハッシュのみを保存する（平文は保存しない・招待ウィンドウ乗っ取り対策）", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+
+    const { memberId, inviteToken } = await as.mutation(api.members.create, {
+      name: "Bob",
+      email: "bob@example.com",
+      role: "member",
+    });
+
+    expect(inviteToken).toMatch(/^[0-9a-f]{64}$/);
+    const stored = await t.run((ctx) => ctx.db.get(memberId));
+    expect(stored?.inviteTokenHash).toBeDefined();
+    expect(stored?.inviteTokenHash).not.toBe(inviteToken);
+    expect(JSON.stringify(stored)).not.toContain(inviteToken);
   });
 
   it("正規化後に一致する email の重複を拒否し、Member を追加しない", async () => {
@@ -80,6 +98,84 @@ describe("members.create", () => {
     ).rejects.toThrowError("メールアドレスが不正です");
     // 既存の actor 本人（seedAuthedMember が作った1件）のみ
     expect(await as.query(api.members.list, {})).toHaveLength(1);
+  });
+});
+
+describe("members.reissueInviteToken（招待トークン再発行・Issue #1 追補の救済経路）", () => {
+  it("admin actor は再発行に成功し、新しい平文トークンを返す", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t, { role: "admin" });
+    // 招待トークン方式の導入前に招待された想定（inviteTokenHash 未設定）
+    const targetId = await seedMember(t, { email: "invited@example.com" });
+
+    const { memberId, inviteToken } = await as.mutation(
+      api.members.reissueInviteToken,
+      { memberId: targetId },
+    );
+
+    expect(memberId).toBe(targetId);
+    expect(inviteToken).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      (await t.run((ctx) => ctx.db.get(targetId)))?.inviteTokenHash,
+    ).toBeDefined();
+  });
+
+  it("hash が更新され、平文は DB に保存されない", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t, { role: "admin" });
+    const targetId = await seedMember(t, {
+      email: "invited@example.com",
+      inviteTokenHash: "old-hash-value",
+    });
+
+    const { inviteToken } = await as.mutation(api.members.reissueInviteToken, {
+      memberId: targetId,
+    });
+
+    const stored = await t.run((ctx) => ctx.db.get(targetId));
+    expect(stored?.inviteTokenHash).not.toBe("old-hash-value"); // 更新されている
+    expect(stored?.inviteTokenHash).not.toBe(inviteToken); // 平文そのものは保存しない
+    expect(JSON.stringify(stored)).not.toContain(inviteToken);
+  });
+
+  it("admin 以外の actor は拒否し、member を変更しない", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t, { role: "member" });
+    const targetId = await seedMember(t, { email: "invited@example.com" });
+
+    await expect(
+      as.mutation(api.members.reissueInviteToken, { memberId: targetId }),
+    ).rejects.toThrowError("admin 権限が必要です");
+
+    expect(
+      (await t.run((ctx) => ctx.db.get(targetId)))?.inviteTokenHash,
+    ).toBeUndefined();
+  });
+
+  it("authUserId がリンク済みの member への再発行は拒否する（乗っ取り防止）", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t, { role: "admin" });
+    const linkedUserId = await seedUser(t, { email: "linked@example.com" });
+    const targetId = await seedMember(t, {
+      email: "linked@example.com",
+      authUserId: linkedUserId,
+    });
+
+    await expect(
+      as.mutation(api.members.reissueInviteToken, { memberId: targetId }),
+    ).rejects.toThrowError(
+      "既にサインアップ済みの Member には招待トークンを再発行できません",
+    );
+  });
+
+  it("存在しない memberId は拒否する", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t, { role: "admin" });
+    const ghostId = await seedGhostMember(t);
+
+    await expect(
+      as.mutation(api.members.reissueInviteToken, { memberId: ghostId }),
+    ).rejects.toThrowError("指定された Member が存在しません");
   });
 });
 

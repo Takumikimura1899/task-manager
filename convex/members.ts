@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { memberRole } from "./schema";
 import {
   findMemberByAuthUserId,
@@ -10,6 +10,7 @@ import {
   requireAgentToken,
   requireAuthed,
 } from "./lib/auth";
+import { generateInviteToken, sha256Hex } from "./lib/crypto";
 import { isValidEmail, normalizeEmail } from "./lib/validators";
 
 /**
@@ -18,6 +19,21 @@ import { isValidEmail, normalizeEmail } from "./lib/validators";
  * email の一意性（INVARIANT）は正規化後の値を by_email で確認し、
  * Convex のトランザクション（OCC）により保証する。
  */
+
+/**
+ * 公開 query が member 単体を返すときの curated shape。生 doc を返すと
+ * inviteTokenHash から招待の未消化／消化済みを、authUserId の有無から
+ * サインアップ状態を判別できてしまうため、公開してよいフィールドを
+ * 本ヘルパで一元管理する（除外対象が増えたらここだけを変更する）。
+ */
+function toMemberSummary(member: Doc<"members">) {
+  return {
+    _id: member._id,
+    name: member.name,
+    role: member.role,
+    email: member.email,
+  };
+}
 
 export const create = mutation({
   args: {
@@ -42,11 +58,64 @@ export const create = mutation({
       throw new ConvexError(`メールアドレス "${email}" は既に登録されています`);
     }
 
-    return await ctx.db.insert("members", {
+    // 招待トークン方式（招待ウィンドウ乗っ取り対策・Issue #1）。DB には
+    // sha256Hex したハッシュのみを保存し、平文は呼び出し元へこの一度だけ返す
+    // （signUp 時の照合は convex/lib/memberLink.ts）。
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = await sha256Hex(inviteToken);
+
+    const memberId = await ctx.db.insert("members", {
       name: args.name,
       email, // 正規化済みの値を保存する
       role: args.role,
+      inviteTokenHash,
     });
+    return { memberId, inviteToken };
+  },
+});
+
+/**
+ * 招待トークンの再発行（Issue #1 追補・救済経路）。
+ *
+ * 招待トークン方式の導入前に招待された member（inviteTokenHash 未設定）や、
+ * 招待コードを紛失した member はこのままだとサインアップ不能なまま詰む
+ * （member を削除して members.create で作り直す以外にアプリ内から救済する
+ * 手段がなかった）。admin がこのミューテーションで新しいトークンを発行し
+ * 直せるようにする。
+ *
+ * - actor（呼び出し元）が role: "admin" であることを要求する。
+ * - 既に authUserId がリンク済みの member への再発行は拒否する（乗っ取り
+ *   防止。リンク済み member に新しい招待トークンを発行できてしまうと、
+ *   別の authUserId へ付け替える横取り経路になってしまう）。
+ * - members.create と同一の設計: 平文トークンは呼び出し元へこの一度だけ返し、
+ *   DB には SHA-256 ハッシュのみを保存する。
+ */
+export const reissueInviteToken = mutation({
+  args: {
+    memberId: v.id("members"),
+    accessToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireActor(ctx, args.accessToken);
+    if (actor.role !== "admin") {
+      throw new ConvexError("この操作には admin 権限が必要です");
+    }
+
+    const target = await ctx.db.get(args.memberId);
+    if (target === null) {
+      throw new ConvexError("指定された Member が存在しません");
+    }
+    if (target.authUserId !== undefined) {
+      throw new ConvexError(
+        "既にサインアップ済みの Member には招待トークンを再発行できません",
+      );
+    }
+
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = await sha256Hex(inviteToken);
+    await ctx.db.patch(target._id, { inviteTokenHash });
+
+    return { memberId: target._id, inviteToken };
   },
 });
 
@@ -55,10 +124,13 @@ export const getByEmail = query({
   handler: async (ctx, args) => {
     await requireAuthed(ctx, args.accessToken);
 
-    return await ctx.db
+    const member = await ctx.db
       .query("members")
       .withIndex("by_email", (q) => q.eq("email", normalizeEmail(args.email)))
       .unique();
+    if (member === null) return null;
+
+    return toMemberSummary(member);
   },
 });
 
@@ -84,12 +156,7 @@ export const me = query({
     const member = await findMemberByAuthUserId(ctx, userId);
     if (member === null) return null;
 
-    return {
-      _id: member._id,
-      name: member.name,
-      role: member.role,
-      email: member.email,
-    };
+    return toMemberSummary(member);
   },
 });
 

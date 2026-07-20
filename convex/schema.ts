@@ -57,6 +57,21 @@ export default defineSchema({
   // Convex Auth 用テーブル（users / authAccounts / authSessions 等）
   ...authTables,
 
+  // users は authTables.users のフィールド定義をそのまま spread し（インデックスは
+  // 手動で再現。email インデックスは auth 内部の実装が依存する）、招待トークン方式
+  // （招待ウィンドウ乗っ取り対策・Issue #1）で使い捨てで受け渡す inviteCode を追加する。
+  // convex/auth.ts の profile() が signUp 引数から一度だけ書き込み、
+  // convex/lib/memberLink.ts の linkAuthUserToMember が照合後に必ず除去する。
+  // フィールドを手書きで複製しないため、@convex-dev/auth のバージョンアップに
+  // 伴うフィールド変更にも追随できる（インデックス定義側は library が公開する
+  // 型がなく spread できないため、手動で維持する）。
+  users: defineTable({
+    ...authTables.users.validator.fields,
+    inviteCode: v.optional(v.string()),
+  })
+    .index("email", ["email"])
+    .index("phone", ["phone"]),
+
   // Project — 作業の単位
   projects: defineTable({
     // 短縮名（例 "TASK" → 表示は TASK-123）。一意性は Core ロジックで保証する。
@@ -77,6 +92,10 @@ export default defineSchema({
     // 招待制リンク（convex/lib/memberLink.ts）で設定される。未認証運用中や
     // 招待未消化の member は unset のままでよい。
     authUserId: v.optional(v.id("users")),
+    // 招待トークンの SHA-256 ハッシュ（招待ウィンドウ乗っ取り対策・Issue #1）。
+    // members.create が発行時に一度だけ設定する。平文は保存しない。
+    // リンク成功時（linkAuthUserToMember）に除去する使い捨ての値。
+    inviteTokenHash: v.optional(v.string()),
   })
     .index("by_email", ["email"])
     .index("by_authUserId", ["authUserId"]),
