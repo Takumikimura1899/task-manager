@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
-import { requireActor } from "./lib/auth";
+import { requireActor, requireAuthed } from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
@@ -85,7 +85,9 @@ export async function insertTask(
   if (project === null) {
     throw new ConvexError("指定されたプロジェクトが存在しません");
   }
-  await assertMemberExists(ctx, args.createdBy);
+  // createdBy は requireActor が同一トランザクション内で取得した実在 member
+  // （actor._id）のみが渡るため、実在チェックは不要（Issue #1 PR2 で
+  // クライアント引数を廃止済み）。assignee は引き続きクライアント由来なので検証する。
   if (args.assignee !== undefined) {
     await assertMemberExists(ctx, args.assignee);
   }
@@ -316,7 +318,7 @@ export const deleteTask = mutation({
 export const listByProject = query({
   args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     return await ctx.db
       .query("tasks")
@@ -345,7 +347,7 @@ export const listFiltered = query({
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const byPriority = (t: Doc<"tasks">) =>
       args.priority === undefined || t.priority === args.priority;
@@ -389,7 +391,7 @@ export const listFiltered = query({
 export const board = query({
   args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const columnTasks = await Promise.all(
       TASK_STATUSES.map(async (status) => ({
@@ -448,7 +450,7 @@ export const getByRef = query({
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
@@ -477,7 +479,7 @@ export const getDetail = query({
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;

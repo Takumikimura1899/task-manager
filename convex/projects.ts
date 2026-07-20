@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireActor } from "./lib/auth";
+import { requireActor, requireAuthed } from "./lib/auth";
 import { findProjectByKey } from "./lib/projects";
 import { isValidProjectKey } from "./lib/validators";
 
@@ -47,7 +47,7 @@ export const create = mutation({
 export const getByKey = query({
   args: { key: v.string(), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     return await findProjectByKey(ctx, args.key);
   },
@@ -56,7 +56,7 @@ export const getByKey = query({
 export const list = query({
   args: { accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     return await ctx.db.query("projects").collect();
   },

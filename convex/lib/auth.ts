@@ -1,12 +1,21 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import { timingSafeTokenEqual } from "./crypto";
-import { normalizeEmail } from "./validators";
+import { isValidEmail, normalizeEmail } from "./validators";
 
 /**
  * 全公開関数の認証ゲート（Issue #1 PR2）。
+ *
+ * ゲートは2段構え:
+ * - query → requireAuthed: 「誰であるか（認証済み or 正トークン）」だけを要求する。
+ *   Member 未リンクでも閲覧は許可する（認証済みだが Member が消えた/未リンクの
+ *   ユーザーを全画面クラッシュにせず、NoMembersNotice の案内へ落とすため。
+ *   Issue #16 / #1。アクセスの完全な失効は Convex ダッシュボードで認証ユーザー
+ *   自体を削除する）。
+ * - mutation → requireActor: 書き込みの記録主体（actor）となる Member の解決まで
+ *   要求する。未リンクは拒否。
  *
  * 呼び出し経路は2つ:
  * - MCP 経路（accessToken あり）: サーバ側の MCP_ACCESS_TOKEN と照合し、
@@ -48,9 +57,62 @@ export async function requireAgentToken(
 }
 
 /**
- * 呼び出し元（actor）の member を解決する。書き込みは行わない
- * （query からも呼ばれるため、member の自動作成はできない。エージェント
- * member の初回登録は members.ensureAgent の責務）。
+ * process.env.MCP_AGENT_EMAIL を検証込みで解決する（requireActor と
+ * members.ensureAgent の共有ヘルパ。検証条件やメッセージの二重管理を防ぐ）。
+ * 形式不正はここで即エラーにする: 黙って壊れた email の Member を作らせない
+ * （CLAUDE.md「サイレント失敗の回避」）。
+ */
+export function requireAgentEmail(): string {
+  const raw = process.env.MCP_AGENT_EMAIL;
+  if (raw === undefined || raw === "") {
+    throw new ConvexError(
+      "MCP_AGENT_EMAIL が設定されていません（convex env set で設定してください）",
+    );
+  }
+  const email = normalizeEmail(raw);
+  if (!isValidEmail(email)) {
+    throw new ConvexError(
+      `MCP_AGENT_EMAIL の値がメールアドレスとして不正です: "${raw}"`,
+    );
+  }
+  return email;
+}
+
+/**
+ * authUserId にリンクされた member を解決する（requireActor と members.me の
+ * 共有ヘルパ。「現在のユーザーは誰か」の解決を一箇所に集約する）。
+ */
+export async function findMemberByAuthUserId(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+): Promise<Doc<"members"> | null> {
+  return await ctx.db
+    .query("members")
+    .withIndex("by_authUserId", (q) => q.eq("authUserId", userId))
+    .unique();
+}
+
+/**
+ * query 用ゲート: 呼び出し元が「認証済みユーザー or 正トークンの MCP」で
+ * あることだけを要求する（Member 未リンクでも閲覧可。冒頭コメント参照）。
+ */
+export async function requireAuthed(
+  ctx: QueryCtx,
+  accessToken?: string,
+): Promise<void> {
+  if (accessToken !== undefined) {
+    await requireAgentToken(accessToken);
+    return;
+  }
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) {
+    throw new ConvexError("認証が必要です");
+  }
+}
+
+/**
+ * mutation 用ゲート: 呼び出し元（actor）の member を解決する。書き込みは
+ * 行わない（エージェント member の初回登録は members.ensureAgent の責務）。
  */
 export async function requireActor(
   ctx: QueryCtx,
@@ -59,13 +121,7 @@ export async function requireActor(
   if (accessToken !== undefined) {
     await requireAgentToken(accessToken);
 
-    const agentEmailRaw = process.env.MCP_AGENT_EMAIL;
-    if (agentEmailRaw === undefined || agentEmailRaw === "") {
-      throw new ConvexError(
-        "MCP_AGENT_EMAIL が設定されていません（convex env set で設定してください）",
-      );
-    }
-    const agentEmail = normalizeEmail(agentEmailRaw);
+    const agentEmail = requireAgentEmail();
     const member = await ctx.db
       .query("members")
       .withIndex("by_email", (q) => q.eq("email", agentEmail))
@@ -82,10 +138,7 @@ export async function requireActor(
   if (userId === null) {
     throw new ConvexError("認証が必要です");
   }
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_authUserId", (q) => q.eq("authUserId", userId))
-    .unique();
+  const member = await findMemberByAuthUserId(ctx, userId);
   if (member === null) {
     throw new ConvexError("メンバー登録がありません");
   }

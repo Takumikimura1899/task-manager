@@ -3,7 +3,13 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { memberRole } from "./schema";
-import { requireActor, requireAgentToken } from "./lib/auth";
+import {
+  findMemberByAuthUserId,
+  requireActor,
+  requireAgentEmail,
+  requireAgentToken,
+  requireAuthed,
+} from "./lib/auth";
 import { isValidEmail, normalizeEmail } from "./lib/validators";
 
 /**
@@ -47,7 +53,7 @@ export const create = mutation({
 export const getByEmail = query({
   args: { email: v.string(), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     return await ctx.db
       .query("members")
@@ -75,10 +81,7 @@ export const me = query({
     const userId = await getAuthUserId(ctx);
     if (userId === null) return null;
 
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_authUserId", (q) => q.eq("authUserId", userId))
-      .unique();
+    const member = await findMemberByAuthUserId(ctx, userId);
     if (member === null) return null;
 
     return {
@@ -93,7 +96,7 @@ export const me = query({
 export const list = query({
   args: { accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const members = await ctx.db.query("members").collect();
     // PII（email）を未認証クライアントへ露出しない。UI に必要な最小限のみ返す。
@@ -115,13 +118,9 @@ export const ensureAgent = mutation({
   handler: async (ctx, args) => {
     await requireAgentToken(args.accessToken);
 
-    const agentEmailRaw = process.env.MCP_AGENT_EMAIL;
-    if (agentEmailRaw === undefined || agentEmailRaw === "") {
-      throw new ConvexError(
-        "MCP_AGENT_EMAIL が設定されていません（convex env set で設定してください）",
-      );
-    }
-    const email = normalizeEmail(agentEmailRaw);
+    // 形式検証込みで解決する（requireActor と共有。誤設定の env から
+    // 壊れた email の Member をサイレントに作らない）。
+    const email = requireAgentEmail();
 
     const existing = await ctx.db
       .query("members")

@@ -48,7 +48,7 @@ describe("requireActor（ブラウザ経路）", () => {
     ).rejects.toThrowError("認証が必要です");
   });
 
-  it("認証済みでも Member にリンクされていなければ ConvexError で拒否する", async () => {
+  it("認証済みだが Member 未リンクでも query は閲覧できる（requireAuthed。全画面クラッシュにせず NoMembersNotice の案内へ落とすため）", async () => {
     const t = setup();
     const project = await seedProject(t);
     const userId = await seedUser(t, { email: "nobody@example.com" });
@@ -56,6 +56,20 @@ describe("requireActor（ブラウザ経路）", () => {
 
     await expect(
       asUnlinked.query(api.tasks.listByProject, { project }),
+    ).resolves.toEqual([]);
+  });
+
+  it("認証済みでも Member 未リンクなら mutation（actor が必要）は ConvexError で拒否する", async () => {
+    const t = setup();
+    const userId = await seedUser(t, { email: "nobody@example.com" });
+    const asUnlinked = t.withIdentity({ subject: authSubject(userId) });
+
+    await expect(
+      asUnlinked.mutation(api.members.create, {
+        name: "X",
+        email: "x@example.com",
+        role: "member",
+      }),
     ).rejects.toThrowError("メンバー登録がありません");
   });
 
@@ -186,6 +200,20 @@ describe("requireActor / requireAgentToken（MCP 経路）", () => {
     await expect(
       t.run((ctx) => requireActor(ctx, AGENT_TOKEN)),
     ).rejects.toThrowError("MCP_AGENT_EMAIL が設定されていません");
+  });
+
+  it("MCP_AGENT_EMAIL がメールアドレスとして不正なら拒否する（壊れた Member をサイレントに作らせない）", async () => {
+    const t = setup();
+    vi.stubEnv("MCP_ACCESS_TOKEN", AGENT_TOKEN);
+    vi.stubEnv("MCP_AGENT_EMAIL", "agentexample.com"); // @ の付け忘れ
+
+    await expect(
+      t.run((ctx) => requireActor(ctx, AGENT_TOKEN)),
+    ).rejects.toThrowError("メールアドレスとして不正");
+    // ensureAgent（Member を作る唯一の経路）も同じ検証で弾く
+    await expect(
+      t.mutation(api.members.ensureAgent, { accessToken: AGENT_TOKEN }),
+    ).rejects.toThrowError("メールアドレスとして不正");
   });
 
   it("requireAgentToken 単体でも同じ fail-closed 挙動になる（member 解決を伴わない検証専用パス）", async () => {

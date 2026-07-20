@@ -139,13 +139,14 @@ describe("members の認証ゲート（Issue #1 PR2）", () => {
     );
   });
 
-  it("認証済みでも Member 未リンクなら ConvexError で拒否する", async () => {
+  it("認証済みなら Member 未リンクでも query（list）は閲覧できる（requireAuthed。未リンク時の書き込み拒否は lib/auth.test.ts が固定する）", async () => {
     const t = setup();
+    await seedMember(t);
     const userId = await seedUser(t, { email: "nobody@example.com" });
     const asUnlinked = t.withIdentity({ subject: authSubject(userId) });
 
-    await expect(asUnlinked.query(api.members.list, {})).rejects.toThrowError(
-      "メンバー登録がありません",
+    await expect(asUnlinked.query(api.members.list, {})).resolves.toHaveLength(
+      1,
     );
   });
 });

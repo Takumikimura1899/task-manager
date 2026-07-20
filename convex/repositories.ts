@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireActor } from "./lib/auth";
+import { requireActor, requireAuthed } from "./lib/auth";
 import { encryptSecret } from "./lib/crypto";
 
 /**
@@ -47,7 +47,7 @@ export const create = mutation({
 export const listByProject = query({
   args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const repos = await ctx.db
       .query("repositories")

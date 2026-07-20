@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { type QueryCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireActor } from "./lib/auth";
+import { requireActor, requireAuthed } from "./lib/auth";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
@@ -163,7 +163,7 @@ export const remove = mutation({
 export const list = query({
   args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const issues = await ctx.db
       .query("issues")
@@ -223,7 +223,7 @@ export const list = query({
 export const listInProgress = query({
   args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const issues = await ctx.db
       .query("issues")
@@ -307,7 +307,7 @@ export const getIdByRef = query({
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     return found === null ? null : found.issue._id;
@@ -326,7 +326,7 @@ export const getByRef = query({
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
+    await requireAuthed(ctx, args.accessToken);
 
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     if (found === null) return null;
