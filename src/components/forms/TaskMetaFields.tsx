@@ -19,7 +19,7 @@ export function TaskMetaFields({
   assignee: Id<"members"> | null;
   onAssignee: (a: Id<"members"> | null) => void;
 }) {
-  const members = useQuery(api.members.list);
+  const members = useQuery(api.members.list, {});
 
   return (
     <div className={s.row}>

@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
+import { requireActor } from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
@@ -121,9 +122,11 @@ export const create = mutation({
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
     assignee: v.optional(v.id("members")),
-    createdBy: v.id("members"),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const actor = await requireActor(ctx, args.accessToken);
+
     // Task は必ず Issue に従属する（INVARIANT-5）。project は Issue から解決する。
     const issue = await ctx.db.get(args.issue);
     if (issue === null) {
@@ -137,7 +140,7 @@ export const create = mutation({
       description: args.description,
       priority: args.priority,
       assignee: args.assignee,
-      createdBy: args.createdBy,
+      createdBy: actor._id,
     });
   },
 });
@@ -153,8 +156,11 @@ export const updateFields = mutation({
     // null はクリア（見積/実績なし状態へ戻す）を表す。
     estimate: v.optional(v.union(v.number(), v.null())),
     actual: v.optional(v.union(v.number(), v.null())),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -189,8 +195,11 @@ export const transitionStatus = mutation({
     expectedRevision: v.number(),
     before: v.optional(v.union(v.string(), v.null())),
     after: v.optional(v.union(v.string(), v.null())),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -219,8 +228,11 @@ export const assign = mutation({
     id: v.id("tasks"),
     assignee: v.union(v.id("members"), v.null()),
     expectedRevision: v.number(),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
     if (args.assignee !== null) {
@@ -245,8 +257,11 @@ export const move = mutation({
     before: v.union(v.string(), v.null()),
     after: v.union(v.string(), v.null()),
     expectedRevision: v.number(),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -262,8 +277,14 @@ export const move = mutation({
  * 参照整合性（INVARIANT-3）維持のため、関連する GitLink も併せて削除する。
  */
 export const deleteTask = mutation({
-  args: { id: v.id("tasks"), expectedRevision: v.number() },
+  args: {
+    id: v.id("tasks"),
+    expectedRevision: v.number(),
+    accessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -293,8 +314,10 @@ export const deleteTask = mutation({
 // --- Queries ----------------------------------------------------------------
 
 export const listByProject = query({
-  args: { project: v.id("projects") },
+  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     return await ctx.db
       .query("tasks")
       .withIndex("by_project", (q) => q.eq("project", args.project))
@@ -319,8 +342,11 @@ export const listFiltered = query({
     status: v.optional(taskStatus),
     assignee: v.optional(v.id("members")),
     priority: v.optional(taskPriority),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const byPriority = (t: Doc<"tasks">) =>
       args.priority === undefined || t.priority === args.priority;
 
@@ -361,8 +387,10 @@ export const listFiltered = query({
  * （member の email 等 PII は返さず name のみ）。
  */
 export const board = query({
-  args: { project: v.id("projects") },
+  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const columnTasks = await Promise.all(
       TASK_STATUSES.map(async (status) => ({
         status,
@@ -414,8 +442,14 @@ export const board = query({
  * 表示用の join は付与しない（詳細画面は getDetail を使う）。
  */
 export const getByRef = query({
-  args: { projectKey: v.string(), number: v.number() },
+  args: {
+    projectKey: v.string(),
+    number: v.number(),
+    accessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 
@@ -437,8 +471,14 @@ export const getByRef = query({
  * - projectKey（表示・リンク生成用）
  */
 export const getDetail = query({
-  args: { projectKey: v.string(), number: v.number() },
+  args: {
+    projectKey: v.string(),
+    number: v.number(),
+    accessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 

@@ -1,5 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { requireActor } from "./lib/auth";
 import { encryptSecret } from "./lib/crypto";
 
 /**
@@ -23,8 +24,11 @@ export const create = mutation({
     project: v.id("projects"),
     remoteUrl: v.string(),
     webhookSecret: v.string(),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     if ((await ctx.db.get(args.project)) === null) {
       throw new ConvexError("指定されたプロジェクトが存在しません");
     }
@@ -41,8 +45,10 @@ export const create = mutation({
 
 /** プロジェクトのリポジトリ一覧（webhookSecret は除外して返す）。 */
 export const listByProject = query({
-  args: { project: v.id("projects") },
+  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const repos = await ctx.db
       .query("repositories")
       .withIndex("by_project", (q) => q.eq("project", args.project))

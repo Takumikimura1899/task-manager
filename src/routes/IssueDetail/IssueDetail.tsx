@@ -254,7 +254,7 @@ export function IssueDetail() {
           );
         })}
         {currentMember !== null ? (
-          <AddTaskForm createdBy={currentMember._id} issue={issue._id} />
+          <AddTaskForm issue={issue._id} />
         ) : (
           // Member 未リンクでは作成手段が消えるため、黙って隠さず理由を案内する
           // （Issue #16 / #1、AppLayout.tsx と同方針）。members.me 読み込み中は

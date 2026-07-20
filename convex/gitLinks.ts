@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { type MutationCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { requireActor } from "./lib/auth";
 import { gitLinkType, prState } from "./schema";
 
 /**
@@ -59,8 +60,11 @@ export const link = mutation({
     externalRef: v.string(),
     url: v.string(),
     prState: v.optional(prState),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     // 参照整合性（INVARIANT-3）
     if ((await ctx.db.get(args.task)) === null) {
       throw new ConvexError("指定されたタスクが存在しません");
@@ -73,8 +77,10 @@ export const link = mutation({
 });
 
 export const listByTask = query({
-  args: { task: v.id("tasks") },
+  args: { task: v.id("tasks"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     return await ctx.db
       .query("gitLinks")
       .withIndex("by_task", (q) => q.eq("task", args.task))

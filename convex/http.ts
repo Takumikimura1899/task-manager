@@ -7,6 +7,7 @@ import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { timingSafeEqual } from "./lib/crypto";
 
 /**
  * GitHub Webhook の受信エンドポイント（基本設計書 §7）。
@@ -29,16 +30,6 @@ const http = httpRouter();
 // /.well-known/openid-configuration・/.well-known/jwks.json 等。既存の
 // GitHub Webhook ルート（/webhooks/github）とはパスが重複しないため共存できる。
 auth.addHttpRoutes(http);
-
-/** 一定時間比較で署名を検証する（タイミング攻撃対策）。 */
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return diff === 0;
-}
 
 async function verifySignature(
   secret: string,

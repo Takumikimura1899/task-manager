@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { type QueryCtx, mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { requireActor } from "./lib/auth";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
@@ -48,7 +49,6 @@ export const create = mutation({
     project: v.id("projects"),
     title: v.string(),
     description: v.optional(v.string()),
-    createdBy: v.id("members"),
     priority: v.optional(taskPriority),
     firstTask: v.object({
       title: v.string(),
@@ -56,14 +56,17 @@ export const create = mutation({
       priority: v.optional(taskPriority),
       assignee: v.optional(v.id("members")),
     }),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const actor = await requireActor(ctx, args.accessToken);
+
     const project = await ctx.db.get(args.project);
     if (project === null) {
       throw new ConvexError("指定されたプロジェクトが存在しません");
     }
-    // createdBy の実在確認（INVARIANT-3）は insertTask に集約されている。
-    // 検証に失敗した場合は mutation 全体がロールバックされるため、
+    // createdBy（=actor._id）の実在確認（INVARIANT-3）は insertTask に集約
+    // されている。検証に失敗した場合は mutation 全体がロールバックされるため、
     // ここで先行チェックしなくても Issue が残ることはない。
 
     // 採番（INVARIANT-1）: Issue 連番を採番してカウンタを進める。
@@ -75,7 +78,7 @@ export const create = mutation({
       number,
       title: args.title,
       description: args.description,
-      createdBy: args.createdBy,
+      createdBy: actor._id,
       priority: args.priority,
       revision: 0,
       updatedAt: Date.now(),
@@ -89,7 +92,7 @@ export const create = mutation({
       description: args.firstTask.description,
       priority: args.firstTask.priority,
       assignee: args.firstTask.assignee,
-      createdBy: args.createdBy,
+      createdBy: actor._id,
     });
 
     return { issue, task };
@@ -107,8 +110,11 @@ export const update = mutation({
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
+    accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const issue = await getIssueOrThrow(ctx, args.id);
     assertRevision(issue, args.expectedRevision);
 
@@ -126,8 +132,14 @@ export const update = mutation({
  * 配下 Task と、その GitLink も併せて削除する（参照整合性の維持）。
  */
 export const remove = mutation({
-  args: { id: v.id("issues"), expectedRevision: v.number() },
+  args: {
+    id: v.id("issues"),
+    expectedRevision: v.number(),
+    accessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const issue = await getIssueOrThrow(ctx, args.id);
     assertRevision(issue, args.expectedRevision);
 
@@ -149,8 +161,10 @@ export const remove = mutation({
 
 /** プロジェクトの Issue 一覧。各 Issue に派生ステータスと Task 数を付与する。 */
 export const list = query({
-  args: { project: v.id("projects") },
+  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const issues = await ctx.db
       .query("issues")
       .withIndex("by_project", (q) => q.eq("project", args.project))
@@ -207,8 +221,10 @@ export const list = query({
  * スプレッドは行わず、in_progress の Issue のみを最小フィールドで返す。
  */
 export const listInProgress = query({
-  args: { project: v.id("projects") },
+  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const issues = await ctx.db
       .query("issues")
       .withIndex("by_project", (q) => q.eq("project", args.project))
@@ -285,8 +301,14 @@ async function findIssueByRef(
  * 更新系（MCP の update_issue 等）はこちらを使う。
  */
 export const getIdByRef = query({
-  args: { projectKey: v.string(), number: v.number() },
+  args: {
+    projectKey: v.string(),
+    number: v.number(),
+    accessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     return found === null ? null : found.issue._id;
   },
@@ -298,8 +320,14 @@ export const getIdByRef = query({
  * （member の PII は返さず name のみ）。
  */
 export const getByRef = query({
-  args: { projectKey: v.string(), number: v.number() },
+  args: {
+    projectKey: v.string(),
+    number: v.number(),
+    accessToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
+    await requireActor(ctx, args.accessToken);
+
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     if (found === null) return null;
     const { project, issue } = found;
