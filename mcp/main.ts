@@ -41,25 +41,34 @@ if (!convexUrl) {
 }
 const convex = new ConvexHttpClient(convexUrl);
 
-// --- アイデンティティ（§6: MVP はエージェント専用 Member を1つ運用）---------
+// --- 認証（共有シークレット。Issue #1 PR2）----------------------------------
 
-/** エージェントが動作する Member の email（mcp/README.md 参照）。 */
-const AGENT_EMAIL = process.env.MCP_AGENT_EMAIL ?? "agent@example.com";
-
-/** 呼び出し元エージェントに対応する Member を解決する（なければ作成）。 */
-async function ensureAgentMember(): Promise<Id<"members">> {
-  const name = process.env.MCP_AGENT_NAME ?? "AI Agent";
-  const existing = await convex.query(api.members.getByEmail, {
-    email: AGENT_EMAIL,
-  });
-  if (existing !== null) return existing._id;
-  log(`エージェント Member を新規作成します: ${AGENT_EMAIL}`);
-  return await convex.mutation(api.members.create, {
-    name,
-    email: AGENT_EMAIL,
-    role: "member",
-  });
+/**
+ * 全 Convex 呼び出しに同梱する共有シークレット。Convex 側の MCP_ACCESS_TOKEN
+ * と一致しない限り、全公開関数が requireActor で拒否する（fail closed）。
+ */
+const rawAccessToken = process.env.MCP_ACCESS_TOKEN;
+if (rawAccessToken === undefined || rawAccessToken === "") {
+  log(
+    "MCP_ACCESS_TOKEN が設定されていません（Convex 側の MCP_ACCESS_TOKEN と同じ値を .mcp.json 等の env に設定してください。mcp/README.md 参照）",
+  );
+  process.exit(1);
 }
+// 上のガードで空文字・未設定を弾いているため、以降は string として扱える。
+// クロージャ（withToken・main 内の呼び出し）は元の変数の型絞り込みを
+// 引き継がないため、絞り込み済みの新しい束縛として再宣言する。
+const accessToken: string = rawAccessToken;
+
+/** 全 Convex 呼び出しへ accessToken を機械的に付与する薄いラッパー。 */
+function withToken<T extends object>(args: T): T & { accessToken: string } {
+  return { ...args, accessToken };
+}
+
+// --- アイデンティティ（§6: MVP はエージェント専用 Member を1つ運用）---------
+//
+// エージェントの email は Convex 側 env（MCP_AGENT_EMAIL）が単一の情報源。
+// MCP プロセス側では読み取らない（env 書き換えで他人の Member になりすませる
+// 抜け道を作らないため。convex/lib/auth.ts 参照）。
 
 // --- 共通ヘルパー -----------------------------------------------------------
 
@@ -82,16 +91,16 @@ const fail = (e: unknown) => {
 
 async function resolveTask(ref: string): Promise<Doc<"tasks">> {
   const { key, number } = parseTaskRef(ref);
-  const task = await convex.query(api.tasks.getByRef, {
-    projectKey: key,
-    number,
-  });
+  const task = await convex.query(
+    api.tasks.getByRef,
+    withToken({ projectKey: key, number }),
+  );
   if (task === null) throw new Error(`タスクが見つかりません: ${ref}`);
   return task;
 }
 
 async function resolveProject(key: string): Promise<Doc<"projects">> {
-  const project = await convex.query(api.projects.getByKey, { key });
+  const project = await convex.query(api.projects.getByKey, withToken({ key }));
   if (project === null) throw new Error(`プロジェクトが見つかりません: ${key}`);
   return project;
 }
@@ -101,10 +110,10 @@ async function resolveProject(key: string): Promise<Doc<"projects">> {
  */
 async function resolveIssue(ref: string) {
   const { key, number } = parseIssueRef(ref);
-  const issue = await convex.query(api.issues.getByRef, {
-    projectKey: key,
-    number,
-  });
+  const issue = await convex.query(
+    api.issues.getByRef,
+    withToken({ projectKey: key, number }),
+  );
   if (issue === null) throw new Error(`Issue が見つかりません: ${ref}`);
   return issue;
 }
@@ -115,16 +124,19 @@ async function resolveIssue(ref: string) {
  */
 async function resolveIssueId(ref: string): Promise<Id<"issues">> {
   const { key, number } = parseIssueRef(ref);
-  const id = await convex.query(api.issues.getIdByRef, {
-    projectKey: key,
-    number,
-  });
+  const id = await convex.query(
+    api.issues.getIdByRef,
+    withToken({ projectKey: key, number }),
+  );
   if (id === null) throw new Error(`Issue が見つかりません: ${ref}`);
   return id;
 }
 
 async function resolveMemberId(email: string): Promise<Id<"members">> {
-  const member = await convex.query(api.members.getByEmail, { email });
+  const member = await convex.query(
+    api.members.getByEmail,
+    withToken({ email }),
+  );
   if (member === null) throw new Error(`メンバーが見つかりません: ${email}`);
   return member._id;
 }
@@ -137,9 +149,10 @@ async function resolveRepositoryId(
   projectId: Id<"projects">,
   repositoryUrl: string | undefined,
 ): Promise<Id<"repositories">> {
-  const repos = await convex.query(api.repositories.listByProject, {
-    project: projectId,
-  });
+  const repos = await convex.query(
+    api.repositories.listByProject,
+    withToken({ project: projectId }),
+  );
   if (repos.length === 0) {
     throw new Error("このプロジェクトにはリポジトリが登録されていません");
   }
@@ -161,7 +174,10 @@ async function resolveRepositoryId(
 // --- サーバー構築 -----------------------------------------------------------
 
 async function main() {
-  const agentMemberId = await ensureAgentMember();
+  const agentMemberId = await convex.mutation(api.members.ensureAgent, {
+    accessToken,
+    name: process.env.MCP_AGENT_NAME,
+  });
 
   const server = new McpServer({ name: "task-manager", version: "0.1.0" });
 
@@ -179,8 +195,8 @@ async function main() {
     async (uri, { key }) => {
       const project = await resolveProject(String(key));
       const [members, issues] = await Promise.all([
-        convex.query(api.members.list, {}),
-        convex.query(api.issues.list, { project: project._id }),
+        convex.query(api.members.list, withToken({})),
+        convex.query(api.issues.list, withToken({ project: project._id })),
       ]);
       return {
         contents: [
@@ -216,10 +232,10 @@ async function main() {
       if (!Number.isInteger(n)) {
         throw new Error(`Issue 番号が不正です: ${String(number)}`);
       }
-      const issue = await convex.query(api.issues.getByRef, {
-        projectKey: String(key),
-        number: n,
-      });
+      const issue = await convex.query(
+        api.issues.getByRef,
+        withToken({ projectKey: String(key), number: n }),
+      );
       if (issue === null)
         throw new Error(`Issue が見つかりません: ${key}#${number}`);
       return {
@@ -247,10 +263,10 @@ async function main() {
       if (!Number.isInteger(n)) {
         throw new Error(`タスク番号が不正です: ${String(number)}`);
       }
-      const task = await convex.query(api.tasks.getByRef, {
-        projectKey: String(key),
-        number: n,
-      });
+      const task = await convex.query(
+        api.tasks.getByRef,
+        withToken({ projectKey: String(key), number: n }),
+      );
       if (task === null)
         throw new Error(`タスクが見つかりません: ${key}-${number}`);
       return {
@@ -275,9 +291,10 @@ async function main() {
     },
     async (uri, { key }) => {
       const project = await resolveProject(String(key));
-      const tasks = await convex.query(api.tasks.listByProject, {
-        project: project._id,
-      });
+      const tasks = await convex.query(
+        api.tasks.listByProject,
+        withToken({ project: project._id }),
+      );
       const mine = tasks.filter(
         (t) => t.assignee === agentMemberId && isActiveStatus(t.status),
       );
@@ -317,12 +334,10 @@ async function main() {
           assignee_email !== undefined
             ? await resolveMemberId(assignee_email)
             : undefined;
-        const tasks = await convex.query(api.tasks.listFiltered, {
-          project: project._id,
-          status,
-          assignee,
-          priority,
-        });
+        const tasks = await convex.query(
+          api.tasks.listFiltered,
+          withToken({ project: project._id, status, assignee, priority }),
+        );
         return ok(tasks);
       } catch (e) {
         return fail(e);
@@ -362,9 +377,10 @@ async function main() {
     async ({ project_key, status }) => {
       try {
         const project = await resolveProject(project_key);
-        const issues = await convex.query(api.issues.list, {
-          project: project._id,
-        });
+        const issues = await convex.query(
+          api.issues.list,
+          withToken({ project: project._id }),
+        );
         // Issue ステータスは子 Task 群からの派生値（§5.1）で索引を張れないため、
         // issues.list が返す派生済みステータスに対してここで絞り込む。
         return ok(
@@ -419,16 +435,18 @@ async function main() {
     }) => {
       try {
         const project = await resolveProject(project_key);
-        const result = await convex.mutation(api.issues.create, {
-          project: project._id,
-          title,
-          description,
-          createdBy: agentMemberId,
-          firstTask: {
-            title: first_task_title,
-            priority: first_task_priority,
-          },
-        });
+        const result = await convex.mutation(
+          api.issues.create,
+          withToken({
+            project: project._id,
+            title,
+            description,
+            firstTask: {
+              title: first_task_title,
+              priority: first_task_priority,
+            },
+          }),
+        );
         return ok({ ...result, message: "Issue を作成しました" });
       } catch (e) {
         return fail(e);
@@ -457,14 +475,10 @@ async function main() {
           assignee_email !== undefined
             ? await resolveMemberId(assignee_email)
             : undefined;
-        const id = await convex.mutation(api.tasks.create, {
-          issue,
-          title,
-          description,
-          priority,
-          assignee,
-          createdBy: agentMemberId,
-        });
+        const id = await convex.mutation(
+          api.tasks.create,
+          withToken({ issue, title, description, priority, assignee }),
+        );
         return ok({ id, message: "作成しました" });
       } catch (e) {
         return fail(e);
@@ -489,13 +503,16 @@ async function main() {
     async ({ task_ref, version, title, description, priority }) => {
       try {
         const task = await resolveTask(task_ref);
-        await convex.mutation(api.tasks.updateFields, {
-          id: task._id,
-          expectedRevision: version,
-          title,
-          description,
-          priority,
-        });
+        await convex.mutation(
+          api.tasks.updateFields,
+          withToken({
+            id: task._id,
+            expectedRevision: version,
+            title,
+            description,
+            priority,
+          }),
+        );
         return ok({ message: "更新しました" });
       } catch (e) {
         return fail(e);
@@ -520,13 +537,16 @@ async function main() {
     async ({ issue_ref, version, title, description, priority }) => {
       try {
         const id = await resolveIssueId(issue_ref);
-        await convex.mutation(api.issues.update, {
-          id,
-          expectedRevision: version,
-          title,
-          description,
-          priority,
-        });
+        await convex.mutation(
+          api.issues.update,
+          withToken({
+            id,
+            expectedRevision: version,
+            title,
+            description,
+            priority,
+          }),
+        );
         return ok({ message: "更新しました" });
       } catch (e) {
         return fail(e);
@@ -561,11 +581,10 @@ async function main() {
         }
         const decision = checkTransitionApproval(to_status, approved);
         if (!decision.allowed) return fail(decision.reason);
-        await convex.mutation(api.tasks.transitionStatus, {
-          id: task._id,
-          to: to_status,
-          expectedRevision: version,
-        });
+        await convex.mutation(
+          api.tasks.transitionStatus,
+          withToken({ id: task._id, to: to_status, expectedRevision: version }),
+        );
         return ok({ message: `状態を ${to_status} に変更しました` });
       } catch (e) {
         return fail(e);
@@ -592,11 +611,10 @@ async function main() {
           assignee_email !== null
             ? await resolveMemberId(assignee_email)
             : null;
-        await convex.mutation(api.tasks.assign, {
-          id: task._id,
-          assignee,
-          expectedRevision: version,
-        });
+        await convex.mutation(
+          api.tasks.assign,
+          withToken({ id: task._id, assignee, expectedRevision: version }),
+        );
         return ok({ message: "担当者を更新しました" });
       } catch (e) {
         return fail(e);
@@ -625,10 +643,10 @@ async function main() {
         const task = await resolveTask(task_ref);
         const decision = checkDeleteApproval(approved);
         if (!decision.allowed) return fail(decision.reason);
-        await convex.mutation(api.tasks.deleteTask, {
-          id: task._id,
-          expectedRevision: version,
-        });
+        await convex.mutation(
+          api.tasks.deleteTask,
+          withToken({ id: task._id, expectedRevision: version }),
+        );
         return ok({ message: "削除しました" });
       } catch (e) {
         return fail(e);
@@ -657,10 +675,10 @@ async function main() {
         const issue = await resolveIssue(issue_ref);
         const decision = checkDeleteApproval(approved, "Issue");
         if (!decision.allowed) return fail(decision.reason);
-        await convex.mutation(api.issues.remove, {
-          id: issue._id,
-          expectedRevision: version,
-        });
+        await convex.mutation(
+          api.issues.remove,
+          withToken({ id: issue._id, expectedRevision: version }),
+        );
         return ok({ message: "Issue を削除しました" });
       } catch (e) {
         return fail(e);
@@ -696,14 +714,17 @@ async function main() {
           task.project,
           repository_url,
         );
-        const id = await convex.mutation(api.gitLinks.link, {
-          task: task._id,
-          repository,
-          type,
-          externalRef: ref,
-          url,
-          prState: pr_state,
-        });
+        const id = await convex.mutation(
+          api.gitLinks.link,
+          withToken({
+            task: task._id,
+            repository,
+            type,
+            externalRef: ref,
+            url,
+            prState: pr_state,
+          }),
+        );
         return ok({ id, message: "Git アーティファクトを紐付けました" });
       } catch (e) {
         return fail(e);
@@ -712,7 +733,7 @@ async function main() {
   );
 
   await server.connect(new StdioServerTransport());
-  log(`起動しました（agent=${AGENT_EMAIL}, convex=${convexUrl}）`);
+  log(`起動しました（agentMemberId=${agentMemberId}, convex=${convexUrl}）`);
 }
 
 main().catch((e) => {
