@@ -2,7 +2,11 @@ import { Password } from "@convex-dev/auth/providers/Password";
 import { convexAuth } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 import { linkAuthUserToMember } from "./lib/memberLink";
-import { isValidEmail, normalizeEmail } from "./lib/validators";
+import {
+  extractInviteCodeParam,
+  isValidEmail,
+  normalizeEmail,
+} from "./lib/validators";
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
@@ -15,11 +19,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         // inviteCode は招待トークン方式（招待ウィンドウ乗っ取り対策・Issue #1）で
         // signUp 時のみ渡される。undefined は Convex 値として不正なため、
         // string のときだけ条件付き spread で users doc へ書き込む。
+        // 長さ上限の検証（巨大文字列の書き込み拒否）は extractInviteCodeParam 側。
+        const inviteCode = extractInviteCodeParam(params.inviteCode);
         return {
           email,
-          ...(typeof params.inviteCode === "string"
-            ? { inviteCode: params.inviteCode }
-            : {}),
+          ...(inviteCode !== undefined ? { inviteCode } : {}),
         };
       },
     }),

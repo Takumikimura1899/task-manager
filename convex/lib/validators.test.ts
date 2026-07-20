@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   assertHours,
+  extractInviteCodeParam,
   isValidEmail,
   isValidHours,
   isValidProjectKey,
+  MAX_INVITE_CODE_LENGTH,
   normalizeEmail,
 } from "./validators";
 
@@ -86,5 +88,31 @@ describe("入力バリデーション", () => {
         );
       },
     );
+  });
+
+  describe("extractInviteCodeParam", () => {
+    it("正規トークン長(64文字)の文字列はそのまま返す", () => {
+      const token = "a".repeat(64);
+      expect(extractInviteCodeParam(token)).toBe(token);
+    });
+
+    it("上限ちょうど(128文字)は受理する", () => {
+      const value = "b".repeat(MAX_INVITE_CODE_LENGTH);
+      expect(extractInviteCodeParam(value)).toBe(value);
+    });
+
+    it("上限を超える文字列(129文字)は「招待コードが不正です」の ConvexError で拒否する", () => {
+      expect(() =>
+        extractInviteCodeParam("c".repeat(MAX_INVITE_CODE_LENGTH + 1)),
+      ).toThrowError("招待コードが不正です");
+    });
+
+    it.each([
+      { label: "未指定", value: undefined },
+      { label: "null", value: null },
+      { label: "数値", value: 123 },
+    ])("文字列以外($label)は undefined を返す", ({ value }) => {
+      expect(extractInviteCodeParam(value)).toBeUndefined();
+    });
   });
 });
