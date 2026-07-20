@@ -1,5 +1,8 @@
 import type { Doc, Id } from "../convex/_generated/dataModel";
-import type { MemberSummary } from "../src/hooks/useCurrentMember";
+import type {
+  CurrentMember,
+  MemberSummary,
+} from "../src/hooks/useCurrentMember";
 
 /**
  * convex/react（useQuery / useMutation）を vi.mock でモックするための共有ヘルパ。
@@ -31,6 +34,9 @@ export type QueryMock = (
 
 export type MutateMock = (args: unknown) => Promise<unknown>;
 
+/** 認証ゲート（App.tsx）の分岐制御に使う認証状態。 */
+export type MockAuthState = "authenticated" | "unauthenticated" | "loading";
+
 /**
  * vi.mock("convex/react", ...) の factory 本体。
  * 呼び出し側は `vi.hoisted` で作った useQueryMock / mutate をそのまま渡す。
@@ -38,6 +44,11 @@ export type MutateMock = (args: unknown) => Promise<unknown>;
 export const buildConvexReactMock = async (
   useQueryMock: QueryMock,
   mutate: MutateMock,
+  // 認証ゲート（App.tsx の AuthLoading / Unauthenticated / Authenticated）の
+  // 分岐制御。既定は「認証済み」= Authenticated だけが children を描画する。
+  // 未認証・ロード中の分岐を検証するテストは vi.hoisted のホルダー経由で
+  // getAuthState を渡し、テストごとに値を差し替える。
+  getAuthState: () => MockAuthState = () => "authenticated",
 ) => {
   const { getFunctionName } = await import("convex/server");
   return {
@@ -46,8 +57,29 @@ export const buildConvexReactMock = async (
       args?: Record<string, unknown>,
     ) => useQueryMock(getFunctionName(query), args),
     useMutation: () => mutate,
+    Authenticated: ({ children }: { children?: unknown }) =>
+      getAuthState() === "authenticated" ? (children ?? null) : null,
+    Unauthenticated: ({ children }: { children?: unknown }) =>
+      getAuthState() === "unauthenticated" ? (children ?? null) : null,
+    AuthLoading: ({ children }: { children?: unknown }) =>
+      getAuthState() === "loading" ? (children ?? null) : null,
   };
 };
+
+/**
+ * vi.mock("@convex-dev/auth/react", ...) の factory 本体。
+ * useAuthActions（signIn / signOut）を呼び出し側の spy に差し替える。
+ * AppLayout（ログアウト）や SignIn を描画するテストで使う。
+ */
+export const buildConvexAuthActionsMock = (actions: {
+  signIn?: (...args: unknown[]) => Promise<unknown>;
+  signOut?: (...args: unknown[]) => Promise<unknown>;
+}) => ({
+  useAuthActions: () => ({
+    signIn: actions.signIn ?? (() => Promise.resolve()),
+    signOut: actions.signOut ?? (() => Promise.resolve()),
+  }),
+});
 
 /**
  * useQueryMock.mockImplementation に渡すディスパッチャを組み立てる。
@@ -105,3 +137,16 @@ export const createMember = (overrides: Partial<MemberSummary> = {}) =>
     name: "Alice",
     ...overrides,
   }) as MemberSummary;
+
+/**
+ * members.me の non-null 戻り値（ログイン中の本人）のモックデータを作る。
+ * 本人自身の照会のため email / role を含む（convex/members.ts 参照）。
+ */
+export const createCurrentMember = (overrides: Partial<CurrentMember> = {}) =>
+  ({
+    _id: "member_1" as Id<"members">,
+    name: "Alice",
+    role: "member",
+    email: "alice@example.com",
+    ...overrides,
+  }) as CurrentMember;

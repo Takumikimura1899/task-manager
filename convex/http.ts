@@ -3,6 +3,7 @@ import {
   type FunctionReturnType,
   httpRouter,
 } from "convex/server";
+import { auth } from "./auth";
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -23,6 +24,11 @@ import type { Id } from "./_generated/dataModel";
  */
 
 const http = httpRouter();
+
+// Convex Auth（JWT 検証・OAuth サインイン用）のルートを追加する。
+// /.well-known/openid-configuration・/.well-known/jwks.json 等。既存の
+// GitHub Webhook ルート（/webhooks/github）とはパスが重複しないため共存できる。
+auth.addHttpRoutes(http);
 
 /** 一定時間比較で署名を検証する（タイミング攻撃対策）。 */
 function timingSafeEqual(a: string, b: string): boolean {

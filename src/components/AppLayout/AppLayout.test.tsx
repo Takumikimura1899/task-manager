@@ -1,8 +1,10 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../../convex/_generated/dataModel";
 import {
+  createCurrentMember,
   createMember,
   createProject,
   createQueryDispatcher,
@@ -19,15 +21,23 @@ import { AppLayout } from "./AppLayout";
  * 参照同一性を持たない。ディスパッチの詳細は test/reactQuerySupport.ts 参照。
  */
 
-const { useQueryMock, mutate } = vi.hoisted(() => ({
+const { useQueryMock, mutate, signOut } = vi.hoisted(() => ({
   useQueryMock: vi.fn<QueryMock>(),
   mutate: vi.fn<MutateMock>(),
+  signOut: vi.fn<() => Promise<unknown>>(() => Promise.resolve()),
 }));
 
 vi.mock("convex/react", async () => {
   const { buildConvexReactMock } =
     await import("../../../test/reactQuerySupport");
   return buildConvexReactMock(useQueryMock, mutate);
+});
+
+// ログアウト導線（useAuthActions().signOut）を spy に差し替える
+vi.mock("@convex-dev/auth/react", async () => {
+  const { buildConvexAuthActionsMock } =
+    await import("../../../test/reactQuerySupport");
+  return buildConvexAuthActionsMock({ signOut });
 });
 
 // 子ルート（TasksView / IssuesView）の描画内容は各画面のテストに委ねる。
@@ -48,6 +58,8 @@ const renderAppLayout = (initialEntries: string[] = ["/"]) =>
 beforeEach(() => {
   useQueryMock.mockReset();
   mutate.mockReset();
+  signOut.mockReset();
+  signOut.mockResolvedValue(undefined);
   sessionStorage.clear();
 });
 
@@ -114,23 +126,24 @@ describe("AppLayout のタブナビ", () => {
   );
 });
 
-describe("AppLayout のメンバー0件案内（Issue #16）", () => {
-  it("メンバーが0件（ロード完了）なら NoMembersNotice を表示する", () => {
+describe("AppLayout の Member 未リンク案内（Issue #16 / #1）", () => {
+  it("members.me が null（ロード完了・未リンク）なら NoMembersNotice を表示する", () => {
     const project = createProject();
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [project],
         "members:list": [],
+        "members:me": null,
       }),
     );
     renderAppLayout();
 
     expect(screen.getByRole("note")).toHaveTextContent(
-      "メンバーが登録されていない",
+      "対応するメンバーが登録されていない",
     );
   });
 
-  it("メンバーがロード中（undefined）は NoMembersNotice を表示しない", () => {
+  it("members.me がロード中（undefined）は NoMembersNotice を表示しない", () => {
     const project = createProject();
     useQueryMock.mockImplementation((name) =>
       name === "projects:list" ? [project] : undefined,
@@ -140,18 +153,72 @@ describe("AppLayout のメンバー0件案内（Issue #16）", () => {
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
   });
 
-  it("メンバーがいる場合は NoMembersNotice を表示しない", () => {
+  it("Member がリンク済みの場合は NoMembersNotice を表示しない", () => {
     const project = createProject();
     const member = createMember();
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [project],
         "members:list": [member],
+        "members:me": createCurrentMember(),
       }),
     );
     renderAppLayout();
 
     expect(screen.queryByRole("note")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppLayout のログアウト導線（Issue #1）", () => {
+  const setupSignedIn = () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+        "members:me": createCurrentMember({ name: "テスト太郎" }),
+      }),
+    );
+  };
+
+  it("ヘッダーにユーザー名とログアウトボタンを表示し、押下で signOut を呼ぶ", async () => {
+    const user = userEvent.setup();
+    setupSignedIn();
+    renderAppLayout();
+
+    expect(screen.getByText("テスト太郎")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "ログアウト" }));
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("signOut が失敗したらエラーを画面に表示し、再操作できる", async () => {
+    const user = userEvent.setup();
+    signOut.mockRejectedValueOnce(new Error("network down"));
+    setupSignedIn();
+    renderAppLayout();
+
+    await user.click(screen.getByRole("button", { name: "ログアウト" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "ログアウトに失敗しました。再度お試しください。",
+    );
+    expect(screen.getByRole("button", { name: "ログアウト" })).toBeEnabled();
+  });
+
+  it("プロジェクト0件でもログアウト導線を表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [],
+        "members:list": [],
+        "members:me": createCurrentMember({ name: "テスト太郎" }),
+      }),
+    );
+    renderAppLayout();
+
+    expect(
+      screen.getByRole("button", { name: "ログアウト" }),
+    ).toBeInTheDocument();
   });
 });
 

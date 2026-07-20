@@ -11,19 +11,37 @@ import { api } from "../../convex/_generated/api";
 export type MemberSummary = FunctionReturnType<typeof api.members.list>[number];
 
 /**
+ * api.members.me の non-null 戻り値の型。本人自身の情報のため
+ * email / role も含む（convex/members.ts 参照）。
+ */
+export type CurrentMember = NonNullable<
+  FunctionReturnType<typeof api.members.me>
+>;
+
+/**
  * ログイン中の操作者（作成者・担当者の既定値として使う）を返すフック。
  *
- * 認証は未実装（Phase2、#1）のため、暫定的に先頭メンバーを作成者とする。
- * この規約は AppLayout / IssueDetail / TaskDetail など複数画面で使うため、
- * ここに一元化する（Phase2 導入時はここだけ差し替えればよい）。
+ * currentMember は認証済みユーザーにリンクされた Member（api.members.me、#1）。
+ * ロード中と「認証済みだが Member 未リンク」はどちらも null になるため、
+ * 区別が必要な呼び出し側（未リンク案内の表示判定など）は
+ * currentMemberLoading を併用する。
  *
- * members はロード中判定（`members !== undefined`）に呼び出し側が必要なため、
- * currentMember と合わせて返す。api.members.list は PII（email 等）を含まない
- * 最小限のフィールド（_id, name）のみ返す（convex/members.ts 参照）。
+ * members はロード中判定（`members !== undefined`）と担当者選択肢に
+ * 呼び出し側が必要なため、currentMember と合わせて返す。api.members.list は
+ * PII（email 等）を含まない最小限のフィールド（_id, name）のみ返す
+ * （convex/members.ts 参照）。currentMember だけが必要な呼び出し側は
+ * `withMembers: false` で members.list の購読を止められる（不要な購読は
+ * member の追加・改名のたびに画面全体を再レンダーさせる）。
  */
-export function useCurrentMember() {
-  const members = useQuery(api.members.list);
-  const currentMember = members?.[0] ?? null;
+export function useCurrentMember(options?: { withMembers?: boolean }) {
+  const withMembers = options?.withMembers ?? true;
+  const members = useQuery(api.members.list, withMembers ? {} : "skip");
+  const me = useQuery(api.members.me);
 
-  return { members, currentMember };
+  return {
+    members,
+    currentMember: me ?? null,
+    /** api.members.me 購読のロード中。「未リンク（null）」との区別に使う。 */
+    currentMemberLoading: me === undefined,
+  };
 }

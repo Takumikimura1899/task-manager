@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as auth from "../auth.js";
 import type * as crons from "../crons.js";
 import type * as gitLinks from "../gitLinks.js";
 import type * as http from "../http.js";
@@ -18,6 +19,7 @@ import type * as lib_gitAutomation from "../lib/gitAutomation.js";
 import type * as lib_gitRef from "../lib/gitRef.js";
 import type * as lib_githubReconcile from "../lib/githubReconcile.js";
 import type * as lib_issueStatus from "../lib/issueStatus.js";
+import type * as lib_memberLink from "../lib/memberLink.js";
 import type * as lib_members from "../lib/members.js";
 import type * as lib_projects from "../lib/projects.js";
 import type * as lib_rank from "../lib/rank.js";
@@ -39,6 +41,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  auth: typeof auth;
   crons: typeof crons;
   gitLinks: typeof gitLinks;
   http: typeof http;
@@ -49,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "lib/gitRef": typeof lib_gitRef;
   "lib/githubReconcile": typeof lib_githubReconcile;
   "lib/issueStatus": typeof lib_issueStatus;
+  "lib/memberLink": typeof lib_memberLink;
   "lib/members": typeof lib_members;
   "lib/projects": typeof lib_projects;
   "lib/rank": typeof lib_rank;
