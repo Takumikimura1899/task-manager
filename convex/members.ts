@@ -109,10 +109,21 @@ export const getByEmail = query({
   handler: async (ctx, args) => {
     await requireAuthed(ctx, args.accessToken);
 
-    return await ctx.db
+    const member = await ctx.db
       .query("members")
       .withIndex("by_email", (q) => q.eq("email", normalizeEmail(args.email)))
       .unique();
+    if (member === null) return null;
+
+    // me と同じ curated shape で返す。生 doc を返すと inviteTokenHash から
+    // 招待の未消化／消化済みを判別できてしまう（招待ウィンドウ乗っ取り対策の
+    // オラクル低減と同じ理由。authUserId の有無も同種の情報になるため併せて除外）。
+    return {
+      _id: member._id,
+      name: member.name,
+      role: member.role,
+      email: member.email,
+    };
   },
 });
 
