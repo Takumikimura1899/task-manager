@@ -1,7 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { memberRole } from "./schema";
 import {
   findMemberByAuthUserId,
@@ -19,6 +19,21 @@ import { isValidEmail, normalizeEmail } from "./lib/validators";
  * email の一意性（INVARIANT）は正規化後の値を by_email で確認し、
  * Convex のトランザクション（OCC）により保証する。
  */
+
+/**
+ * 公開 query が member 単体を返すときの curated shape。生 doc を返すと
+ * inviteTokenHash から招待の未消化／消化済みを、authUserId の有無から
+ * サインアップ状態を判別できてしまうため、公開してよいフィールドを
+ * 本ヘルパで一元管理する（除外対象が増えたらここだけを変更する）。
+ */
+function toMemberSummary(member: Doc<"members">) {
+  return {
+    _id: member._id,
+    name: member.name,
+    role: member.role,
+    email: member.email,
+  };
+}
 
 export const create = mutation({
   args: {
@@ -115,15 +130,7 @@ export const getByEmail = query({
       .unique();
     if (member === null) return null;
 
-    // me と同じ curated shape で返す。生 doc を返すと inviteTokenHash から
-    // 招待の未消化／消化済みを判別できてしまう（招待ウィンドウ乗っ取り対策の
-    // オラクル低減と同じ理由。authUserId の有無も同種の情報になるため併せて除外）。
-    return {
-      _id: member._id,
-      name: member.name,
-      role: member.role,
-      email: member.email,
-    };
+    return toMemberSummary(member);
   },
 });
 
@@ -149,12 +156,7 @@ export const me = query({
     const member = await findMemberByAuthUserId(ctx, userId);
     if (member === null) return null;
 
-    return {
-      _id: member._id,
-      name: member.name,
-      role: member.role,
-      email: member.email,
-    };
+    return toMemberSummary(member);
   },
 });
 
