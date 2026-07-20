@@ -22,7 +22,8 @@ import { assertHours } from "./lib/validators";
  * - INVARIANT-1 採番一意性: project.nextTaskNumber を mutation 内で atomic に
  *   インクリメント（Convex の OCC が並行採番の重複を検出・再試行）
  * - INVARIANT-2 並行更新検出: revision（楽観ロック）を更新条件として比較
- * - INVARIANT-3 参照整合性: project/createdBy/assignee の実在を確認
+ * - INVARIANT-3 参照整合性: project/assignee の実在を確認（createdBy は
+ *   requireActor が解決した実在 member のみが渡るため対象外・Issue #1）
  * - INVARIANT-4 状態の妥当性: 状態機械 canTransition で遷移を検証
  */
 

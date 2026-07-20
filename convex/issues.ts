@@ -65,9 +65,9 @@ export const create = mutation({
     if (project === null) {
       throw new ConvexError("指定されたプロジェクトが存在しません");
     }
-    // createdBy（=actor._id）の実在確認（INVARIANT-3）は insertTask に集約
-    // されている。検証に失敗した場合は mutation 全体がロールバックされるため、
-    // ここで先行チェックしなくても Issue が残ることはない。
+    // createdBy は requireActor が同一トランザクション内で解決した実在
+    // member（actor._id）のみが渡るため、実在確認は不要（Issue #1 PR2 で
+    // クライアント引数を廃止済み。insertTask 側も同様にチェックしない）。
 
     // 採番（INVARIANT-1）: Issue 連番を採番してカウンタを進める。
     const number = project.nextIssueNumber;
