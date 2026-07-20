@@ -88,17 +88,27 @@ export async function linkAuthUserToMember(
   // 未設定なら除外なし）を除いた members が 0 件のときに限り、最初のサインアップを
   // admin として自己登録できる（プロジェクト立ち上げ時に招待者が誰もいない問題の回避）。
   //
-  // by_email の点読み（0 件ヒット）ではなく members のフル走査で数える。理由: Convex の
-  // OCC は「読んだ範囲」が他トランザクションの書き込みと重なった場合にのみ競合と判定する。
-  // 点読みだと「別 email の insert」はこの読み取り範囲と重ならないため、複数の signUp が
-  // 並行に走った場合、双方が「0 件」を読んでブートストラップ条件を満たし、admin が複数
-  // 作られてしまう。members テーブル全体を読み取り範囲に含めることで、並行 insert は
-  // 必ず OCC 競合として検出・再試行され、ブートストラップは直列化されて高々1回になる。
+  // .collect() ではなく .take(2) で最大2件だけ読む（members が増えても無制限に
+  // 読み込まない）。それでも OCC の直列化は次の理由で崩れない:
+  // - take(2) が2件未満（0件・1件）を返すのは、クエリが members テーブルの終端まで
+  //   走査してもなお2件に満たなかった場合に限る。このとき読み取り範囲（readset）は
+  //   テーブル全域に及ぶため、並行する signUp の insert は必ず OCC 競合として検出・
+  //   再試行される（点読み＝by_email の0件ヒットだと「別 email の insert」と読み取り
+  //   範囲が重ならず、複数の signUp が並行に「0件」を読んでブートストラップ条件を
+  //   満たし admin が複数作られてしまう。これが元々 .collect() でテーブル全体を
+  //   読み取り範囲に含めていた理由）。
+  // - take(2) が2件返る経路（=ブートストラップ非該当・拒否）はこの後に書き込みを
+  //   行わないため、直列化は不要（OCC 保護の対象外でよい）。
+  //
+  // 依存する不変条件: 上記は「agent member（MCP_AGENT_EMAIL）が高々1件（by_email の
+  // 一意性＋OCC で保証）」であることに依存する。先頭2件のうち高々1件が agent でも
+  // 残り1件で人間の有無を判定できる、という前提。agent の重複を許す変更を将来
+  // 入れる場合は、このブートストラップ判定を見直すこと。
   const agentEmail = process.env.MCP_AGENT_EMAIL
     ? normalizeEmail(process.env.MCP_AGENT_EMAIL)
     : null;
-  const allMembers = await ctx.db.query("members").collect();
-  const humanMemberCount = allMembers.filter(
+  const firstTwoMembers = await ctx.db.query("members").take(2);
+  const humanMemberCount = firstTwoMembers.filter(
     (m) => m.email !== agentEmail,
   ).length;
 
