@@ -19,7 +19,8 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         // inviteCode は招待トークン方式（招待ウィンドウ乗っ取り対策・Issue #1）で
         // signUp 時のみ渡される。undefined は Convex 値として不正なため、
         // string のときだけ条件付き spread で users doc へ書き込む。
-        // 長さ上限の検証（巨大文字列の書き込み拒否）は extractInviteCodeParam 側。
+        // 正規形(64文字の小文字16進数)の検証・trim・空文字の未提示扱いは
+        // extractInviteCodeParam 側。
         const inviteCode = extractInviteCodeParam(params.inviteCode);
         return {
           email,

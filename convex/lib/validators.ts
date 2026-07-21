@@ -36,21 +36,31 @@ export function isValidHours(n: number): boolean {
   return Number.isFinite(n) && n >= 0;
 }
 
-/** 招待コードの受理上限。正規トークンは 64 文字（generateInviteToken の hex）。 */
-export const MAX_INVITE_CODE_LENGTH = 128;
+/**
+ * 招待コードの正規形: generateInviteToken が生成する 32 バイト暗号学的乱数の
+ * hex 表記（64 文字の小文字 16 進数）。
+ */
+const INVITE_CODE_PATTERN = /^[0-9a-f]{64}$/;
 
 /**
  * サインアップ時の招待コード引数の検証・取り出し（convex/auth.ts の Password
- * profile() で使用）。上限を超える入力は users doc へ書き込む前に ConvexError で
- * 拒否し、巨大文字列の書き込みによる容量・リソース濫用を防ぐ（どのみち照合には
- * 一致し得ない）。文字列以外（signIn フロー等の未指定含む）は undefined を返す。
+ * profile() で使用）。正規形以外の入力は users doc へ書き込む前に ConvexError で
+ * 拒否し、巨大文字列・不正形式の書き込みを防ぐ（正規形以外は照合にも一致し得ない）。
+ *
+ * - 前後空白は copy&paste での混入を考慮し、検証・保存の前に除去する
+ * - 文字列以外（signIn フロー等の未指定含む）と trim 後に空になる入力は
+ *   undefined（未提示）を返す。空文字を拒否にしないのは、UI が「空欄はキー自体を
+ *   送らない」仕様であることと整合させ、非 UI クライアントが空文字を送っても
+ *   ブートストラップ経路（招待コード不要）を壊さないため
  */
 export function extractInviteCodeParam(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
-  if (value.length > MAX_INVITE_CODE_LENGTH) {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  if (!INVITE_CODE_PATTERN.test(trimmed)) {
     throw new ConvexError("招待コードが不正です");
   }
-  return value;
+  return trimmed;
 }
 
 /**
