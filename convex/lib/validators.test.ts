@@ -5,7 +5,6 @@ import {
   isValidEmail,
   isValidHours,
   isValidProjectKey,
-  MAX_INVITE_CODE_LENGTH,
   normalizeEmail,
 } from "./validators";
 
@@ -91,27 +90,38 @@ describe("入力バリデーション", () => {
   });
 
   describe("extractInviteCodeParam", () => {
-    it("正規トークン長(64文字)の文字列はそのまま返す", () => {
-      const token = "a".repeat(64);
+    it("正規形(64文字の小文字16進数)の文字列はそのまま返す", () => {
+      const token = "0123456789abcdef".repeat(4);
       expect(extractInviteCodeParam(token)).toBe(token);
     });
 
-    it("上限ちょうど(128文字)は受理する", () => {
-      const value = "b".repeat(MAX_INVITE_CODE_LENGTH);
-      expect(extractInviteCodeParam(value)).toBe(value);
+    it("前後空白は除去してから受理する(copy&paste 混入対策)", () => {
+      const token = "a".repeat(64);
+      expect(extractInviteCodeParam(`  ${token}\n`)).toBe(token);
     });
 
-    it("上限を超える文字列(129文字)は「招待コードが不正です」の ConvexError で拒否する", () => {
-      expect(() =>
-        extractInviteCodeParam("c".repeat(MAX_INVITE_CODE_LENGTH + 1)),
-      ).toThrowError("招待コードが不正です");
-    });
+    it.each([
+      { label: "63文字", value: "a".repeat(63) },
+      { label: "65文字", value: "a".repeat(65) },
+      { label: "16進数以外の文字を含む64文字", value: `g${"a".repeat(63)}` },
+      { label: "大文字16進数", value: "A".repeat(64) },
+      { label: "巨大文字列", value: "c".repeat(10_000) },
+    ])(
+      "正規形でない文字列($label)は「招待コードが不正です」の ConvexError で拒否する",
+      ({ value }) => {
+        expect(() => extractInviteCodeParam(value)).toThrowError(
+          "招待コードが不正です",
+        );
+      },
+    );
 
     it.each([
       { label: "未指定", value: undefined },
       { label: "null", value: null },
       { label: "数値", value: 123 },
-    ])("文字列以外($label)は undefined を返す", ({ value }) => {
+      { label: "空文字", value: "" }, // UI の「空欄はキー自体を送らない」と同じ未提示扱い
+      { label: "空白のみ", value: "   " },
+    ])("未提示相当($label)は undefined を返す", ({ value }) => {
       expect(extractInviteCodeParam(value)).toBeUndefined();
     });
   });
