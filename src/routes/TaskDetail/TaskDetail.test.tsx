@@ -159,6 +159,8 @@ describe("TaskDetail の編集操作（Issue #32）", () => {
       priority: "high",
       estimate: null,
       actual: null,
+      startDate: null,
+      dueDate: null,
     });
   });
 

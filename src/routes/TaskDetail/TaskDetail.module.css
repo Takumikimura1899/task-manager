@@ -167,8 +167,9 @@
     color: var(--color-text);
   }
 
-  /* 工数（予想/実績）は ID・カウンタと同様「データ然とした文字」として等幅で表示する */
-  .hours {
+  /* 開始日・期限日・工数（予想/実績）は ID・カウンタと同様「データ然とした
+     文字」として等幅で表示する（旧 .hours を日付欄と共用するため改名） */
+  .mono {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }

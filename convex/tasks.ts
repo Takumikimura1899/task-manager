@@ -549,3 +549,65 @@ export const getDetail = query({
     };
   },
 });
+
+/**
+ * ガントチャート表示用（Issue #141）: startDate/dueDate のいずれかが設定された
+ * canceled 以外の Task を1つ以上持つ Issue のみ、Issue の number/title と
+ * 該当 Task の number/title/status/startDate/dueDate を返す。
+ *
+ * Issue の期間バーは保存せず読み出し側で派生する（Issue.status と同型・§5.1）。
+ * 行順・バー範囲・表示レンジの導出はクライアントの純粋関数（src/lib/gantt.ts）が
+ * 担う（「今日を含むレンジ」の判定がクライアントのローカル日付に依存するため）。
+ *
+ * startDate/dueDate は null に正規化する（getDetail の undefined 透過とは
+ * 表現が割れるが、gantt 専用 DTO のための選択であり Convex の制約ではない）。
+ */
+export const gantt = query({
+  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    await requireAuthed(ctx, args.accessToken);
+
+    const issues = await ctx.db
+      .query("issues")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+
+    // N+1 回避: issues.list と同様、project 配下の Task を一括取得して
+    // メモリ上で Issue ごとにグルーピングする。
+    const projectTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_project", (q) => q.eq("project", args.project))
+      .collect();
+    const tasksByIssue = new Map<Id<"issues">, Doc<"tasks">[]>();
+    for (const task of projectTasks) {
+      const group = tasksByIssue.get(task.issue);
+      if (group === undefined) {
+        tasksByIssue.set(task.issue, [task]);
+      } else {
+        group.push(task);
+      }
+    }
+
+    return issues.flatMap((issue) => {
+      const tasks = (tasksByIssue.get(issue._id) ?? [])
+        .filter(
+          (t) =>
+            t.status !== "canceled" &&
+            (t.startDate !== undefined || t.dueDate !== undefined),
+        )
+        .map((t) => ({
+          _id: t._id,
+          number: t.number,
+          title: t.title,
+          status: t.status,
+          startDate: t.startDate ?? null,
+          dueDate: t.dueDate ?? null,
+        }));
+      // 表示対象 Task を1つも持たない Issue は返さない。
+      if (tasks.length === 0) return [];
+      return [
+        { _id: issue._id, number: issue.number, title: issue.title, tasks },
+      ];
+    });
+  },
+});

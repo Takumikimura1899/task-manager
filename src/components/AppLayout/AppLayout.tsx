@@ -163,6 +163,9 @@ export function AppLayout() {
           <NavLink className={s.navLink} to="/issues">
             Issue
           </NavLink>
+          <NavLink className={s.navLink} to="/gantt">
+            Gantt
+          </NavLink>
         </nav>
         <label className={s.picker}>
           プロジェクト

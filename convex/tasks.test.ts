@@ -1260,3 +1260,109 @@ describe("tasks.board（整形出力）", () => {
     expect(backlog.tasks).toMatchObject([{ _id: task, assigneeName: null }]);
   });
 });
+
+// --- gantt（ガントチャート表示用・Issue #141） -------------------------------
+
+/**
+ * gantt query の表示対象フィルタを検証する結合テスト。
+ * issues.create の firstTask は startDate/dueDate を持てないため、
+ * 「日付なし Task」の自然なフィクスチャとして流用する。
+ */
+describe("tasks.gantt", () => {
+  const arrangeGanttFixture = async (t: T) => {
+    const { as } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    const { issue, task: undated } = await seedIssueWithTask(as, project);
+    const withDates = await seedDatedTask(as, issue, {
+      startDate: "2026-08-01",
+      dueDate: "2026-08-10",
+    });
+    const startOnly = await seedDatedTask(as, issue, {
+      startDate: "2026-08-15",
+    });
+    const canceled = await seedDatedTask(as, issue, { dueDate: "2026-08-20" });
+    await as.mutation(api.tasks.transitionStatus, {
+      id: canceled,
+      to: "canceled",
+      expectedRevision: 0,
+    });
+    return { as, project, issue, undated, withDates, startOnly, canceled };
+  };
+
+  it("canceled の Task は返らない", async () => {
+    const t = setup();
+    const { as, project, canceled } = await arrangeGanttFixture(t);
+
+    const result = await as.query(api.tasks.gantt, { project });
+
+    const taskIds = result.flatMap((i) => i.tasks.map((task) => task._id));
+    expect(taskIds).not.toContain(canceled);
+  });
+
+  it("startDate/dueDate ともに未設定の Task は返らない", async () => {
+    const t = setup();
+    const { as, project, undated } = await arrangeGanttFixture(t);
+
+    const result = await as.query(api.tasks.gantt, { project });
+
+    const taskIds = result.flatMap((i) => i.tasks.map((task) => task._id));
+    expect(taskIds).not.toContain(undated);
+  });
+
+  it("片方のみ日付ありの Task は返り、未設定の側は null に正規化される", async () => {
+    const t = setup();
+    const { as, project, startOnly } = await arrangeGanttFixture(t);
+
+    const result = await as.query(api.tasks.gantt, { project });
+
+    const found = result
+      .flatMap((i) => i.tasks)
+      .find((task) => task._id === startOnly);
+    expect(found).toMatchObject({
+      startDate: "2026-08-15",
+      dueDate: null,
+    });
+  });
+
+  it("表示対象 Task を1つも持たない Issue は結果に含まれない", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    // firstTask は日付なしのため、この Issue には表示対象 Task が無い
+    const { issue } = await seedIssueWithTask(as, project);
+
+    const result = await as.query(api.tasks.gantt, { project });
+
+    expect(result.map((i) => i._id)).not.toContain(issue);
+  });
+
+  it("表示対象 Task を持つ Issue は number/title と該当 Task のみを返す", async () => {
+    const t = setup();
+    const { as, project, issue, withDates } = await arrangeGanttFixture(t);
+
+    const result = await as.query(api.tasks.gantt, { project });
+
+    expect(result).toMatchObject([
+      {
+        _id: issue,
+        number: 1,
+        title: "課題",
+        tasks: [
+          { _id: withDates, startDate: "2026-08-01", dueDate: "2026-08-10" },
+          { startDate: "2026-08-15", dueDate: null },
+        ],
+      },
+    ]);
+  });
+
+  describe("gantt の認証ゲート（Issue #1 PR2）", () => {
+    it("未認証の呼び出しは ConvexError で拒否する", async () => {
+      const t = setup();
+      const project = await seedProject(t);
+
+      await expect(t.query(api.tasks.gantt, { project })).rejects.toThrowError(
+        "認証が必要です",
+      );
+    });
+  });
+});
