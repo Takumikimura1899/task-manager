@@ -44,7 +44,18 @@ export type GanttBar =
   | { type: "point"; index: number; outOfRange: boolean };
 
 export type GanttRow =
-  | { kind: "issue"; id: string; number: number; title: string; bar: GanttBar }
+  | {
+      kind: "issue";
+      id: string;
+      number: number;
+      title: string;
+      bar: GanttBar;
+      // aria-label 生成専用（GanttChart）: 子 Task から派生した真の期間。
+      // GanttBar は表示レンジにクランプ済みの列 index しか持たないため、
+      // クランプ前の値をここに残す（Task 行の startDate/dueDate と同じ理由）。
+      startDate: string;
+      dueDate: string;
+    }
   | {
       kind: "task";
       id: string;
@@ -54,8 +65,7 @@ export type GanttRow =
       bar: GanttBar;
       // aria-label 生成専用（GanttChart）: GanttBar の point は「開始日のみ／
       // 期限日のみ／同日」のいずれで point になったかを区別できないため、
-      // 元の値をそのまま残す（Issue 行は子 Task から派生した区間のため、
-      // この「片方だけ未設定」という概念自体が存在せず不要）。
+      // 元の値をそのまま残す。
       startDate: string | null;
       dueDate: string | null;
     };
@@ -246,6 +256,8 @@ export function buildGanttModel(
       number: entry.issue.number,
       title: entry.issue.title,
       bar: buildBar(entry.start, entry.end, rangeStart, rangeEnd, lastIndex),
+      startDate: entry.start,
+      dueDate: entry.end,
     });
 
     const sortedTasks = entry.tasks.toSorted((a, b) =>

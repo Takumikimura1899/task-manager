@@ -1,10 +1,10 @@
 @layer components {
-  /* 横スクロールは外側の scroller だけが持つ（sticky ラベル列はこの内側で固定する）。 */
-  .scroller {
-    overflow-x: auto;
-  }
-
+  /* grid 自身をスクロールコンテナにする（必須）。sticky なラベル列（列1）の
+     拘束矩形はグリッドアイテムの containing block = grid area のため、祖先
+     要素でスクロールさせると列1はスクロールポートに追従できない（実機検証で
+     検出）。スクロールポート＝grid 自身なら列1が正しく固定される。 */
   .grid {
+    overflow-x: auto;
     display: grid;
     grid-template-columns: max-content repeat(
         var(--gantt-days),

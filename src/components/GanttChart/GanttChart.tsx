@@ -62,21 +62,11 @@ function formatTaskPeriod(
   return `期限日 ${dueDate}(開始日なし)`;
 }
 
-/** Issue 行の期間文言。Issue は子 Task から派生した区間のみを持つため days[] の実日付から作る。 */
-function formatIssuePeriod(bar: GanttBar, days: GanttModel["days"]): string {
-  if (bar.type === "point") return days[bar.index].date;
-  return `開始日 ${days[bar.startIndex].date} から 期限日 ${days[bar.endIndex].date}`;
-}
-
-function ariaLabelFor(
-  row: GanttRow,
-  ref: string,
-  days: GanttModel["days"],
-): string {
-  const period =
-    row.kind === "issue"
-      ? formatIssuePeriod(row.bar, days)
-      : formatTaskPeriod(row.startDate, row.dueDate);
+function ariaLabelFor(row: GanttRow, ref: string): string {
+  // Issue 行も Task 行もクランプ前の真の期間（GanttRow.startDate/dueDate）から
+  // 整形する。バーの列 index から日付を引くと、レンジ外の期間がクランプ後の
+  // 日付として読み上げられてしまう（実機検証で検出）。
+  const period = formatTaskPeriod(row.startDate, row.dueDate);
   const suffix = isBarClipped(row.bar) ? CONTINUATION_SUFFIX : "";
   return `${ref} ${row.title} ${period}${suffix}`;
 }
@@ -91,77 +81,75 @@ export function GanttChart({
   const { days, rows, todayIndex } = model;
 
   return (
-    <div className={s.scroller}>
-      <div
-        className={s.grid}
-        style={
-          {
-            "--gantt-days": days.length,
-            gridTemplateRows: `repeat(${rows.length + 1}, auto)`,
-          } as CSSProperties
-        }
-      >
-        {/* 背面レイヤー(週境界・今日線): DOM 先頭に置くことで z-index なしに
+    <div
+      className={s.grid}
+      style={
+        {
+          "--gantt-days": days.length,
+          gridTemplateRows: `repeat(${rows.length + 1}, auto)`,
+        } as CSSProperties
+      }
+    >
+      {/* 背面レイヤー(週境界・今日線): DOM 先頭に置くことで z-index なしに
             後続のセルより背面へ回る（非positioned要素はツリー順で描画される）。 */}
-        {days.map(
-          (day, i) =>
-            day.isWeekStart && (
-              <div
-                className={s.weekLine}
-                key={`week-${day.date}`}
-                style={{ gridColumn: i + 2 }}
-              />
-            ),
-        )}
-        <div className={s.todayLine} style={{ gridColumn: todayIndex + 2 }} />
+      {days.map(
+        (day, i) =>
+          day.isWeekStart && (
+            <div
+              className={s.weekLine}
+              key={`week-${day.date}`}
+              style={{ gridColumn: i + 2 }}
+            />
+          ),
+      )}
+      <div className={s.todayLine} style={{ gridColumn: todayIndex + 2 }} />
 
-        {/* ヘッダー行 */}
-        <div className={s.cornerCell} style={{ gridColumn: 1, gridRow: 1 }} />
-        {days.map(
-          (day, i) =>
-            day.isWeekStart && (
-              <div
-                className={s.headerCell}
-                key={`header-${day.date}`}
-                style={{ gridColumn: i + 2, gridRow: 1 }}
-              >
-                {Number(day.date.slice(5, 7))}/{day.dayOfMonth}
-              </div>
-            ),
-        )}
+      {/* ヘッダー行 */}
+      <div className={s.cornerCell} style={{ gridColumn: 1, gridRow: 1 }} />
+      {days.map(
+        (day, i) =>
+          day.isWeekStart && (
+            <div
+              className={s.headerCell}
+              key={`header-${day.date}`}
+              style={{ gridColumn: i + 2, gridRow: 1 }}
+            >
+              {Number(day.date.slice(5, 7))}/{day.dayOfMonth}
+            </div>
+          ),
+      )}
 
-        {/* データ行 */}
-        {rows.map((row, i) => {
-          const gridRow = i + 2;
-          const href =
-            row.kind === "issue"
-              ? `/${projectKey}/issues/${row.number}`
-              : `/${projectKey}/tasks/${row.number}`;
-          const ref =
-            row.kind === "issue"
-              ? formatIssueRef(row.number)
-              : `${projectKey}-${row.number}`;
+      {/* データ行 */}
+      {rows.map((row, i) => {
+        const gridRow = i + 2;
+        const href =
+          row.kind === "issue"
+            ? `/${projectKey}/issues/${row.number}`
+            : `/${projectKey}/tasks/${row.number}`;
+        const ref =
+          row.kind === "issue"
+            ? formatIssueRef(row.number)
+            : `${projectKey}-${row.number}`;
 
-          return (
-            <Fragment key={row.id}>
-              <Link
-                className={labelClassName(row)}
-                style={{ gridColumn: 1, gridRow }}
-                title={`${ref} ${row.title}`}
-                to={href}
-              >
-                <span className={s.ref}>{ref}</span> {row.title}
-              </Link>
-              <Link
-                aria-label={ariaLabelFor(row, ref, days)}
-                className={barClassName(row)}
-                style={{ gridColumn: barGridColumn(row.bar), gridRow }}
-                to={href}
-              />
-            </Fragment>
-          );
-        })}
-      </div>
+        return (
+          <Fragment key={row.id}>
+            <Link
+              className={labelClassName(row)}
+              style={{ gridColumn: 1, gridRow }}
+              title={`${ref} ${row.title}`}
+              to={href}
+            >
+              <span className={s.ref}>{ref}</span> {row.title}
+            </Link>
+            <Link
+              aria-label={ariaLabelFor(row, ref)}
+              className={barClassName(row)}
+              style={{ gridColumn: barGridColumn(row.bar), gridRow }}
+              to={href}
+            />
+          </Fragment>
+        );
+      })}
     </div>
   );
 }

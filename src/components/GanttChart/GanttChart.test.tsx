@@ -48,6 +48,8 @@ const createIssueRow = (
   number: 1,
   title: "課題",
   bar: DEFAULT_POINT_BAR,
+  startDate: "2026-08-01",
+  dueDate: "2026-08-01",
   ...overrides,
 });
 
@@ -82,7 +84,7 @@ describe("GanttChart のラベル・バー Link", () => {
 
     const issueLabel = screen.getByRole("link", { name: "Issue #5 課題A" });
     const issueBar = screen.getByRole("link", {
-      name: "Issue #5 課題A 2026-08-01",
+      name: "Issue #5 課題A 開始日 2026-08-01 から 期限日 2026-08-01",
     });
     expect(issueLabel).toHaveAttribute("href", "/TASK/issues/5");
     expect(issueBar).toHaveAttribute("href", "/TASK/issues/5");
@@ -251,35 +253,43 @@ describe("GanttChart の aria-label（Task 行）", () => {
 });
 
 describe("GanttChart の aria-label（Issue 行）", () => {
-  it("Issue 行の期間文言は days[] の実日付から作られる（point/range）", () => {
+  it("Issue 行の期間文言はクランプ前の真の期間（startDate/dueDate）から作られ、バーの列 index に依存しない", () => {
     const model = createModel([
       createIssueRow({
         id: "issue_point",
         number: 1,
         title: "点のIssue",
         bar: { type: "point", index: 3, outOfRange: false },
+        startDate: "2026-08-04",
+        dueDate: "2026-08-04",
       }),
       createIssueRow({
-        id: "issue_range",
+        id: "issue_clipped",
         number: 2,
-        title: "範囲のIssue",
+        title: "クランプされたIssue",
+        // バーは表示レンジ末尾(index 4 = 2026-08-05)で切られているが、
+        // 文言には真の期限日(2099-12-31)が載ることを検証する
         bar: {
           type: "range",
           startIndex: 1,
           endIndex: 4,
           clippedStart: false,
-          clippedEnd: false,
+          clippedEnd: true,
         },
+        startDate: "2026-08-02",
+        dueDate: "2099-12-31",
       }),
     ]);
     renderGanttChart(model);
 
     expect(
-      screen.getByRole("link", { name: "Issue #1 点のIssue 2026-08-04" }),
+      screen.getByRole("link", {
+        name: "Issue #1 点のIssue 開始日 2026-08-04 から 期限日 2026-08-04",
+      }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("link", {
-        name: "Issue #2 範囲のIssue 開始日 2026-08-02 から 期限日 2026-08-05",
+        name: "Issue #2 クランプされたIssue 開始日 2026-08-02 から 期限日 2099-12-31(表示範囲外まで継続)",
       }),
     ).toBeInTheDocument();
   });
