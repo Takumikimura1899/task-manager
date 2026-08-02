@@ -50,6 +50,7 @@ const renderAppLayout = (initialEntries: string[] = ["/"]) =>
         <Route element={<AppLayout />}>
           <Route element={<p>タスク画面</p>} path="/" />
           <Route element={<p>Issue画面</p>} path="/issues" />
+          <Route element={<p>Gantt画面</p>} path="/gantt" />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -108,20 +109,23 @@ describe("AppLayout のタブナビ", () => {
   });
 
   it.each([
-    ["/", "Task", "Issue"],
-    ["/issues", "Issue", "Task"],
+    ["/", "Task", ["Issue", "Gantt"]],
+    ["/issues", "Issue", ["Task", "Gantt"]],
+    ["/gantt", "Gantt", ["Task", "Issue"]],
   ] as const)(
     "現在地 %s では %s タブに aria-current=page が付く",
-    (path, activeLabel, inactiveLabel) => {
+    (path, activeLabel, inactiveLabels) => {
       renderAppLayout([path]);
 
       expect(screen.getByRole("link", { name: activeLabel })).toHaveAttribute(
         "aria-current",
         "page",
       );
-      expect(
-        screen.getByRole("link", { name: inactiveLabel }),
-      ).not.toHaveAttribute("aria-current", "page");
+      for (const inactiveLabel of inactiveLabels) {
+        expect(
+          screen.getByRole("link", { name: inactiveLabel }),
+        ).not.toHaveAttribute("aria-current", "page");
+      }
     },
   );
 });

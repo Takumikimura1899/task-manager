@@ -2,6 +2,7 @@ import { AuthLoading, Authenticated, Unauthenticated } from "convex/react";
 import { Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
+import { GanttView } from "./routes/GanttView/GanttView";
 import { IssueDetail } from "./routes/IssueDetail/IssueDetail";
 import { IssuesView } from "./routes/IssuesView/IssuesView";
 import { NotFound } from "./routes/NotFound/NotFound";
@@ -59,6 +60,14 @@ function AppRoutes() {
             </ErrorBoundary>
           }
           path="/issues"
+        />
+        <Route
+          element={
+            <ErrorBoundary>
+              <GanttView />
+            </ErrorBoundary>
+          }
+          path="/gantt"
         />
       </Route>
       <Route

@@ -1,0 +1,125 @@
+@layer components {
+  /* grid 自身をスクロールコンテナにする（必須）。sticky なラベル列（列1）の
+     拘束矩形はグリッドアイテムの containing block = grid area のため、祖先
+     要素でスクロールさせると列1はスクロールポートに追従できない（実機検証で
+     検出）。スクロールポート＝grid 自身なら列1が正しく固定される。 */
+  .grid {
+    overflow-x: auto;
+    display: grid;
+    grid-template-columns: max-content repeat(
+        var(--gantt-days),
+        var(--gantt-day-width)
+      );
+    --gantt-day-width: var(--space-6);
+  }
+
+  /* 背面レイヤー（週境界・今日線）。全データ行を縦断する。pointer-events を
+     切り、下に重なるバー/ラベルの操作を妨げない。 */
+  .weekLine,
+  .todayLine {
+    grid-row: 1 / -1;
+    pointer-events: none;
+  }
+
+  .weekLine {
+    border-inline-start: 1px solid var(--color-border);
+  }
+
+  .todayLine {
+    border-inline-start: 1px solid var(--color-attention);
+  }
+
+  .cornerCell {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background: var(--color-surface);
+  }
+
+  .headerCell {
+    padding-inline: var(--space-1);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* ラベル列（Issue/Task 名）。バーと同一遷移先への Link で、行の同等
+     ターゲットとして機能する（SC 2.5.8）。横スクロール時も列1に固定する。 */
+  .label {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    min-height: var(--space-6);
+    max-width: min(30ch, 40cqi);
+    padding-inline: var(--space-2);
+    overflow: hidden;
+    color: var(--color-text);
+    text-decoration: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--color-surface);
+    border-inline-end: 1px solid var(--color-border);
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .label:hover {
+    color: var(--color-accent);
+  }
+
+  /* done 行は薄く見せるが、opacity 適用後も文字色は --color-text のまま
+     （--color-text-muted は opacity と重なると AA を割るため使わない）。 */
+  .label.done {
+    opacity: 0.5;
+  }
+
+  .ref {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .taskBar,
+  .issueBar {
+    align-self: center;
+    min-height: calc(var(--space-6) * 0.6);
+    border-radius: var(--radius-sm);
+    transition:
+      box-shadow var(--duration-fast) var(--ease-out),
+      opacity var(--duration-fast) var(--ease-out);
+  }
+
+  .taskBar {
+    background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+    border: 1px solid var(--color-accent);
+  }
+
+  .taskBar:hover {
+    box-shadow: var(--glow-accent-sm);
+  }
+
+  .issueBar {
+    background: var(--color-chip);
+    border: 1px solid var(--color-border);
+  }
+
+  .taskBar.done,
+  .issueBar.done {
+    opacity: 0.5;
+  }
+
+  /* 表示レンジ外まで続くバーは、はみ出した側の角を落として「続いている」ことを示す。 */
+  .clippedStart {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+  }
+
+  .clippedEnd {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+}

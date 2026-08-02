@@ -41,6 +41,8 @@ type TaskDraft = {
   title: string;
   description: string;
   priority: Priority;
+  startDate: string;
+  dueDate: string;
   estimate: string;
   actual: string;
   revision: number;
@@ -115,6 +117,11 @@ export function TaskDetail() {
   // 必要がある（parseHoursDraft の docstring参照）。
   const estimateInputRef = useRef<HTMLInputElement | null>(null);
   const actualInputRef = useRef<HTMLInputElement | null>(null);
+  // 開始日・期限日も同型の防御が要る（type="date" の Firefox が部分入力
+  // 「2026-08」等で DOM の value を空文字にする badInput 状態を取りうる。
+  // ここを弾かないと既存日付がサイレントにクリアされて保存されてしまう）。
+  const startDateInputRef = useRef<HTMLInputElement | null>(null);
+  const dueDateInputRef = useRef<HTMLInputElement | null>(null);
 
   // 保存時の expectedRevision は編集開始時点の revision（draft.revision）を
   // 送る（INVARIANT-2）。編集中に他者が更新していれば競合として検知される。
@@ -129,6 +136,12 @@ export function TaskDetail() {
       if (actualInputRef.current?.validity.badInput) {
         throw new ConvexError("実績工数は数値で入力してください");
       }
+      if (startDateInputRef.current?.validity.badInput) {
+        throw new ConvexError("開始日は日付形式で入力してください");
+      }
+      if (dueDateInputRef.current?.validity.badInput) {
+        throw new ConvexError("期限日は日付形式で入力してください");
+      }
       const estimate = parseHoursDraft("予想工数", draft.estimate);
       const actual = parseHoursDraft("実績工数", draft.actual);
       await updateFields({
@@ -139,6 +152,11 @@ export function TaskDetail() {
         priority: draft.priority,
         estimate,
         actual,
+        // 空文字 = クリア（null）。updateFields の startDate/dueDate は
+        // v.optional(v.union(v.string(), v.null())) で null をクリアとして
+        // 受ける契約（PR1）。
+        startDate: draft.startDate === "" ? null : draft.startDate,
+        dueDate: draft.dueDate === "" ? null : draft.dueDate,
       });
     },
   });
@@ -217,6 +235,8 @@ export function TaskDetail() {
     title: task.title,
     description: task.description ?? "",
     priority: task.priority,
+    startDate: task.startDate ?? "",
+    dueDate: task.dueDate ?? "",
     estimate: task.estimate?.toString() ?? "",
     actual: task.actual?.toString() ?? "",
     revision: task.revision,
@@ -345,6 +365,30 @@ export function TaskDetail() {
               </select>
             </label>
             <label className={s.editField}>
+              開始日
+              <input
+                className={s.editInput}
+                max="2099-12-31"
+                min="2000-01-01"
+                onChange={(e) => edit.update({ startDate: e.target.value })}
+                ref={startDateInputRef}
+                type="date"
+                value={edit.draft.startDate}
+              />
+            </label>
+            <label className={s.editField}>
+              期限日
+              <input
+                className={s.editInput}
+                max="2099-12-31"
+                min="2000-01-01"
+                onChange={(e) => edit.update({ dueDate: e.target.value })}
+                ref={dueDateInputRef}
+                type="date"
+                value={edit.draft.dueDate}
+              />
+            </label>
+            <label className={s.editField}>
               予想工数 (h)
               <input
                 className={s.editInput}
@@ -399,6 +443,14 @@ export function TaskDetail() {
           </dd>
           <dt className={s.term}>優先度</dt>
           <dd className={s.value}>{PRIORITY_LABELS[task.priority]}</dd>
+          <dt className={s.term}>開始日</dt>
+          <dd className={`${s.value} ${s.mono}`}>
+            {task.startDate === undefined ? "—" : task.startDate}
+          </dd>
+          <dt className={s.term}>期限日</dt>
+          <dd className={`${s.value} ${s.mono}`}>
+            {task.dueDate === undefined ? "—" : task.dueDate}
+          </dd>
           <dt className={s.term}>担当者</dt>
           <dd className={s.value}>
             <select
@@ -427,11 +479,11 @@ export function TaskDetail() {
             </select>
           </dd>
           <dt className={s.term}>予想工数</dt>
-          <dd className={`${s.value} ${s.hours}`}>
+          <dd className={`${s.value} ${s.mono}`}>
             {task.estimate === undefined ? "—" : formatHours(task.estimate)}
           </dd>
           <dt className={s.term}>実績工数</dt>
-          <dd className={`${s.value} ${s.hours}`}>
+          <dd className={`${s.value} ${s.mono}`}>
             {task.actual === undefined ? "—" : formatHours(task.actual)}
           </dd>
         </dl>

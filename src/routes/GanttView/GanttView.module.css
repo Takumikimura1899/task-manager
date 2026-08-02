@@ -1,0 +1,30 @@
+@layer components {
+  /* AppLayout の .app（max-width / padding / コンテナクエリ基準）配下に
+     ネストされるため、このページ自身は縦積みの間隔だけを持つ。 */
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .skeletonPanel {
+    height: 280px;
+  }
+
+  .empty {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  /* 空状態メッセージ文中の Issue 一覧への誘導リンク（Board.tsx の emptyLink と同型）。 */
+  .emptyLink {
+    margin-inline-start: var(--space-2);
+  }
+}
