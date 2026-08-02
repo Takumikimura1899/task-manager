@@ -13,7 +13,11 @@ import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
 import { rankBetween } from "./lib/rank";
-import { assertHours } from "./lib/validators";
+import {
+  assertDateOrder,
+  assertDateString,
+  assertHours,
+} from "./lib/validators";
 
 /**
  * Task の Core API（基本設計書 §3 / §4 / §5）。
@@ -80,6 +84,8 @@ export async function insertTask(
     priority?: Doc<"tasks">["priority"];
     assignee?: Id<"members">;
     createdBy: Id<"members">;
+    startDate?: string;
+    dueDate?: string;
   },
 ): Promise<Id<"tasks">> {
   const project = await ctx.db.get(args.project);
@@ -92,6 +98,10 @@ export async function insertTask(
   if (args.assignee !== undefined) {
     await assertMemberExists(ctx, args.assignee);
   }
+
+  assertDateString("開始日", args.startDate);
+  assertDateString("期限日", args.dueDate);
+  assertDateOrder(args.startDate, args.dueDate);
 
   // 採番（INVARIANT-1）: 現在値を採番し、カウンタを進める。
   const number = project.nextTaskNumber;
@@ -109,6 +119,8 @@ export async function insertTask(
     status: "backlog",
     priority: args.priority ?? "none",
     assignee: args.assignee,
+    startDate: args.startDate,
+    dueDate: args.dueDate,
     rank: rankBetween(tail, null),
     createdBy: args.createdBy,
     revision: 0,
@@ -125,6 +137,8 @@ export const create = mutation({
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
     assignee: v.optional(v.id("members")),
+    startDate: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -144,11 +158,13 @@ export const create = mutation({
       priority: args.priority,
       assignee: args.assignee,
       createdBy: actor._id,
+      startDate: args.startDate,
+      dueDate: args.dueDate,
     });
   },
 });
 
-/** タイトル・説明・優先度・見積/実績工数の更新（status/assignee/rank は専用 mutation を使う）。 */
+/** タイトル・説明・優先度・見積/実績工数・開始日/期限日の更新（status/assignee/rank は専用 mutation を使う）。 */
 export const updateFields = mutation({
   args: {
     id: v.id("tasks"),
@@ -159,6 +175,8 @@ export const updateFields = mutation({
     // null はクリア（見積/実績なし状態へ戻す）を表す。
     estimate: v.optional(v.union(v.number(), v.null())),
     actual: v.optional(v.union(v.number(), v.null())),
+    startDate: v.optional(v.union(v.string(), v.null())),
+    dueDate: v.optional(v.union(v.string(), v.null())),
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -170,6 +188,17 @@ export const updateFields = mutation({
     assertHours("見積工数", args.estimate);
     assertHours("実績工数", args.actual);
 
+    assertDateString("開始日", args.startDate);
+    assertDateString("期限日", args.dueDate);
+    // 片側だけの更新でも startDate ≤ dueDate を保つ(既存値とマージ後の組で検証)
+    const nextStartDate =
+      args.startDate === undefined
+        ? task.startDate
+        : (args.startDate ?? undefined);
+    const nextDueDate =
+      args.dueDate === undefined ? task.dueDate : (args.dueDate ?? undefined);
+    assertDateOrder(nextStartDate, nextDueDate);
+
     const patch: Partial<Doc<"tasks">> = nextMeta(task);
     if (args.title !== undefined) patch.title = args.title;
     if (args.description !== undefined) patch.description = args.description;
@@ -177,6 +206,9 @@ export const updateFields = mutation({
     if (args.estimate !== undefined)
       patch.estimate = args.estimate ?? undefined;
     if (args.actual !== undefined) patch.actual = args.actual ?? undefined;
+    if (args.startDate !== undefined)
+      patch.startDate = args.startDate ?? undefined;
+    if (args.dueDate !== undefined) patch.dueDate = args.dueDate ?? undefined;
 
     await ctx.db.patch(task._id, patch);
   },

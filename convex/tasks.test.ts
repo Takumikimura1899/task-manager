@@ -56,6 +56,18 @@ const seedIssueWithTask = (as: As, project: Id<"projects">) =>
     firstTask: { title: "最初のタスク" },
   });
 
+/** issue 配下に startDate/dueDate 付きの Task を作り、id を返す（precondition 構築用）。 */
+const seedDatedTask = (
+  as: As,
+  issue: Id<"issues">,
+  dates: { startDate?: string; dueDate?: string },
+) =>
+  as.mutation(api.tasks.create, {
+    issue,
+    title: "期間つきタスク",
+    ...dates,
+  });
+
 /** 指定列（status）の Task を rank 昇順（＝ボード表示順）に number で返す。 */
 const columnNumbers = async (
   as: As,
@@ -108,6 +120,91 @@ describe("tasks.create", () => {
     await expect(
       as.mutation(api.tasks.create, { issue, title: "x" }),
     ).rejects.toThrowError("Issue が存在しません");
+  });
+
+  describe("startDate / dueDate（ガント用の予定期間・Issue #141）", () => {
+    it("startDate/dueDate を指定すると保存される", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+
+      const taskId = await as.mutation(api.tasks.create, {
+        issue,
+        title: "期間あり",
+        startDate: "2026-08-01",
+        dueDate: "2026-08-10",
+      });
+
+      expect(await loadTask(t, taskId)).toMatchObject({
+        startDate: "2026-08-01",
+        dueDate: "2026-08-10",
+      });
+    });
+
+    it.each([
+      { name: "startDate のみ", args: { startDate: "2026-08-01" } },
+      { name: "dueDate のみ", args: { dueDate: "2026-08-10" } },
+    ])("$name でも保存される", async ({ args }) => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+
+      const taskId = await as.mutation(api.tasks.create, {
+        issue,
+        title: "片方だけ",
+        ...args,
+      });
+
+      expect(await loadTask(t, taskId)).toMatchObject(args);
+    });
+
+    it("不正形式（ゼロ埋めなし）の日付は拒否する", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+
+      await expect(
+        as.mutation(api.tasks.create, {
+          issue,
+          title: "不正形式",
+          startDate: "2026-2-3",
+        }),
+      ).rejects.toThrowError("開始日");
+    });
+
+    it("非実在日（2月30日）は拒否する", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+
+      await expect(
+        as.mutation(api.tasks.create, {
+          issue,
+          title: "非実在日",
+          dueDate: "2026-02-30",
+        }),
+      ).rejects.toThrowError("期限日");
+    });
+
+    it("startDate が dueDate より後なら拒否する", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+
+      await expect(
+        as.mutation(api.tasks.create, {
+          issue,
+          title: "順序逆転",
+          startDate: "2026-08-10",
+          dueDate: "2026-08-01",
+        }),
+      ).rejects.toThrowError("開始日は期限日以前の日付にしてください");
+    });
   });
 });
 
@@ -614,6 +711,179 @@ describe("tasks.updateFields", () => {
       expect(after.revision).toBe(0);
     },
   );
+
+  describe("startDate / dueDate（ガント用の予定期間・Issue #141）", () => {
+    it("両方指定すると保存される", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { task } = await seedIssueWithTask(as, project);
+
+      await as.mutation(api.tasks.updateFields, {
+        id: task,
+        expectedRevision: 0,
+        startDate: "2026-08-01",
+        dueDate: "2026-08-10",
+      });
+
+      expect(await loadTask(t, task)).toMatchObject({
+        startDate: "2026-08-01",
+        dueDate: "2026-08-10",
+        revision: 1,
+      });
+    });
+
+    it("null を指定するとクリアされる（DB 上 undefined）", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+      const task = await seedDatedTask(as, issue, {
+        startDate: "2026-08-01",
+        dueDate: "2026-08-10",
+      });
+
+      await as.mutation(api.tasks.updateFields, {
+        id: task,
+        expectedRevision: 0,
+        startDate: null,
+        dueDate: null,
+      });
+
+      const after = await loadTask(t, task);
+      expect(after.startDate).toBeUndefined();
+      expect(after.dueDate).toBeUndefined();
+      expect(after.revision).toBe(1);
+    });
+
+    it("dueDate のみ更新し、既存の startDate と逆転するなら ConvexError で拒否し DB を変えない", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+      const task = await seedDatedTask(as, issue, { startDate: "2026-08-10" });
+
+      await expect(
+        as.mutation(api.tasks.updateFields, {
+          id: task,
+          expectedRevision: 0,
+          dueDate: "2026-08-01", // 既存 startDate（08-10）より前
+        }),
+      ).rejects.toThrowError("開始日は期限日以前の日付にしてください");
+
+      const after = await loadTask(t, task);
+      expect(after.startDate).toBe("2026-08-10");
+      expect(after.dueDate).toBeUndefined();
+      expect(after.revision).toBe(0); // 拒否時は revision が進まない
+    });
+
+    it("startDate のみ更新し、既存の dueDate と整合するなら成功する", async () => {
+      const t = setup();
+      const { as } = await seedAuthedMember(t);
+      const project = await seedProject(t);
+      const { issue } = await seedIssueWithTask(as, project);
+      const task = await seedDatedTask(as, issue, { dueDate: "2026-08-10" });
+
+      await as.mutation(api.tasks.updateFields, {
+        id: task,
+        expectedRevision: 0,
+        startDate: "2026-08-01", // 既存 dueDate（08-10）以前
+      });
+
+      expect(await loadTask(t, task)).toMatchObject({
+        startDate: "2026-08-01",
+        dueDate: "2026-08-10",
+        revision: 1,
+      });
+    });
+
+    // マージ検証: 事前状態（両方あり/片方のみ/なし）× 引数（未指定/null/日付）の
+    // 代表的な組み合わせで、更新後も「両方定義済みなら startDate ≤ dueDate」が
+    // 常に成立することを検証する（片側更新でも既存値とマージした組で判定される）。
+    it.each([
+      {
+        name: "両方ありで startDate を null クリアと同時に dueDate を新しい日付へ更新",
+        precondition: { startDate: "2026-08-01", dueDate: "2026-08-10" },
+        args: { startDate: null, dueDate: "2026-08-20" },
+        expected: { startDate: undefined, dueDate: "2026-08-20" },
+      },
+      {
+        name: "両方ありで両方を null クリア",
+        precondition: { startDate: "2026-08-01", dueDate: "2026-08-10" },
+        args: { startDate: null, dueDate: null },
+        expected: { startDate: undefined, dueDate: undefined },
+      },
+      {
+        name: "startDate のみありで startDate を null クリアと同時に dueDate を設定",
+        precondition: { startDate: "2026-08-01" },
+        args: { startDate: null, dueDate: "2026-08-15" },
+        expected: { startDate: undefined, dueDate: "2026-08-15" },
+      },
+      {
+        name: "なしで dueDate のみ設定",
+        precondition: {},
+        args: { dueDate: "2026-08-15" },
+        expected: { startDate: undefined, dueDate: "2026-08-15" },
+      },
+    ])(
+      "$name → 成功し、更新後も startDate ≤ dueDate（未定義含む）が保たれる",
+      async ({ precondition, args, expected }) => {
+        const t = setup();
+        const { as } = await seedAuthedMember(t);
+        const project = await seedProject(t);
+        const { issue } = await seedIssueWithTask(as, project);
+        const task = await seedDatedTask(as, issue, precondition);
+
+        await as.mutation(api.tasks.updateFields, {
+          id: task,
+          expectedRevision: 0,
+          ...args,
+        });
+
+        const after = await loadTask(t, task);
+        expect(after.startDate).toBe(expected.startDate);
+        expect(after.dueDate).toBe(expected.dueDate);
+        expect(after.revision).toBe(1);
+      },
+    );
+
+    it.each([
+      {
+        name: "両方ありで既存 dueDate より後の startDate を設定",
+        precondition: { startDate: "2026-08-01", dueDate: "2026-08-10" },
+        args: { startDate: "2026-08-20" },
+      },
+      {
+        name: "dueDate のみありで既存 dueDate より後の startDate を設定",
+        precondition: { dueDate: "2026-08-10" },
+        args: { startDate: "2026-08-20" },
+      },
+    ])(
+      "$name → ConvexError で拒否され、DB・revision は変わらない",
+      async ({ precondition, args }) => {
+        const t = setup();
+        const { as } = await seedAuthedMember(t);
+        const project = await seedProject(t);
+        const { issue } = await seedIssueWithTask(as, project);
+        const task = await seedDatedTask(as, issue, precondition);
+        const before = await loadTask(t, task);
+
+        await expect(
+          as.mutation(api.tasks.updateFields, {
+            id: task,
+            expectedRevision: 0,
+            ...args,
+          }),
+        ).rejects.toThrowError("開始日は期限日以前の日付にしてください");
+
+        const after = await loadTask(t, task);
+        expect(after.startDate).toBe(before.startDate);
+        expect(after.dueDate).toBe(before.dueDate);
+        expect(after.revision).toBe(before.revision);
+        expect(after.updatedAt).toBe(before.updatedAt);
+      },
+    );
+  });
 });
 
 // --- listByProject ------------------------------------------------------------
