@@ -16,20 +16,29 @@ import s from "./GanttView.module.css";
 function useToday(): string {
   const [today, setToday] = useState(todayIso);
   useEffect(() => {
-    const now = new Date();
-    const nextMidnight = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate() + 1,
-    );
-    // +1秒の余裕: タイマーが境界より僅かに早く発火して同じ日付を set した
-    // 場合、state が変わらず effect も再実行されないため次のタイマーが消える
-    const id = setTimeout(
-      () => setToday(todayIso()),
-      nextMidnight.getTime() - now.getTime() + 1000,
-    );
+    // 次のタイマーは state の変化に依存させず、コールバック内で必ず張り直す。
+    // 「発火 → 同値 set（時計後退等で日付が進んでいない）→ 再レンダーなし」でも
+    // 連鎖が止まらないようにするため（+1秒は境界僅か手前での発火対策の余裕。
+    // 早発火しても次回は現在時刻から翌日境界を再計算するので自己回復する）。
+    let id: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const now = new Date();
+      const nextMidnight = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+      );
+      id = setTimeout(
+        () => {
+          setToday(todayIso());
+          schedule();
+        },
+        nextMidnight.getTime() - now.getTime() + 1000,
+      );
+    };
+    schedule();
     return () => clearTimeout(id);
-  }, [today]);
+  }, []);
   return today;
 }
 

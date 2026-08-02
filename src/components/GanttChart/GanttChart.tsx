@@ -3,6 +3,7 @@ import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import { formatIssueRef } from "../../lib/formatIssueRef";
 import type { GanttBar, GanttModel, GanttRow } from "../../lib/gantt";
+import { TASK_STATUS_LABELS } from "../../lib/taskMeta";
 import s from "./GanttChart.module.css";
 
 /**
@@ -15,7 +16,8 @@ import s from "./GanttChart.module.css";
  */
 
 const CONTINUATION_SUFFIX = "(表示範囲外まで継続)";
-const DONE_SUFFIX = "(完了)";
+// 状態語はラベル定数の正(taskMeta)から組み立てる(UI文言・配置規約 §4)
+const DONE_SUFFIX = `(${TASK_STATUS_LABELS.done})`;
 
 /** 日 index → CSS grid 列番号（列1=ラベル。変換はこの1箇所に集約する）。 */
 function dayGridColumn(index: number): number {
