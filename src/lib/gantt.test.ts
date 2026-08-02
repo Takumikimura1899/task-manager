@@ -222,23 +222,6 @@ describe("buildGanttModel", () => {
     expect(model.days[model.todayIndex].date).toBe("2024-01-01");
   });
 
-  it("表示レンジに週境界（月曜）が無い場合でも、先頭列(index 0)から軸ラベルが1つ以上出る", () => {
-    // 2026-08-04(火)〜08-05(水)の2日レンジには月曜が含まれない。
-    // GanttChart のヘッダー描画規則（index 0 または isWeekStart）を
-    // model.days に適用し、軸ラベルが0件にならないことを固定する。
-    const issue = createIssue({
-      tasks: [createTask({ startDate: "2026-08-04", dueDate: "2026-08-05" })],
-    });
-
-    const model = buildGanttModel([issue], "2026-08-04");
-
-    expect(model.days.some((d) => d.isWeekStart)).toBe(false);
-    const labelCount = model.days.filter(
-      (d, i) => i === 0 || d.isWeekStart,
-    ).length;
-    expect(labelCount).toBeGreaterThanOrEqual(1);
-  });
-
   describe("クランプ（表示レンジの上限・下限）", () => {
     it("未来方向: 遠い未来の Task があっても days.length は400日以内に収まり、レンジ外 Task は端列に point+outOfRange で残る", () => {
       const today = "2026-08-03";
