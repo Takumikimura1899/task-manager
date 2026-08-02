@@ -135,6 +135,10 @@ export default defineSchema({
     estimate: v.optional(v.number()),
     // 実績工数（単位: 時間）
     actual: v.optional(v.number()),
+    // ガント表示用の予定期間(YYYY-MM-DD 正規形。実在日・startDate ≤ dueDate は Core で強制)。
+    // Issue 側には期間を保存しない(子 Task から派生・Issue.status と同型・§5.1)。
+    startDate: v.optional(v.string()),
+    dueDate: v.optional(v.string()),
     // カンバン並び順（LexoRank 等の比較可能な値）
     rank: v.string(),
     createdBy: v.id("members"), // 人間／AIエージェントいずれも Member

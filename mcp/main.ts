@@ -466,9 +466,25 @@ async function main() {
         description: z.string().optional(),
         priority: z.enum(PRIORITY_VALUES).optional(),
         assignee_email: z.string().optional(),
+        start_date: z
+          .string()
+          .optional()
+          .describe("開始日(YYYY-MM-DD、2000〜2099年)"),
+        due_date: z
+          .string()
+          .optional()
+          .describe("期限日(YYYY-MM-DD、2000〜2099年)"),
       },
     },
-    async ({ issue_ref, title, description, priority, assignee_email }) => {
+    async ({
+      issue_ref,
+      title,
+      description,
+      priority,
+      assignee_email,
+      start_date,
+      due_date,
+    }) => {
       try {
         const issue = await resolveIssueId(issue_ref);
         const assignee =
@@ -477,7 +493,15 @@ async function main() {
             : undefined;
         const id = await convex.mutation(
           api.tasks.create,
-          withToken({ issue, title, description, priority, assignee }),
+          withToken({
+            issue,
+            title,
+            description,
+            priority,
+            assignee,
+            startDate: start_date,
+            dueDate: due_date,
+          }),
         );
         return ok({ id, message: "作成しました" });
       } catch (e) {
@@ -491,16 +515,34 @@ async function main() {
     {
       title: "タスク更新",
       description:
-        "タイトル・説明・優先度を更新する。version には get_task で得た revision を渡す（楽観ロック）",
+        "タイトル・説明・優先度・開始日・期限日を更新する。version には get_task で得た revision を渡す（楽観ロック）",
       inputSchema: {
         task_ref: z.string(),
         version: z.number().describe("楽観ロック用 revision"),
         title: z.string().optional(),
         description: z.string().optional(),
         priority: z.enum(PRIORITY_VALUES).optional(),
+        start_date: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("開始日(YYYY-MM-DD、2000〜2099年)。null でクリア"),
+        due_date: z
+          .string()
+          .nullable()
+          .optional()
+          .describe("期限日(YYYY-MM-DD、2000〜2099年)。null でクリア"),
       },
     },
-    async ({ task_ref, version, title, description, priority }) => {
+    async ({
+      task_ref,
+      version,
+      title,
+      description,
+      priority,
+      start_date,
+      due_date,
+    }) => {
       try {
         const task = await resolveTask(task_ref);
         await convex.mutation(
@@ -511,6 +553,8 @@ async function main() {
             title,
             description,
             priority,
+            startDate: start_date,
+            dueDate: due_date,
           }),
         );
         return ok({ message: "更新しました" });

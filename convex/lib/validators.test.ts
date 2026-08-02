@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertDateOrder,
+  assertDateString,
   assertHours,
   extractInviteCodeParam,
+  isValidDateString,
   isValidEmail,
   isValidHours,
   isValidProjectKey,
@@ -123,6 +126,77 @@ describe("入力バリデーション", () => {
       { label: "空白のみ", value: "   " },
     ])("未提示相当($label)は undefined を返す", ({ value }) => {
       expect(extractInviteCodeParam(value)).toBeUndefined();
+    });
+  });
+
+  describe("isValidDateString", () => {
+    it.each([
+      { value: "2026-08-02", expected: true },
+      { value: "2024-02-29", expected: true }, // うるう年の2/29
+      { value: "2026-2-3", expected: false }, // ゼロ埋めなし
+      { value: "2026/02/03", expected: false }, // 区切り文字が不正
+      { value: "2026-02-30", expected: false }, // 2月に30日は存在しない
+      { value: "2023-02-29", expected: false }, // 非うるう年の2/29
+      { value: "1999-12-31", expected: false }, // 年下限（2000年）未満
+      { value: "3026-01-01", expected: false }, // 年上限（2099年）超過
+      { value: "10000-01-01", expected: false }, // 年が5桁（桁あふれ）
+      { value: " 2026-08-02", expected: false }, // 前方に空白
+      { value: "2026-08-02 ", expected: false }, // 後方に空白
+    ])("$value の妥当性は $expected", ({ value, expected }) => {
+      expect(isValidDateString(value)).toBe(expected);
+    });
+  });
+
+  describe("assertDateString", () => {
+    it.each([
+      { value: undefined }, // 未指定は素通し
+      { value: null }, // クリアは素通し
+    ])("$value のときは何も起きない", ({ value }) => {
+      expect(() => assertDateString("開始日", value)).not.toThrow();
+    });
+
+    it.each([
+      { label: "開始日", value: "2026-2-3" }, // ゼロ埋めなし
+      { label: "期限日", value: "2026-02-30" }, // 非実在日
+    ])(
+      "$label が不正な値（$value）なら「$label は YYYY-MM-DD 形式」という ConvexError を投げる",
+      ({ label, value }) => {
+        expect(() => assertDateString(label, value)).toThrowError(
+          `${label}は YYYY-MM-DD 形式(2000〜2099 年)の実在する日付で指定してください`,
+        );
+      },
+    );
+  });
+
+  describe("assertDateOrder", () => {
+    it("startDate と dueDate が同日なら何も起きない", () => {
+      expect(() => assertDateOrder("2026-08-02", "2026-08-02")).not.toThrow();
+    });
+
+    it("startDate が dueDate より後なら ConvexError を投げる", () => {
+      expect(() => assertDateOrder("2026-08-03", "2026-08-02")).toThrowError(
+        "開始日は期限日以前の日付にしてください",
+      );
+    });
+
+    it.each([
+      {
+        label: "startDate 未指定",
+        startDate: undefined,
+        dueDate: "2026-08-02",
+      },
+      { label: "dueDate 未指定", startDate: "2026-08-02", dueDate: undefined },
+      { label: "両方未指定", startDate: undefined, dueDate: undefined },
+    ])("$label のときは何も起きない", ({ startDate, dueDate }) => {
+      expect(() => assertDateOrder(startDate, dueDate)).not.toThrow();
+    });
+
+    it("月をまたぐ順序（2026-09-30 < 2026-10-01）は正しく通る", () => {
+      expect(() => assertDateOrder("2026-09-30", "2026-10-01")).not.toThrow();
+    });
+
+    it("年をまたぐ順序（2026-12-31 < 2027-01-01）は正しく通る", () => {
+      expect(() => assertDateOrder("2026-12-31", "2027-01-01")).not.toThrow();
     });
   });
 });

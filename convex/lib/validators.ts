@@ -77,3 +77,55 @@ export function assertHours(
     throw new ConvexError(`${label}は 0 以上の数値で指定してください`);
   }
 }
+
+/**
+ * タスク日付の正規形: YYYY-MM-DD(年は 2000〜2099 に制限)。
+ * - 固定長ゼロ埋めにより文字列の辞書順=時間順が成立し、保存後の比較
+ *   (startDate ≤ dueDate、ガントの min/max 派生)を Date 変換なしで行える
+ * - 年範囲の制限はタイプミス級の異常日付(例 "3026-01-01")を保存させない
+ *   データ衛生。表示レンジの有界化はビュー側の責務(正当な遠い日付でも
+ *   レンジは伸びるため、保存時制約では防げない)
+ */
+const TASK_DATE_PATTERN = /^20\d{2}-\d{2}-\d{2}$/;
+
+/** 正規形+実在日チェック(Date.UTC round-trip で 02-30 等を拒否)。 */
+export function isValidDateString(value: string): boolean {
+  if (!TASK_DATE_PATTERN.test(value)) return false;
+  const [y, m, d] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return (
+    date.getUTCFullYear() === y &&
+    date.getUTCMonth() === m - 1 &&
+    date.getUTCDate() === d
+  );
+}
+
+/**
+ * 日付フィールドの検証(tasks の startDate/dueDate で共有)。assertHours と同型:
+ * undefined/null(未指定・クリア)は素通し。label はエラー文言の主語。
+ */
+export function assertDateString(
+  label: string,
+  value: string | null | undefined,
+): void {
+  if (value === undefined || value === null) return;
+  if (!isValidDateString(value)) {
+    throw new ConvexError(
+      `${label}は YYYY-MM-DD 形式(2000〜2099 年)の実在する日付で指定してください`,
+    );
+  }
+}
+
+/**
+ * startDate ≤ dueDate(両方定義済みのときのみ・正規形前提の辞書順比較)。
+ * 片側更新でも不変条件を保つため、必ず既存値とマージ後の組で呼ぶこと。
+ */
+export function assertDateOrder(
+  startDate: string | undefined,
+  dueDate: string | undefined,
+): void {
+  if (startDate === undefined || dueDate === undefined) return;
+  if (startDate > dueDate) {
+    throw new ConvexError("開始日は期限日以前の日付にしてください");
+  }
+}
