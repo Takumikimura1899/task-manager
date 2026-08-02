@@ -122,4 +122,11 @@
     border-start-end-radius: 0;
     border-end-end-radius: 0;
   }
+
+  /* point バーが表示レンジ外の端に寄せられている印。「実際にはこの位置に
+     無い」ことを示す（clippedStart/clippedEnd の角丸解除と対になる視覚手掛かり）。
+     色・太さは既存の枠指定（.taskBar / .issueBar の border）を継承する。 */
+  .outOfRange {
+    border-style: dashed;
+  }
 }

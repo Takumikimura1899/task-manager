@@ -65,8 +65,8 @@ export function GanttView() {
         </output>
       ) : model.rows.length === 0 ? (
         <p className={s.empty}>
-          開始日・期限日が設定された Task がありません。Issue 一覧から Task
-          を開き、「編集」で開始日・期限日を設定してください。
+          開始日・期限日が設定された Task がありません。Issue 一覧から Issue
+          を開き、Task の詳細画面の「編集」で開始日・期限日を設定してください。
           <Link className={`inline-link ${s.emptyLink}`} to="/issues">
             Issue 一覧へ
           </Link>

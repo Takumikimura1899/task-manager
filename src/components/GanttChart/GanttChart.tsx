@@ -24,6 +24,11 @@ function dayGridColumn(index: number): number {
   return index + 2;
 }
 
+/** ヘッダー軸ラベル「M/D」を ISO 日付（YYYY-MM-DD）から導出する。 */
+function formatHeaderDate(date: string): string {
+  return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
+}
+
 function barGridColumn(bar: GanttBar): string {
   return bar.type === "range"
     ? `${dayGridColumn(bar.startIndex)} / ${dayGridColumn(bar.endIndex) + 1}`
@@ -41,6 +46,11 @@ function barClassName(row: GanttRow): string {
   if (row.bar.type === "range") {
     if (row.bar.clippedStart) classes.push(s.clippedStart);
     if (row.bar.clippedEnd) classes.push(s.clippedEnd);
+  } else if (row.bar.outOfRange) {
+    // range の clippedStart/clippedEnd（角丸解除）と同様、point の
+    // outOfRange にも視覚的手掛かりを付ける（aria-label にのみ付与された
+    // 「表示範囲外まで継続」を視覚でも示す）。
+    classes.push(s.outOfRange);
   }
   if (isDone(row)) classes.push(s.done);
   return classes.join(" ");
@@ -119,17 +129,20 @@ export function GanttChart({
         style={{ gridColumn: dayGridColumn(todayIndex) }}
       />
 
-      {/* ヘッダー行 */}
+      {/* ヘッダー行: 週開始（月曜）に加え、先頭列(index 0)にも必ずラベルを出す
+            （短い表示レンジに月曜が含まれずラベルが0個になるのを防ぐ）。
+            先頭が週開始の場合は isWeekStart 側の条件と重複しないよう
+            index===0 を先に判定する。 */}
       <div className={s.cornerCell} style={{ gridColumn: 1, gridRow: 1 }} />
       {days.map(
         (day, i) =>
-          day.isWeekStart && (
+          (i === 0 || day.isWeekStart) && (
             <div
               className={s.headerCell}
               key={`header-${day.date}`}
               style={{ gridColumn: dayGridColumn(i), gridRow: 1 }}
             >
-              {Number(day.date.slice(5, 7))}/{day.dayOfMonth}
+              {formatHeaderDate(day.date)}
             </div>
           ),
       )}
