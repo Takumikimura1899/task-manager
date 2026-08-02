@@ -15,11 +15,17 @@ import s from "./GanttChart.module.css";
  */
 
 const CONTINUATION_SUFFIX = "(表示範囲外まで継続)";
+const DONE_SUFFIX = "(完了)";
+
+/** 日 index → CSS grid 列番号（列1=ラベル。変換はこの1箇所に集約する）。 */
+function dayGridColumn(index: number): number {
+  return index + 2;
+}
 
 function barGridColumn(bar: GanttBar): string {
   return bar.type === "range"
-    ? `${bar.startIndex + 2} / ${bar.endIndex + 3}`
-    : `${bar.index + 2}`;
+    ? `${dayGridColumn(bar.startIndex)} / ${dayGridColumn(bar.endIndex) + 1}`
+    : `${dayGridColumn(bar.index)}`;
 }
 
 function isBarClipped(bar: GanttBar): boolean {
@@ -34,14 +40,12 @@ function barClassName(row: GanttRow): string {
     if (row.bar.clippedStart) classes.push(s.clippedStart);
     if (row.bar.clippedEnd) classes.push(s.clippedEnd);
   }
-  if (row.kind === "task" && row.status === "done") classes.push(s.done);
+  if (isDone(row)) classes.push(s.done);
   return classes.join(" ");
 }
 
 function labelClassName(row: GanttRow): string {
-  return row.kind === "task" && row.status === "done"
-    ? `${s.label} ${s.done}`
-    : s.label;
+  return isDone(row) ? `${s.label} ${s.done}` : s.label;
 }
 
 /**
@@ -62,13 +66,19 @@ function formatTaskPeriod(
   return `期限日 ${dueDate}(開始日なし)`;
 }
 
+function isDone(row: GanttRow): boolean {
+  return row.kind === "task" && row.status === "done";
+}
+
 function ariaLabelFor(row: GanttRow, ref: string): string {
   // Issue 行も Task 行もクランプ前の真の期間（GanttRow.startDate/dueDate）から
   // 整形する。バーの列 index から日付を引くと、レンジ外の期間がクランプ後の
   // 日付として読み上げられてしまう（実機検証で検出）。
+  // done は視覚上 opacity でしか表現されないため、状態語をここで補う。
   const period = formatTaskPeriod(row.startDate, row.dueDate);
-  const suffix = isBarClipped(row.bar) ? CONTINUATION_SUFFIX : "";
-  return `${ref} ${row.title} ${period}${suffix}`;
+  const clip = isBarClipped(row.bar) ? CONTINUATION_SUFFIX : "";
+  const done = isDone(row) ? DONE_SUFFIX : "";
+  return `${ref} ${row.title} ${period}${clip}${done}`;
 }
 
 export function GanttChart({
@@ -98,11 +108,14 @@ export function GanttChart({
             <div
               className={s.weekLine}
               key={`week-${day.date}`}
-              style={{ gridColumn: i + 2 }}
+              style={{ gridColumn: dayGridColumn(i) }}
             />
           ),
       )}
-      <div className={s.todayLine} style={{ gridColumn: todayIndex + 2 }} />
+      <div
+        className={s.todayLine}
+        style={{ gridColumn: dayGridColumn(todayIndex) }}
+      />
 
       {/* ヘッダー行 */}
       <div className={s.cornerCell} style={{ gridColumn: 1, gridRow: 1 }} />
@@ -112,7 +125,7 @@ export function GanttChart({
             <div
               className={s.headerCell}
               key={`header-${day.date}`}
-              style={{ gridColumn: i + 2, gridRow: 1 }}
+              style={{ gridColumn: dayGridColumn(i), gridRow: 1 }}
             >
               {Number(day.date.slice(5, 7))}/{day.dayOfMonth}
             </div>
@@ -134,6 +147,9 @@ export function GanttChart({
         return (
           <Fragment key={row.id}>
             <Link
+              aria-label={
+                isDone(row) ? `${ref} ${row.title}${DONE_SUFFIX}` : undefined
+              }
               className={labelClassName(row)}
               style={{ gridColumn: 1, gridRow }}
               title={`${ref} ${row.title}`}

@@ -152,9 +152,13 @@ describe("GanttChart の done 表示", () => {
     ]);
     renderGanttChart(model);
 
-    const doneLabel = screen.getByRole("link", { name: "TASK-1 完了タスク" });
+    // done はアクセシブルネームにも状態語(完了)が付く(opacity だけでは
+    // スクリーンリーダーに状態が伝わらないため)
+    const doneLabel = screen.getByRole("link", {
+      name: "TASK-1 完了タスク(完了)",
+    });
     const doneBar = screen.getByRole("link", {
-      name: "TASK-1 完了タスク 開始日 2026-08-01(期限日なし)",
+      name: "TASK-1 完了タスク 開始日 2026-08-01(期限日なし)(完了)",
     });
     expect(doneLabel).toHaveClass(s.done);
     expect(doneBar).toHaveClass(s.done);

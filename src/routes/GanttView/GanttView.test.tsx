@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
@@ -160,5 +160,29 @@ describe("GanttView の購読値の反映", () => {
     expect(
       screen.queryByText(/表示範囲は今日の前後に限定しています/),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("GanttView の日跨ぎ更新", () => {
+  it("日付境界を跨ぐと today が更新され、今日線が翌日の列へ移動する", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 3, 23, 59, 30)); // 2026-08-03 23:59:30
+    mocks.issues = [
+      createIssue({
+        tasks: [createTask({ startDate: "2026-08-01", dueDate: "2026-08-05" })],
+      }),
+    ];
+    const { container } = renderGanttView();
+    const todayLine = () => container.querySelector('div[class*="todayLine"]');
+
+    // レンジは 2026-08-01〜08-05。今日(08-03)は index 2 = 列4
+    expect(todayLine()).toHaveStyle({ gridColumn: "4" });
+
+    // 日付境界(+1秒の余裕)を跨ぐまで進めると、再購読なしでも today が前進する
+    act(() => {
+      vi.advanceTimersByTime(32_000);
+    });
+
+    expect(todayLine()).toHaveStyle({ gridColumn: "5" }); // 08-04 = index 3
   });
 });

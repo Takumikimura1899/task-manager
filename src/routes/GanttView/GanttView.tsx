@@ -1,5 +1,5 @@
 import { useQuery } from "convex/react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import { useAppOutletContext } from "../../components/AppLayout/AppLayout";
@@ -9,17 +9,39 @@ import { buildGanttModel, todayIso } from "../../lib/gantt";
 import s from "./GanttView.module.css";
 
 /**
+ * 「今日」のローカル日付。次の日付境界を跨いだら自前のタイマーで更新する。
+ * レンダー時評価だけだと、購読データに変化がない限り日跨ぎ後も前日の
+ * today でガント（今日線・表示レンジ）が固定されてしまう。
+ */
+function useToday(): string {
+  const [today, setToday] = useState(todayIso);
+  useEffect(() => {
+    const now = new Date();
+    const nextMidnight = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+    );
+    // +1秒の余裕: タイマーが境界より僅かに早く発火して同じ日付を set した
+    // 場合、state が変わらず effect も再実行されないため次のタイマーが消える
+    const id = setTimeout(
+      () => setToday(todayIso()),
+      nextMidnight.getTime() - now.getTime() + 1000,
+    );
+    return () => clearTimeout(id);
+  }, [today]);
+  return today;
+}
+
+/**
  * ガントタブ本体（Issue #141）。tasks.gantt を購読し、行順・バー範囲・
  * 表示レンジの導出は純粋関数（src/lib/gantt.ts）に委ねる。表示専用で
  * mutation・書き込み導線は置かない。
- *
- * today はレンダーごとに評価し、useMemo の依存に含める（日付が変わる
- * タイミング＝日跨ぎでモデルを再計算するため）。
  */
 export function GanttView() {
   const { selected } = useAppOutletContext();
   const issues = useQuery(api.tasks.gantt, { project: selected._id });
-  const today = todayIso();
+  const today = useToday();
 
   const model = useMemo(
     () => (issues === undefined ? undefined : buildGanttModel(issues, today)),
