@@ -17,16 +17,13 @@ import s from "./GanttChart.module.css";
 const createDays = (count: number): GanttModel["days"] =>
   Array.from({ length: count }, (_, i) => ({
     date: `2026-08-${String(i + 1).padStart(2, "0")}`,
-    dayOfMonth: i + 1,
     isWeekStart: false,
-    isToday: false,
   }));
 
 const createModel = (
   rows: GanttRow[],
   overrides: Partial<Omit<GanttModel, "rows">> = {},
 ): GanttModel => ({
-  rangeStart: "2026-08-01",
   days: createDays(10),
   todayIndex: 0,
   clamped: { past: false, future: false },
@@ -98,6 +95,37 @@ describe("GanttChart のラベル・バー Link", () => {
   });
 });
 
+describe("GanttChart のヘッダー軸ラベル", () => {
+  it("週境界（月曜）が1件も無いレンジでも、先頭列(index 0)にラベルを1つ出す", () => {
+    const days: GanttModel["days"] = [
+      { date: "2026-08-04", isWeekStart: false },
+      { date: "2026-08-05", isWeekStart: false },
+    ];
+    const model = createModel([createTaskRow()], { days });
+    const { container } = renderGanttChart(model);
+
+    const headerCells = container.querySelectorAll('[class*="headerCell"]');
+    expect(headerCells).toHaveLength(1);
+    expect(headerCells[0]).toHaveTextContent("8/4");
+  });
+
+  it("先頭列が週境界の場合はラベルを重複させない", () => {
+    const days: GanttModel["days"] = [
+      { date: "2026-08-03", isWeekStart: true },
+      { date: "2026-08-04", isWeekStart: false },
+      { date: "2026-08-10", isWeekStart: true },
+    ];
+    const model = createModel([createTaskRow()], { days });
+    const { container } = renderGanttChart(model);
+
+    const headerCells = container.querySelectorAll('[class*="headerCell"]');
+    expect(Array.from(headerCells).map((el) => el.textContent)).toEqual([
+      "8/3",
+      "8/10",
+    ]);
+  });
+});
+
 describe("GanttChart のバー配置（gridColumn）", () => {
   it("range バーは gridColumn に startIndex+2 / endIndex+3 を設定する", () => {
     const model = createModel([
@@ -131,6 +159,33 @@ describe("GanttChart のバー配置（gridColumn）", () => {
       name: "TASK-1 タスク 開始日 2026-08-01(期限日なし)",
     });
     expect(bar).toHaveStyle({ gridColumn: "5" });
+  });
+});
+
+describe("GanttChart の outOfRange 視覚表示", () => {
+  it("point バーが outOfRange の場合のみ outOfRange クラスを付与する", () => {
+    const model = createModel([
+      createTaskRow({
+        id: "task_out",
+        number: 1,
+        bar: { type: "point", index: 9, outOfRange: true },
+      }),
+      createTaskRow({
+        id: "task_in",
+        number: 2,
+        bar: { type: "point", index: 3, outOfRange: false },
+      }),
+    ]);
+    renderGanttChart(model);
+
+    const outOfRangeBar = screen.getByRole("link", {
+      name: /TASK-1 タスク.*表示範囲外まで継続/,
+    });
+    const inRangeBar = screen.getByRole("link", {
+      name: "TASK-2 タスク 開始日 2026-08-01(期限日なし)",
+    });
+    expect(outOfRangeBar).toHaveClass(s.outOfRange);
+    expect(inRangeBar).not.toHaveClass(s.outOfRange);
   });
 });
 

@@ -67,7 +67,7 @@ describe("buildGanttModel", () => {
     const model = buildGanttModel([], "2026-08-03");
 
     expect(model.days).toHaveLength(1);
-    expect(model.days[0]).toMatchObject({ date: "2026-08-03", isToday: true });
+    expect(model.days[0].date).toBe("2026-08-03");
     expect(model.todayIndex).toBe(0);
     expect(model.rows).toEqual([]);
     expect(model.clamped).toEqual({ past: false, future: false });
@@ -81,7 +81,7 @@ describe("buildGanttModel", () => {
     const model = buildGanttModel([issue], "2024-01-10");
 
     const lastDay = model.days.at(-1);
-    expect(lastDay).toMatchObject({ date: "2024-01-10", isToday: true });
+    expect(lastDay?.date).toBe("2024-01-10");
     expect(model.todayIndex).toBe(model.days.length - 1);
   });
 
@@ -92,7 +92,7 @@ describe("buildGanttModel", () => {
 
     const model = buildGanttModel([issue], "2024-01-01");
 
-    expect(model.days[0]).toMatchObject({ date: "2024-01-01", isToday: true });
+    expect(model.days[0].date).toBe("2024-01-01");
     expect(model.todayIndex).toBe(0);
   });
 
@@ -104,7 +104,7 @@ describe("buildGanttModel", () => {
 
     const model = buildGanttModel([issue], "2024-01-01");
 
-    // rangeStart は today（2024-01-01）に一致するため index は日数差そのもの
+    // 表示レンジ先頭（days[0]）は today（2024-01-01）に一致するため index は日数差そのもの
     const taskRow = model.rows.find((r) => r.id === "task_a");
     const issueRow = model.rows.find((r) => r.id === "issue_1");
     expect(taskRow?.bar).toEqual({
@@ -207,7 +207,7 @@ describe("buildGanttModel", () => {
     ).toEqual(["task_low", "task_high"]);
   });
 
-  it("isWeekStart は月曜のみ true、isToday は today の日のみ true になる", () => {
+  it("isWeekStart は月曜のみ true になる（today は todayIndex で示す）", () => {
     // 2024-01-01 は月曜日（既知の起点）。14日レンジで月曜が2回出現する。
     const issue = createIssue({
       tasks: [createTask({ startDate: "2024-01-01", dueDate: "2024-01-14" })],
@@ -219,9 +219,7 @@ describe("buildGanttModel", () => {
       "2024-01-01",
       "2024-01-08",
     ]);
-    expect(model.days.filter((d) => d.isToday).map((d) => d.date)).toEqual([
-      "2024-01-01",
-    ]);
+    expect(model.days[model.todayIndex].date).toBe("2024-01-01");
   });
 
   describe("クランプ（表示レンジの上限・下限）", () => {
@@ -284,7 +282,7 @@ describe("buildGanttModel", () => {
       });
     });
 
-    it("過去方向: 90日超過去の Task があると rangeStart が today-90 にクランプされ clamped.past が true になる", () => {
+    it("過去方向: 90日超過去の Task があると表示レンジ先頭（days[0]）が today-90 にクランプされ clamped.past が true になる", () => {
       const today = "2026-08-03";
       const issue = createIssue({
         tasks: [
@@ -298,7 +296,7 @@ describe("buildGanttModel", () => {
 
       const model = buildGanttModel([issue], today);
 
-      expect(model.rangeStart).toBe(addDays(today, -90));
+      expect(model.days[0].date).toBe(addDays(today, -90));
       expect(model.clamped).toEqual({ past: true, future: false });
 
       const old = model.rows.find((r) => r.id === "task_old");

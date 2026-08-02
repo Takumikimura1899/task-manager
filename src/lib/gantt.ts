@@ -71,13 +71,7 @@ export type GanttRow =
     };
 
 export type GanttModel = {
-  rangeStart: string;
-  days: {
-    date: string;
-    dayOfMonth: number;
-    isWeekStart: boolean;
-    isToday: boolean;
-  }[];
+  days: { date: string; isWeekStart: boolean }[];
   todayIndex: number;
   rows: GanttRow[];
   // 生の Task 範囲が表示レンジからクランプされたかどうか（GanttView のヒント文言用）。
@@ -234,9 +228,7 @@ export function buildGanttModel(
     const date = addDaysIso(rangeStart, i);
     return {
       date,
-      dayOfMonth: Number(date.slice(8, 10)),
       isWeekStart: new Date(toUtcMs(date)).getUTCDay() === 1,
-      isToday: date === today,
     };
   });
 
@@ -278,7 +270,6 @@ export function buildGanttModel(
   }
 
   return {
-    rangeStart,
     days,
     todayIndex: dayIndex(rangeStart, today),
     rows,

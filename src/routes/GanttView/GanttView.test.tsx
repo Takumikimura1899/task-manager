@@ -92,7 +92,9 @@ describe("GanttView の空状態", () => {
       screen.queryByRole("status", { name: "ガントを読み込み中" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.getByText(/開始日・期限日が設定された Task がありません/),
+      screen.getByText(
+        /開始日・期限日が設定された Task がありません。Issue 一覧から Issue を開き、Task の詳細画面の「編集」で開始日・期限日を設定してください。/,
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Issue 一覧へ" })).toHaveAttribute(
       "href",
