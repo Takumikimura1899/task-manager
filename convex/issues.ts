@@ -6,6 +6,7 @@ import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
+import { loadTasksByIssue } from "./lib/tasks";
 import { taskPriority } from "./schema";
 import { insertTask } from "./tasks";
 
@@ -170,21 +171,7 @@ export const list = query({
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
 
-    // N+1 回避: Issue ごとに tasksOfIssue を発行せず、project 配下の Task を
-    // by_project で一括取得してメモリ上で Issue ごとにグルーピングする。
-    const projectTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_project", (q) => q.eq("project", args.project))
-      .collect();
-    const tasksByIssue = new Map<Id<"issues">, Doc<"tasks">[]>();
-    for (const task of projectTasks) {
-      const group = tasksByIssue.get(task.issue);
-      if (group === undefined) {
-        tasksByIssue.set(task.issue, [task]);
-      } else {
-        group.push(task);
-      }
-    }
+    const tasksByIssue = await loadTasksByIssue(ctx, args.project);
 
     return issues.map((issue) => {
       const tasks = tasksByIssue.get(issue._id) ?? [];
@@ -230,21 +217,7 @@ export const listInProgress = query({
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
 
-    // N+1 回避: list と同様、project 配下の Task を一括取得してメモリ上で
-    // Issue ごとにグルーピングする。
-    const projectTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_project", (q) => q.eq("project", args.project))
-      .collect();
-    const tasksByIssue = new Map<Id<"issues">, Doc<"tasks">[]>();
-    for (const task of projectTasks) {
-      const group = tasksByIssue.get(task.issue);
-      if (group === undefined) {
-        tasksByIssue.set(task.issue, [task]);
-      } else {
-        group.push(task);
-      }
-    }
+    const tasksByIssue = await loadTasksByIssue(ctx, args.project);
 
     const result: {
       _id: Id<"issues">;
