@@ -2,8 +2,16 @@ import type { CSSProperties } from "react";
 import { Fragment } from "react";
 import { Link } from "react-router-dom";
 import { formatIssueRef } from "../../lib/formatIssueRef";
-import type { GanttBar, GanttModel, GanttRow } from "../../lib/gantt";
-import { TASK_STATUS_LABELS } from "../../lib/taskMeta";
+import {
+  barAriaLabel,
+  barGridColumn,
+  dayGridColumn,
+  formatHeaderDate,
+  isDone,
+  labelAriaLabel,
+  type GanttModel,
+  type GanttRow,
+} from "../../lib/gantt";
 import s from "./GanttChart.module.css";
 
 /**
@@ -14,32 +22,6 @@ import s from "./GanttChart.module.css";
  * 委ねない（週境界・今日線の背面レイヤーと衝突しレイアウトが崩壊するため、
  * headless Chromium での実測で確認済み）。
  */
-
-const CONTINUATION_SUFFIX = "(表示範囲外まで継続)";
-// 状態語はラベル定数の正(taskMeta)から組み立てる(UI文言・配置規約 §4)
-const DONE_SUFFIX = `(${TASK_STATUS_LABELS.done})`;
-
-/** 日 index → CSS grid 列番号（列1=ラベル。変換はこの1箇所に集約する）。 */
-function dayGridColumn(index: number): number {
-  return index + 2;
-}
-
-/** ヘッダー軸ラベル「M/D」を ISO 日付（YYYY-MM-DD）から導出する。 */
-function formatHeaderDate(date: string): string {
-  return `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))}`;
-}
-
-function barGridColumn(bar: GanttBar): string {
-  return bar.type === "range"
-    ? `${dayGridColumn(bar.startIndex)} / ${dayGridColumn(bar.endIndex) + 1}`
-    : `${dayGridColumn(bar.index)}`;
-}
-
-function isBarClipped(bar: GanttBar): boolean {
-  return bar.type === "range"
-    ? bar.clippedStart || bar.clippedEnd
-    : bar.outOfRange;
-}
 
 function barClassName(row: GanttRow): string {
   const classes = [row.kind === "issue" ? s.issueBar : s.taskBar];
@@ -58,39 +40,6 @@ function barClassName(row: GanttRow): string {
 
 function labelClassName(row: GanttRow): string {
   return isDone(row) ? `${s.label} ${s.done}` : s.label;
-}
-
-/**
- * Task 行の期間文言。GanttBar は表示レンジにクランプ済みの列 index しか
- * 持たないため（「開始日のみ」「期限日のみ」「同日」のいずれで point に
- * なったかを区別できない）、元の startDate/dueDate（GanttRow.task が保持）を
- * そのまま使う。
- */
-function formatTaskPeriod(
-  startDate: string | null,
-  dueDate: string | null,
-): string {
-  if (startDate !== null && dueDate !== null) {
-    return `開始日 ${startDate} から 期限日 ${dueDate}`;
-  }
-  if (startDate !== null) return `開始日 ${startDate}(期限日なし)`;
-  // gantt query の契約上、startDate/dueDate の少なくとも一方は必ず設定される。
-  return `期限日 ${dueDate}(開始日なし)`;
-}
-
-function isDone(row: GanttRow): boolean {
-  return row.kind === "task" && row.status === "done";
-}
-
-function ariaLabelFor(row: GanttRow, ref: string): string {
-  // Issue 行も Task 行もクランプ前の真の期間（GanttRow.startDate/dueDate）から
-  // 整形する。バーの列 index から日付を引くと、レンジ外の期間がクランプ後の
-  // 日付として読み上げられてしまう（実機検証で検出）。
-  // done は視覚上 opacity でしか表現されないため、状態語をここで補う。
-  const period = formatTaskPeriod(row.startDate, row.dueDate);
-  const clip = isBarClipped(row.bar) ? CONTINUATION_SUFFIX : "";
-  const done = isDone(row) ? DONE_SUFFIX : "";
-  return `${ref} ${row.title} ${period}${clip}${done}`;
 }
 
 export function GanttChart({
@@ -162,9 +111,7 @@ export function GanttChart({
         return (
           <Fragment key={row.id}>
             <Link
-              aria-label={
-                isDone(row) ? `${ref} ${row.title}${DONE_SUFFIX}` : undefined
-              }
+              aria-label={labelAriaLabel(row, ref)}
               className={labelClassName(row)}
               style={{ gridColumn: 1, gridRow }}
               title={`${ref} ${row.title}`}
@@ -173,7 +120,7 @@ export function GanttChart({
               <span className={s.ref}>{ref}</span> {row.title}
             </Link>
             <Link
-              aria-label={ariaLabelFor(row, ref)}
+              aria-label={barAriaLabel(row, ref)}
               className={barClassName(row)}
               style={{ gridColumn: barGridColumn(row.bar), gridRow }}
               to={href}
