@@ -1,106 +1,11 @@
 @layer components {
-  .page {
-    max-width: var(--layout-max);
-    margin-inline: auto;
-
-    /* 狭幅では余白を縮めて内容の幅を確保する（4vw ≒ 画面幅連動） */
-    padding: clamp(var(--space-3), 4vw, var(--space-6));
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .back {
-    align-self: flex-start;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-  }
-
   .breadcrumb {
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-muted);
   }
 
-  .header {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .heading {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .ref {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .edit {
-    margin-inline-start: auto;
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--font-size-sm);
-    color: var(--color-text);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition:
-      color var(--duration-fast) var(--ease-out),
-      border-color var(--duration-fast) var(--ease-out);
-  }
-
-  .edit:hover {
-    color: var(--color-accent);
-    background: var(--color-subtle);
-    border-color: color-mix(
-      in srgb,
-      var(--color-accent) 45%,
-      var(--color-border)
-    );
-  }
-
-  .title {
-    margin: 0;
-    font-family: var(--font-display);
-    font-size: var(--font-size-lg);
-  }
-
-  /* 編集フォームに差し込む優先度フィールド（DetailEditForm の field と同調） */
-  .editField {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-muted);
-  }
-
-  .editSelect {
-    align-self: flex-start;
-    padding: var(--space-1) var(--space-2);
-    font: inherit;
-    font-size: var(--font-size-md);
-    color: var(--color-text);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    transition:
-      border-color var(--duration-fast) var(--ease-out),
-      box-shadow var(--duration-fast) var(--ease-out);
-  }
-
-  .editSelect:focus {
-    border-color: var(--color-accent);
-    box-shadow: var(--glow-accent-sm);
-  }
-
-  /* 予想/実績工数の数値入力（優先度セレクトと同じ枠線・フォーカス演出） */
+  /* 予想/実績工数の数値入力（DetailPage.module.css の .editSelect と同調） */
   .editInput {
     align-self: flex-start;
     width: 8em;
@@ -119,52 +24,6 @@
   .editInput:focus {
     border-color: var(--color-accent);
     box-shadow: var(--glow-accent-sm);
-  }
-
-  /* セクションはカードと同語彙（surface + 影 + 上端の発光ライン） */
-  .section {
-    padding: var(--space-4);
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
-    position: relative;
-    overflow: hidden;
-
-    &::before {
-      content: "";
-      position: absolute;
-      inset: 0 0 auto;
-      height: 1px;
-      background: var(--gradient-edge);
-      opacity: 0.5;
-    }
-  }
-
-  .sectionTitle {
-    margin: 0 0 var(--space-3);
-    font-family: var(--font-display);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: var(--tracking-wide);
-    color: var(--color-text-muted);
-  }
-
-  .props {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: var(--space-2) var(--space-4);
-    margin: 0;
-    font-size: var(--font-size-sm);
-  }
-
-  .term {
-    color: var(--color-text-muted);
-  }
-
-  .value {
-    margin: 0;
-    color: var(--color-text);
   }
 
   /* 開始日・期限日・工数（予想/実績）は ID・カウンタと同様「データ然とした
@@ -223,26 +82,5 @@
   .assigneeSelect:focus {
     border-color: var(--color-accent);
     box-shadow: var(--glow-accent-sm);
-  }
-
-  /* ローディング中のプレースホルダ寸法（参照行・タイトル・セクション） */
-  .loading {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .skeletonHeading {
-    width: min(160px, 50%);
-    height: 20px;
-  }
-
-  .skeletonTitle {
-    width: min(420px, 90%);
-    height: 28px;
-  }
-
-  .skeletonSection {
-    height: 120px;
   }
 }
