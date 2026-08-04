@@ -51,6 +51,7 @@ const renderAppLayout = (initialEntries: string[] = ["/"]) =>
           <Route element={<p>タスク画面</p>} path="/" />
           <Route element={<p>Issue画面</p>} path="/issues" />
           <Route element={<p>Gantt画面</p>} path="/gantt" />
+          <Route element={<p>My Tasks画面</p>} path="/my-tasks" />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -109,9 +110,10 @@ describe("AppLayout のタブナビ", () => {
   });
 
   it.each([
-    ["/", "Task", ["Issue", "Gantt"]],
-    ["/issues", "Issue", ["Task", "Gantt"]],
-    ["/gantt", "Gantt", ["Task", "Issue"]],
+    ["/", "Task", ["Issue", "Gantt", "My Tasks"]],
+    ["/issues", "Issue", ["Task", "Gantt", "My Tasks"]],
+    ["/gantt", "Gantt", ["Task", "Issue", "My Tasks"]],
+    ["/my-tasks", "My Tasks", ["Task", "Issue", "Gantt"]],
   ] as const)(
     "現在地 %s では %s タブに aria-current=page が付く",
     (path, activeLabel, inactiveLabels) => {
@@ -287,6 +289,48 @@ describe("AppLayout のプロジェクト select", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: "WEB — Web サイト" }),
+    ).toBeInTheDocument();
+  });
+
+  it("/my-tasks（全プロジェクト横断ビュー）ではプロジェクト選択を表示しない", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout(["/my-tasks"]);
+
+    expect(
+      screen.queryByRole("combobox", { name: "プロジェクト" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("/my-tasks/（末尾スラッシュ）でもプロジェクト選択を表示しない", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout(["/my-tasks/"]);
+
+    expect(
+      screen.queryByRole("combobox", { name: "プロジェクト" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("/（プロジェクト依存ビュー）ではプロジェクト選択を表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout(["/"]);
+
+    expect(
+      screen.getByRole("combobox", { name: "プロジェクト" }),
     ).toBeInTheDocument();
   });
 });

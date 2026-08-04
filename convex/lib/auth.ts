@@ -93,6 +93,18 @@ export async function findMemberByAuthUserId(
 }
 
 /**
+ * ブラウザ経路の認証チェック（getAuthUserId → null なら拒否）を一箇所に
+ * 集約する（requireAuthed / requireActor / requireAuthedMember で共有）。
+ */
+async function requireAuthUserId(ctx: QueryCtx): Promise<Id<"users">> {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) {
+    throw new ConvexError("認証が必要です");
+  }
+  return userId;
+}
+
+/**
  * query 用ゲート: 呼び出し元が「認証済みユーザー or 正トークンの MCP」で
  * あることだけを要求する（Member 未リンクでも閲覧可。冒頭コメント参照）。
  */
@@ -104,10 +116,7 @@ export async function requireAuthed(
     await requireAgentToken(accessToken);
     return;
   }
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new ConvexError("認証が必要です");
-  }
+  await requireAuthUserId(ctx);
 }
 
 /**
@@ -134,13 +143,25 @@ export async function requireActor(
     return member;
   }
 
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new ConvexError("認証が必要です");
-  }
+  const userId = await requireAuthUserId(ctx);
   const member = await findMemberByAuthUserId(ctx, userId);
   if (member === null) {
     throw new ConvexError("メンバー登録がありません");
   }
   return member;
+}
+
+/**
+ * query 用ゲート（ブラウザ経路専用）: 認証を要求したうえで、呼び出し元に
+ * リンクされた member を解決する。未リンクは throw せず null を返す
+ * （requireAuthed と同じ「Member 未リンクでも閲覧は許可」方針。呼び出し側が
+ * 空表示へ落とし、案内は AppLayout の NoMembersNotice が担う）。
+ * accessToken（MCP 経路）は扱わない: 「自分」はブラウザセッションでしか
+ * 定義できないため（MCP は list_tasks の assignee 指定で同等の絞り込みが可能）。
+ */
+export async function requireAuthedMember(
+  ctx: QueryCtx,
+): Promise<Doc<"members"> | null> {
+  const userId = await requireAuthUserId(ctx);
+  return await findMemberByAuthUserId(ctx, userId);
 }

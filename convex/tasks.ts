@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
-import { requireActor, requireAuthed } from "./lib/auth";
+import { requireActor, requireAuthed, requireAuthedMember } from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
@@ -51,6 +51,25 @@ async function assertMemberExists(
   if ((await ctx.db.get(memberId)) === null) {
     throw new ConvexError("指定されたメンバーが存在しません");
   }
+}
+
+/**
+ * 参照先ドキュメントを distinct id ごとに解決して Map にする（listMine・board の
+ * 参照解決で共有。「収集→取得→Map 化」の同型処理を集約する）。
+ */
+async function resolveRefs<TableName extends "projects" | "issues", Value>(
+  ctx: QueryCtx,
+  ids: Id<TableName>[],
+  pick: (doc: Doc<TableName>) => Value,
+): Promise<Map<Id<TableName>, Value>> {
+  const resolved = new Map<Id<TableName>, Value>();
+  await Promise.all(
+    [...new Set(ids)].map(async (id) => {
+      const doc = await ctx.db.get(id);
+      if (doc !== null) resolved.set(id, pick(doc));
+    }),
+  );
+  return resolved;
 }
 
 /** 指定列（project × status）の末尾 rank を返す（空なら null）。Webhook 自動遷移でも再利用する。 */
@@ -440,15 +459,10 @@ export const board = query({
 
     // Issue 番号はタスクが参照する Issue のみ取得する
     // （project 配下の issues 全件 .collect() は避ける・Issue #19）。
-    const issueIds = [
-      ...new Set(columnTasks.flatMap((c) => c.tasks.map((t) => t.issue))),
-    ];
-    const issueNumber = new Map<Id<"issues">, number>();
-    await Promise.all(
-      issueIds.map(async (id) => {
-        const issue = await ctx.db.get(id);
-        if (issue !== null) issueNumber.set(id, issue.number);
-      }),
+    const issueNumber = await resolveRefs(
+      ctx,
+      columnTasks.flatMap((c) => c.tasks.map((t) => t.issue)),
+      (issue) => issue.number,
     );
 
     // 担当者名は参照された分だけ解決する（members 全件 .collect() は避ける）。
@@ -459,14 +473,24 @@ export const board = query({
 
     return columnTasks.map(({ status, tasks }) => ({
       status,
-      tasks: tasks.map((t) => ({
-        ...t,
-        issueNumber: issueNumber.get(t.issue) ?? null,
-        assigneeName:
-          t.assignee === undefined
-            ? null
-            : (memberName.get(t.assignee) ?? null),
-      })),
+      tasks: tasks.map((t) => {
+        const number = issueNumber.get(t.issue);
+        if (number === undefined) {
+          // 参照先 Issue が欠落しても Task 自体は表示可能。listMine と同様、
+          // 握り潰さずログだけ残す（CLAUDE.md「サイレント失敗の回避」）。
+          console.warn(
+            `tasks.board: Task ${t._id} の Issue ${t.issue} が見つかりません`,
+          );
+        }
+        return {
+          ...t,
+          issueNumber: number ?? null,
+          assigneeName:
+            t.assignee === undefined
+              ? null
+              : (memberName.get(t.assignee) ?? null),
+        };
+      }),
     }));
   },
 });
@@ -607,6 +631,68 @@ export const gantt = query({
       if (tasks.length === 0) return [];
       return [
         { _id: issue._id, number: issue.number, title: issue.title, tasks },
+      ];
+    });
+  },
+});
+
+/**
+ * 「My Tasks」ビュー用（全プロジェクト横断で「担当者=自分」の Task 一覧）。
+ * status グルーピング・優先度ソートはフロント（src/lib/myTasks.ts）に委ねる
+ * （PRIORITY_WEIGHT の二重管理を避ける）。表示専用のため mutation はない。
+ */
+export const listMine = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await requireAuthedMember(ctx);
+    if (member === null) return [];
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_assignee", (q) => q.eq("assignee", member._id))
+      .collect();
+
+    // project/issue は参照された分だけ解決する（board と同じ N+1 回避方針。
+    // projects/issues 全件の .collect() は避ける）。互いに独立な解決のため
+    // 並列に起動する。
+    const [projectKey, issueNumber] = await Promise.all([
+      resolveRefs(
+        ctx,
+        tasks.map((t) => t.project),
+        (project) => project.key,
+      ),
+      resolveRefs(
+        ctx,
+        tasks.map((t) => t.issue),
+        (issue) => issue.number,
+      ),
+    ]);
+
+    return tasks.flatMap((task) => {
+      const key = projectKey.get(task.project);
+      if (key === undefined) {
+        // 参照先 Project が欠落した Task は詳細リンクを生成できない。
+        // 握り潰さずログに残したうえで一覧から除く（CLAUDE.md「サイレント失敗の回避」）。
+        console.warn(
+          `tasks.listMine: Task ${task._id} の Project ${task.project} が見つかりません`,
+        );
+        return [];
+      }
+      const number = issueNumber.get(task.issue);
+      if (number === undefined) {
+        // 参照先 Issue が欠落しても Task 自体は表示可能（issueNumber はリンク
+        // 生成に使わないため null のまま一覧に含める）。Project 欠落と同様、
+        // 握り潰さずログだけ残す（CLAUDE.md「サイレント失敗の回避」）。
+        console.warn(
+          `tasks.listMine: Task ${task._id} の Issue ${task.issue} が見つかりません`,
+        );
+      }
+      return [
+        {
+          ...task,
+          projectKey: key,
+          issueNumber: number ?? null,
+        },
       ];
     });
   },

@@ -9,6 +9,7 @@ import {
   type As,
   TEST_REPO_REMOTE_URL,
   TEST_WEBHOOK_ENCRYPTION_KEY,
+  authSubject,
   getTask,
   seedAuthedMember,
   seedGhostMember,
@@ -16,6 +17,7 @@ import {
   seedMember,
   seedProject,
   seedRepository,
+  seedUser,
   type T,
 } from "../test/convexSupport";
 
@@ -1259,6 +1261,28 @@ describe("tasks.board（整形出力）", () => {
     const backlog = board.find((column) => column.status === "backlog")!;
     expect(backlog.tasks).toMatchObject([{ _id: task, assigneeName: null }]);
   });
+
+  it("参照先 Issue が欠落した Task は警告ログを残しつつ issueNumber: null で返す", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const project = await seedProject(t);
+    const { issue: staleIssue, task } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題（Issue 欠落予定）",
+      firstTask: { title: "Issue が消えるタスク" },
+    });
+    // Issue 側だけが欠落した状態を作る（実運用では通常発生しないが、
+    // 参照整合性が崩れても Task 自体は表示可能なことを保証する防御的分岐の検証）。
+    await t.run((ctx) => ctx.db.delete(staleIssue));
+
+    const board = await as.query(api.tasks.board, { project });
+
+    const backlog = board.find((column) => column.status === "backlog")!;
+    expect(backlog.tasks).toMatchObject([{ _id: task, issueNumber: null }]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(task));
+    warnSpy.mockRestore();
+  });
 });
 
 // --- gantt（ガントチャート表示用・Issue #141） -------------------------------
@@ -1364,5 +1388,139 @@ describe("tasks.gantt", () => {
         "認証が必要です",
       );
     });
+  });
+});
+
+// --- listMine（「My Tasks」ビュー用・全プロジェクト横断） -----------------------
+
+describe("tasks.listMine", () => {
+  it("全プロジェクト横断で自分の担当 Task だけを返し、projectKey と issueNumber を付与する", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const projectA = await seedProject(t, { key: "TASK" });
+    const projectB = await seedProject(t, { key: "WEB" });
+
+    const { issue: issueA, task: taskA } = await as.mutation(
+      api.issues.create,
+      {
+        project: projectA,
+        title: "課題A",
+        firstTask: { title: "自分の担当A", assignee: me },
+      },
+    );
+    const { task: taskB } = await as.mutation(api.issues.create, {
+      project: projectB,
+      title: "課題B",
+      firstTask: { title: "自分の担当B", assignee: me },
+    });
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed.map((task) => task._id).toSorted()).toEqual(
+      [taskA, taskB].toSorted(),
+    );
+    const found = listed.find((task) => task._id === taskA)!;
+    expect(found).toMatchObject({
+      projectKey: "TASK",
+      issueNumber: 1,
+      issue: issueA,
+    });
+  });
+
+  it("参照先 Project が欠落した Task はログを残して一覧から除外する（サイレント失敗の回避）", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const staleProject = await seedProject(t, { key: "STALE" });
+    const healthyProject = await seedProject(t, { key: "TASK" });
+
+    const { task: orphanTask } = await as.mutation(api.issues.create, {
+      project: staleProject,
+      title: "課題（Project 欠落）",
+      firstTask: { title: "参照先が消えるタスク", assignee: me },
+    });
+    const { task: healthyTask } = await as.mutation(api.issues.create, {
+      project: healthyProject,
+      title: "課題（健全）",
+      firstTask: { title: "健全なタスク", assignee: me },
+    });
+    // Project 側だけが欠落した状態を作る（実運用では通常発生しないが、
+    // 参照整合性が崩れても一覧生成が壊れないことを保証する防御的分岐の検証）。
+    await t.run((ctx) => ctx.db.delete(staleProject));
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed.map((task) => task._id)).toEqual([healthyTask]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(orphanTask));
+    warnSpy.mockRestore();
+  });
+
+  it("参照先 Issue が欠落した Task は警告ログを残しつつ issueNumber: null で一覧に含める", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const project = await seedProject(t);
+
+    const { issue: staleIssue, task } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題（Issue 欠落予定）",
+      firstTask: { title: "Issue が消えるタスク", assignee: me },
+    });
+    // Issue 側だけが欠落した状態を作る（実運用では通常発生しないが、
+    // 参照整合性が崩れても Task 自体は表示可能なことを保証する防御的分岐の検証）。
+    await t.run((ctx) => ctx.db.delete(staleIssue));
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed).toMatchObject([{ _id: task, issueNumber: null }]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(task));
+    warnSpy.mockRestore();
+  });
+
+  it("他人の担当・未割り当ての Task は含まない", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const other = await seedMember(t, {
+      name: "Bob",
+      email: "bob@example.com",
+    });
+    const project = await seedProject(t);
+
+    await as.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "他人の担当", assignee: other },
+    });
+    const { issue } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題2",
+      firstTask: { title: "未割り当て" },
+    });
+    const mine = await as.mutation(api.tasks.create, {
+      issue,
+      title: "自分の担当",
+      assignee: me,
+    });
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed.map((task) => task._id)).toEqual([mine]);
+  });
+
+  it("認証済みだが Member 未リンクのユーザーには空配列を返す", async () => {
+    const t = setup();
+    await seedMember(t);
+    const userId = await seedUser(t, { email: "nobody@example.com" });
+    const asUnlinked = t.withIdentity({ subject: authSubject(userId) });
+
+    expect(await asUnlinked.query(api.tasks.listMine, {})).toEqual([]);
+  });
+
+  it("未認証の呼び出しは ConvexError で拒否する", async () => {
+    const t = setup();
+
+    await expect(t.query(api.tasks.listMine, {})).rejects.toThrowError(
+      "認証が必要です",
+    );
   });
 });
