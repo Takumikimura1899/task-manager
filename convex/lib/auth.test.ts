@@ -1,9 +1,6 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../_generated/api";
-import schema from "../schema";
 import {
   AGENT_TOKEN,
   authSubject,
@@ -12,6 +9,7 @@ import {
   seedMember,
   seedProject,
   seedUser,
+  setup,
   stubAgentTokenEnv,
 } from "../../test/convexSupport";
 import { requireActor, requireAgentToken } from "./auth";
@@ -28,9 +26,6 @@ import { requireActor, requireAgentToken } from "./auth";
  *   projects/gitLinks/repositories）の各テストが認証済み identity 経由の呼び出しで
  *   間接的に固定しており、ここでは代表例（tasks.listByProject）で結線を確認する。
  */
-
-const modules = import.meta.glob(["../**/*.ts", "!../**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 afterEach(() => {
   vi.unstubAllEnvs();

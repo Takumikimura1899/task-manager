@@ -1,9 +1,6 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
-import schema from "./schema";
 import {
   AGENT_TOKEN,
   authSubject,
@@ -12,6 +9,7 @@ import {
   seedGhostMember,
   seedMember,
   seedUser,
+  setup,
   stubAgentTokenEnv,
 } from "../test/convexSupport";
 
@@ -23,9 +21,6 @@ import {
  * list の PII 除外（未認証クライアントへ email を露出しない）、
  * および全公開関数の認証ゲート・MCP エージェント登録（ensureAgent）を検証する。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 afterEach(() => {
   vi.unstubAllEnvs();

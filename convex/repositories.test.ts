@@ -1,15 +1,13 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
-import schema from "./schema";
 import { decryptSecret } from "./lib/crypto";
 import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   seedAuthedMember,
   seedProject,
   seedRepository,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -21,9 +19,6 @@ import {
  * - webhookSecret が平文のまま保存されないこと（AES-256-GCM・復号で往復可能）
  * - クエリが secret をクライアントへ返さないこと
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 // 本番経路と同じく環境変数で鍵を注入する（webhooks.test.ts と同様）
 beforeEach(() => {

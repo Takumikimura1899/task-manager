@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
 import {
   type As,
   TEST_WEBHOOK_ENCRYPTION_KEY,
@@ -15,6 +12,7 @@ import {
   seedGitLink,
   seedProject,
   seedRepository,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -30,9 +28,6 @@ import {
  * （Issue #12）。処理失敗時にマーカーが残らず再送で再処理できることも
  * ここで固定する（processEvent の describe を参照）。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 // seedRepository が webhookSecret を暗号化するため、本番同様に環境変数で鍵を注入する
 beforeEach(() => {

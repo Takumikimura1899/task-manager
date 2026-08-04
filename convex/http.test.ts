@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
 import {
   type As,
   TEST_REPO_REMOTE_URL,
@@ -17,6 +14,7 @@ import {
   seedGitLink,
   seedProject,
   seedRepository,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -36,9 +34,6 @@ import {
  * 行われる（Issue #12）。処理失敗（500）時にマーカーが残らず、GitHub の再送で
  * 再処理される（at-least-once）ことも「重複配信」の describe で固定する。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 // findRepositoryByUrls が webhookSecret を復号するため、本番同様に環境変数で鍵を注入する
 beforeEach(() => {

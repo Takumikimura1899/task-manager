@@ -1,15 +1,13 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
 import {
   type As,
   seedAuthedMember,
   seedMember,
   seedProject,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -27,9 +25,6 @@ import {
  * サーバ側で actor に強制されるため公開 API から消えている（詳細は
  * convex/lib/auth.test.ts）。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 /** active な Task の線形な前進経路（backlog はこの手前の初期状態）。 */
 const FORWARD_PATH = ["todo", "in_progress", "in_review", "done"] as const;

@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import schema from "./schema";
 import {
   type As,
   TEST_REPO_REMOTE_URL,
@@ -18,6 +15,7 @@ import {
   seedProject,
   seedRepository,
   seedUser,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -35,9 +33,6 @@ import {
  * サーバ側で actor に強制されるため公開 API から消えている（詳細は
  * convex/lib/auth.test.ts）。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 /**
  * Task を取得し、存在（非 null）を表明してから素のドキュメントを返す。

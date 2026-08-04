@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
-import schema from "./schema";
-import { seedAuthedMember, seedProject } from "../test/convexSupport";
+import { seedAuthedMember, seedProject, setup } from "../test/convexSupport";
 
 /**
  * Project Core API の結合テスト（基本設計書 §3 / Issue #22）。
@@ -15,9 +12,6 @@ import { seedAuthedMember, seedProject } from "../test/convexSupport";
  * 全公開関数は認証ゲート（Issue #1 PR2）配下のため、呼び出しは
  * seedAuthedMember が返す `as`（認証済み identity）で行う。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 describe("projects.create", () => {
   it("採番カウンタを 1 で初期化して Project を作成する（INVARIANT-1 の起点）", async () => {

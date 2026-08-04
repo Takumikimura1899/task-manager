@@ -1,6 +1,4 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import {
   type MockInstance,
   afterEach,
@@ -12,7 +10,6 @@ import {
 } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
 import type { GitHubCommit, GitHubPullRequest } from "./lib/githubReconcile";
 import {
   type As,
@@ -23,6 +20,7 @@ import {
   seedAuthedMember,
   seedProject,
   seedRepository,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -35,9 +33,6 @@ import {
  * 単体検証済みで、ここでは「既存 Webhook 経路への流し込み・冪等性・
  * 1リポジトリ失敗時の継続」を固定する。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 let errorSpy: MockInstance;
 

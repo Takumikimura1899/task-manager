@@ -131,6 +131,10 @@ const cardOrder = () =>
     .getAllByRole("link")
     .map((el) => el.textContent);
 
+/** ラベルに対応するドラッグハンドル（`${label} を移動` ボタン）を取得する。 */
+const handleFor = (label: string) =>
+  screen.getByRole("button", { name: `${label} を移動` });
+
 describe("Board のローディング表示", () => {
   it("読み込み中は列枠（全ステータスの列見出し）を維持したままスケルトンを表示する", () => {
     boardQuery.mockReturnValue(undefined);
@@ -679,9 +683,6 @@ describe("Board のドラッグ直列化（Issue #92 4周目レビュー指摘1�
     // ドラッグハンドルは dnd-kit の useSortable（実物・非モック）が発行する
     // aria-disabled をそのまま反映する。disabled: true になれば dnd-kit
     // 自身がポインタ/キーボードいずれのドラッグ開始も受け付けなくなる。
-    const handleFor = (label: string) =>
-      screen.getByRole("button", { name: `${label} を移動` });
-
     expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
     expect(handleFor("TASK-1")).toHaveAttribute("aria-disabled", "false");
     expect(handleFor("TASK-2")).toHaveAttribute("aria-disabled", "false");
