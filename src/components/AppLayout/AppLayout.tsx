@@ -1,12 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
 import { useState } from "react";
-import {
-  NavLink,
-  Outlet,
-  useLocation,
-  useOutletContext,
-} from "react-router-dom";
+import { NavLink, Outlet, useMatch, useOutletContext } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import {
@@ -68,9 +63,8 @@ export function AppLayout() {
   const projects = useQuery(api.projects.list, {});
   const { members, currentMember, currentMemberLoading } = useCurrentMember();
   const { signOut } = useAuthActions();
-  const { pathname } = useLocation();
   // 全プロジェクト横断ビューではプロジェクト選択が効かないため、効かない操作を見せない
-  const crossProject = pathname === "/my-tasks";
+  const crossProject = useMatch("/my-tasks") !== null;
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );

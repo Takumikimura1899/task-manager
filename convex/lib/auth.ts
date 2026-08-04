@@ -93,6 +93,18 @@ export async function findMemberByAuthUserId(
 }
 
 /**
+ * ブラウザ経路の認証チェック（getAuthUserId → null なら拒否）を一箇所に
+ * 集約する（requireAuthed / requireActor / requireAuthedMember で共有）。
+ */
+async function requireAuthUserId(ctx: QueryCtx): Promise<Id<"users">> {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) {
+    throw new ConvexError("認証が必要です");
+  }
+  return userId;
+}
+
+/**
  * query 用ゲート: 呼び出し元が「認証済みユーザー or 正トークンの MCP」で
  * あることだけを要求する（Member 未リンクでも閲覧可。冒頭コメント参照）。
  */
@@ -104,10 +116,7 @@ export async function requireAuthed(
     await requireAgentToken(accessToken);
     return;
   }
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new ConvexError("認証が必要です");
-  }
+  await requireAuthUserId(ctx);
 }
 
 /**
@@ -134,10 +143,7 @@ export async function requireActor(
     return member;
   }
 
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new ConvexError("認証が必要です");
-  }
+  const userId = await requireAuthUserId(ctx);
   const member = await findMemberByAuthUserId(ctx, userId);
   if (member === null) {
     throw new ConvexError("メンバー登録がありません");
@@ -156,9 +162,6 @@ export async function requireActor(
 export async function requireAuthedMember(
   ctx: QueryCtx,
 ): Promise<Doc<"members"> | null> {
-  const userId = await getAuthUserId(ctx);
-  if (userId === null) {
-    throw new ConvexError("認証が必要です");
-  }
+  const userId = await requireAuthUserId(ctx);
   return await findMemberByAuthUserId(ctx, userId);
 }

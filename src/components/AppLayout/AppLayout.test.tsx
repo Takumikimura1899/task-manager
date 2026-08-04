@@ -306,6 +306,20 @@ describe("AppLayout のプロジェクト select", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("/my-tasks/（末尾スラッシュ）でもプロジェクト選択を表示しない", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout(["/my-tasks/"]);
+
+    expect(
+      screen.queryByRole("combobox", { name: "プロジェクト" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("/（プロジェクト依存ビュー）ではプロジェクト選択を表示する", () => {
     useQueryMock.mockImplementation(
       createQueryDispatcher({

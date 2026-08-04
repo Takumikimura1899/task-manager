@@ -1433,6 +1433,28 @@ describe("tasks.listMine", () => {
     warnSpy.mockRestore();
   });
 
+  it("参照先 Issue が欠落した Task は警告ログを残しつつ issueNumber: null で一覧に含める", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const project = await seedProject(t);
+
+    const { issue: staleIssue, task } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題（Issue 欠落予定）",
+      firstTask: { title: "Issue が消えるタスク", assignee: me },
+    });
+    // Issue 側だけが欠落した状態を作る（実運用では通常発生しないが、
+    // 参照整合性が崩れても Task 自体は表示可能なことを保証する防御的分岐の検証）。
+    await t.run((ctx) => ctx.db.delete(staleIssue));
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed).toMatchObject([{ _id: task, issueNumber: null }]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(task));
+    warnSpy.mockRestore();
+  });
+
   it("他人の担当・未割り当ての Task は含まない", async () => {
     const t = setup();
     const { as, memberId: me } = await seedAuthedMember(t);
