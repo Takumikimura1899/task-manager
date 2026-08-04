@@ -1405,6 +1405,34 @@ describe("tasks.listMine", () => {
     });
   });
 
+  it("参照先 Project が欠落した Task はログを残して一覧から除外する（サイレント失敗の回避）", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const staleProject = await seedProject(t, { key: "STALE" });
+    const healthyProject = await seedProject(t, { key: "TASK" });
+
+    const { task: orphanTask } = await as.mutation(api.issues.create, {
+      project: staleProject,
+      title: "課題（Project 欠落）",
+      firstTask: { title: "参照先が消えるタスク", assignee: me },
+    });
+    const { task: healthyTask } = await as.mutation(api.issues.create, {
+      project: healthyProject,
+      title: "課題（健全）",
+      firstTask: { title: "健全なタスク", assignee: me },
+    });
+    // Project 側だけが欠落した状態を作る（実運用では通常発生しないが、
+    // 参照整合性が崩れても一覧生成が壊れないことを保証する防御的分岐の検証）。
+    await t.run((ctx) => ctx.db.delete(staleProject));
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed.map((task) => task._id)).toEqual([healthyTask]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(orphanTask));
+    warnSpy.mockRestore();
+  });
+
   it("他人の担当・未割り当ての Task は含まない", async () => {
     const t = setup();
     const { as, memberId: me } = await seedAuthedMember(t);
