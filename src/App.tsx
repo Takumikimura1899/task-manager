@@ -5,6 +5,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { GanttView } from "./routes/GanttView/GanttView";
 import { IssueDetail } from "./routes/IssueDetail/IssueDetail";
 import { IssuesView } from "./routes/IssuesView/IssuesView";
+import { MyTasksView } from "./routes/MyTasksView/MyTasksView";
 import { NotFound } from "./routes/NotFound/NotFound";
 import { AuthLoadingScreen, SignIn } from "./routes/SignIn/SignIn";
 import { TaskDetail } from "./routes/TaskDetail/TaskDetail";
@@ -68,6 +69,14 @@ function AppRoutes() {
             </ErrorBoundary>
           }
           path="/gantt"
+        />
+        <Route
+          element={
+            <ErrorBoundary>
+              <MyTasksView />
+            </ErrorBoundary>
+          }
+          path="/my-tasks"
         />
       </Route>
       <Route

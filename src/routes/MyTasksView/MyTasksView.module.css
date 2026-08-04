@@ -1,0 +1,63 @@
+@layer components {
+  /* AppLayout の .app（max-width / padding / コンテナクエリ基準）配下に
+     ネストされるため、このページ自身は縦積みの間隔だけを持つ。 */
+  .page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .skeletonPanel {
+    height: 280px;
+  }
+
+  .empty {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  /* 空状態メッセージ文中の Task 一覧への誘導リンク（GanttView.tsx と同型）。 */
+  .emptyLink {
+    margin-inline-start: var(--space-2);
+  }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  /* Board の列ヘッダと同じ視覚言語。 */
+  .heading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    color: var(--color-text-muted);
+  }
+
+  .count {
+    padding-inline: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-variant-numeric: tabular-nums;
+    background: var(--color-chip);
+    border-radius: var(--radius-pill);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+    gap: var(--space-3);
+  }
+}

@@ -144,3 +144,21 @@ export async function requireActor(
   }
   return member;
 }
+
+/**
+ * query 用ゲート（ブラウザ経路専用）: 認証を要求したうえで、呼び出し元に
+ * リンクされた member を解決する。未リンクは throw せず null を返す
+ * （requireAuthed と同じ「Member 未リンクでも閲覧は許可」方針。呼び出し側が
+ * 空表示へ落とし、案内は AppLayout の NoMembersNotice が担う）。
+ * accessToken（MCP 経路）は扱わない: 「自分」はブラウザセッションでしか
+ * 定義できないため（MCP は list_tasks の assignee 指定で同等の絞り込みが可能）。
+ */
+export async function requireAuthedMember(
+  ctx: QueryCtx,
+): Promise<Doc<"members"> | null> {
+  const userId = await getAuthUserId(ctx);
+  if (userId === null) {
+    throw new ConvexError("認証が必要です");
+  }
+  return await findMemberByAuthUserId(ctx, userId);
+}

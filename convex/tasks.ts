@@ -7,7 +7,7 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
-import { requireActor, requireAuthed } from "./lib/auth";
+import { requireActor, requireAuthed, requireAuthedMember } from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
@@ -607,6 +607,60 @@ export const gantt = query({
       if (tasks.length === 0) return [];
       return [
         { _id: issue._id, number: issue.number, title: issue.title, tasks },
+      ];
+    });
+  },
+});
+
+/**
+ * 「My Tasks」ビュー用（全プロジェクト横断で「担当者=自分」の Task 一覧）。
+ * status グルーピング・優先度ソートはフロント（src/lib/myTasks.ts）に委ねる
+ * （PRIORITY_WEIGHT の二重管理を避ける）。表示専用のため mutation はない。
+ */
+export const listMine = query({
+  args: {},
+  handler: async (ctx) => {
+    const member = await requireAuthedMember(ctx);
+    if (member === null) return [];
+
+    const tasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_assignee", (q) => q.eq("assignee", member._id))
+      .collect();
+
+    // project/issue は参照された分だけ解決する（board と同じ N+1 回避方針。
+    // projects/issues 全件の .collect() は避ける）。
+    const projectKey = new Map<Id<"projects">, string>();
+    await Promise.all(
+      [...new Set(tasks.map((t) => t.project))].map(async (id) => {
+        const project = await ctx.db.get(id);
+        if (project !== null) projectKey.set(id, project.key);
+      }),
+    );
+    const issueNumber = new Map<Id<"issues">, number>();
+    await Promise.all(
+      [...new Set(tasks.map((t) => t.issue))].map(async (id) => {
+        const issue = await ctx.db.get(id);
+        if (issue !== null) issueNumber.set(id, issue.number);
+      }),
+    );
+
+    return tasks.flatMap((task) => {
+      const key = projectKey.get(task.project);
+      if (key === undefined) {
+        // 参照先 Project が欠落した Task は詳細リンクを生成できない。
+        // 握り潰さずログに残したうえで一覧から除く（CLAUDE.md「サイレント失敗の回避」）。
+        console.warn(
+          `tasks.listMine: Task ${task._id} の Project ${task.project} が見つかりません`,
+        );
+        return [];
+      }
+      return [
+        {
+          ...task,
+          projectKey: key,
+          issueNumber: issueNumber.get(task.issue) ?? null,
+        },
       ];
     });
   },

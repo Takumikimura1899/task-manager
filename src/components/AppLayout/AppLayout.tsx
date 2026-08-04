@@ -1,7 +1,12 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
 import { useState } from "react";
-import { NavLink, Outlet, useOutletContext } from "react-router-dom";
+import {
+  NavLink,
+  Outlet,
+  useLocation,
+  useOutletContext,
+} from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import {
@@ -63,6 +68,9 @@ export function AppLayout() {
   const projects = useQuery(api.projects.list, {});
   const { members, currentMember, currentMemberLoading } = useCurrentMember();
   const { signOut } = useAuthActions();
+  const { pathname } = useLocation();
+  // 全プロジェクト横断ビューではプロジェクト選択が効かないため、効かない操作を見せない
+  const crossProject = pathname === "/my-tasks";
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
@@ -166,21 +174,26 @@ export function AppLayout() {
           <NavLink className={s.navLink} to="/gantt">
             Gantt
           </NavLink>
+          <NavLink className={s.navLink} to="/my-tasks">
+            My Tasks
+          </NavLink>
         </nav>
-        <label className={s.picker}>
-          プロジェクト
-          <select
-            className={s.select}
-            onChange={(e) => selectProject(e.target.value as Id<"projects">)}
-            value={selected._id}
-          >
-            {projects.map((p) => (
-              <option key={p._id} value={p._id}>
-                {p.key} — {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!crossProject && (
+          <label className={s.picker}>
+            プロジェクト
+            <select
+              className={s.select}
+              onChange={(e) => selectProject(e.target.value as Id<"projects">)}
+              value={selected._id}
+            >
+              {projects.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.key} — {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {session}
       </header>
       {/* 認証済みでも対応する Member が未リンクだと作成手段が消えるため、

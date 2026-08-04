@@ -9,6 +9,7 @@ import {
   type As,
   TEST_REPO_REMOTE_URL,
   TEST_WEBHOOK_ENCRYPTION_KEY,
+  authSubject,
   getTask,
   seedAuthedMember,
   seedGhostMember,
@@ -16,6 +17,7 @@ import {
   seedMember,
   seedProject,
   seedRepository,
+  seedUser,
   type T,
 } from "../test/convexSupport";
 
@@ -1364,5 +1366,89 @@ describe("tasks.gantt", () => {
         "認証が必要です",
       );
     });
+  });
+});
+
+// --- listMine（「My Tasks」ビュー用・全プロジェクト横断） -----------------------
+
+describe("tasks.listMine", () => {
+  it("全プロジェクト横断で自分の担当 Task だけを返し、projectKey と issueNumber を付与する", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const projectA = await seedProject(t, { key: "TASK" });
+    const projectB = await seedProject(t, { key: "WEB" });
+
+    const { issue: issueA, task: taskA } = await as.mutation(
+      api.issues.create,
+      {
+        project: projectA,
+        title: "課題A",
+        firstTask: { title: "自分の担当A", assignee: me },
+      },
+    );
+    const { task: taskB } = await as.mutation(api.issues.create, {
+      project: projectB,
+      title: "課題B",
+      firstTask: { title: "自分の担当B", assignee: me },
+    });
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed.map((task) => task._id).toSorted()).toEqual(
+      [taskA, taskB].toSorted(),
+    );
+    const found = listed.find((task) => task._id === taskA)!;
+    expect(found).toMatchObject({
+      projectKey: "TASK",
+      issueNumber: 1,
+      issue: issueA,
+    });
+  });
+
+  it("他人の担当・未割り当ての Task は含まない", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const other = await seedMember(t, {
+      name: "Bob",
+      email: "bob@example.com",
+    });
+    const project = await seedProject(t);
+
+    await as.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "他人の担当", assignee: other },
+    });
+    const { issue } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題2",
+      firstTask: { title: "未割り当て" },
+    });
+    const mine = await as.mutation(api.tasks.create, {
+      issue,
+      title: "自分の担当",
+      assignee: me,
+    });
+
+    const listed = await as.query(api.tasks.listMine, {});
+
+    expect(listed.map((task) => task._id)).toEqual([mine]);
+  });
+
+  it("認証済みだが Member 未リンクのユーザーには空配列を返す", async () => {
+    const t = setup();
+    await seedMember(t);
+    const userId = await seedUser(t, { email: "nobody@example.com" });
+    const asUnlinked = t.withIdentity({ subject: authSubject(userId) });
+
+    expect(await asUnlinked.query(api.tasks.listMine, {})).toEqual([]);
+  });
+
+  it("未認証の呼び出しは ConvexError で拒否する", async () => {
+    const t = setup();
+
+    await expect(t.query(api.tasks.listMine, {})).rejects.toThrowError(
+      "認証が必要です",
+    );
   });
 });
