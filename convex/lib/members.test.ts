@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import schema from "../schema";
-import { seedMember, type T } from "../../test/convexSupport";
+import { seedMember, setup, type T } from "../../test/convexSupport";
 import { resolveMemberName, resolveMemberNames } from "./members";
 
 /**
@@ -14,9 +11,6 @@ import { resolveMemberName, resolveMemberNames } from "./members";
  * インメモリ DB を実物として通す（内部モック禁止・古典学派）。
  * 関数参照の解決は不要なので t.run のみ使用する。
  */
-
-const modules = import.meta.glob(["../**/*.ts", "!../**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 /** 削除済み member の id を作る（実体のないダングリング参照）。 */
 const seedDeletedMember = async (t: T) => {

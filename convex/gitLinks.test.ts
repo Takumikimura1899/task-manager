@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import schema from "./schema";
 import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   listTaskGitLinks,
@@ -12,6 +9,7 @@ import {
   seedGitLink,
   seedProject,
   seedRepository,
+  setup,
   type T,
 } from "../test/convexSupport";
 
@@ -22,9 +20,6 @@ import {
  * 冪等 upsert の同定キーは (task, repository, type, externalRef)。
  * 1つの Git アーティファクトが複数タスクに紐づくことを許容する（Issue #38）。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 // seedRepository が webhookSecret を暗号化するため、本番同様に環境変数で鍵を注入する
 beforeEach(() => {

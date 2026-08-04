@@ -1,10 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../_generated/dataModel";
-import schema from "../schema";
-import { seedMember, seedUser, type T } from "../../test/convexSupport";
+import { seedMember, seedUser, setup, type T } from "../../test/convexSupport";
 import { generateInviteToken, sha256Hex } from "./crypto";
 import { linkAuthUserToMember } from "./memberLink";
 
@@ -16,9 +13,6 @@ import { linkAuthUserToMember } from "./memberLink";
  * 呼び出し元（convex/auth.ts の afterUserCreatedOrUpdated）は結線のみなので、
  * ここでは t.run から直接この関数を呼ぶ。
  */
-
-const modules = import.meta.glob(["../**/*.ts", "!../**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 const getMember = (t: T, id: Id<"members">) => t.run((ctx) => ctx.db.get(id));
 

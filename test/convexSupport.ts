@@ -1,4 +1,5 @@
-import type { TestConvex } from "convex-test";
+/// <reference types="vite/client" />
+import { convexTest, type TestConvex } from "convex-test";
 import { vi } from "vitest";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { encryptSecret } from "../convex/lib/crypto";
@@ -8,21 +9,35 @@ import schema from "../convex/schema";
  * Convex 結合テスト（convex-test）の共有セットアップ・ファクトリ。
  *
  * convex/ の外に置くのは意図的:
- * - convex/ 配下の非 test ファイルは `convex dev`/`deploy` のバンドル対象になり、
- *   ここが `convex-test` 等を参照すると本番デプロイを壊す（convex/tsconfig の
- *   include は全ファイル（./ 配下を再帰）で、test ファイルのみ CLI が除外する）。
- * - このファイルは convex-test を「型としてのみ」参照し（実体 import は各 test の
- *   setup 側）、convex のスキャン範囲外に置くことで巻き込みを完全に回避する。
+ * - convex/ 配下の非 test ファイルは `convex dev`/`deploy` のバンドル対象になる
+ *   （convex/tsconfig の include は全ファイル（./ 配下を再帰）で、test ファイルのみ
+ *   CLI が除外する）。このファイルは convex/ の外にあるため、convex-test を実体
+ *   import してもスキャン対象にならず、本番デプロイへの巻き込みは発生しない。
  * - vitest の収集対象（*.test/*.spec）にも該当しないため単独実行もされない。
  *
- * schema 由来のファクトリ（seedProject / seedMember）を一元化し、スキーマ変更時の
- * 二重修正・ドリフトを防ぐ。
+ * schema 由来のファクトリ（seedProject / seedMember）や modules/setup（各 test の
+ * `convexTest(schema, modules)` 呼び出し）を一元化し、スキーマ変更時の二重修正・
+ * ドリフトを防ぐ。
  */
 
 export type T = TestConvex<typeof schema>;
 
 /** `t.withIdentity(...)` が返す、特定ユーザーとして呼び出せる版の T。 */
 export type As = ReturnType<T["withIdentity"]>;
+
+/**
+ * convex-test に渡す関数モジュール一覧。`../convex/**` は各 test ファイルの
+ * 実際の配置（convex/ 直下・convex/lib/ 配下）に関わらずここから見た唯一の
+ * 起点で、convexTest 内部が `_generated` の位置からプレフィックスを自動検出
+ * するため、呼び出し元ごとに相対パスを書き分ける必要はない。
+ */
+const modules = import.meta.glob([
+  "../convex/**/*.ts",
+  "!../convex/**/*.test.ts",
+]);
+
+/** 各 test ファイル共通の convexTest セットアップ。 */
+export const setup = () => convexTest(schema, modules);
 
 /** projects を1件 seed する。採番カウンタは既定で 1 から。 */
 export const seedProject = (

@@ -45,7 +45,7 @@ describe("rankBetween", () => {
       upper = next;
     }
     // 挿入は降順に生成されるので、列全体は low < ...reverse(inserted)... < high
-    const ordered = [low, ...[...inserted].reverse(), high];
+    const ordered = [low, ...inserted.toReversed(), high];
     for (let i = 1; i < ordered.length; i++) {
       expect(ordered[i - 1] < ordered[i]).toBe(true);
     }

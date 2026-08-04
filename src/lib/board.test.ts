@@ -30,6 +30,22 @@ const createTask = (overrides: Partial<BoardTask> = {}): BoardTask => ({
   ...overrides,
 });
 
+/** テスト用の id 文字列でラップする（衝突検出の入力形状 `{ id }` に揃える）。 */
+const wrap = (ids: readonly string[]) => ids.map((id) => ({ id }));
+
+/** 空の BoardColumn を組み立てる。 */
+const createColumn = (
+  status: TaskStatus,
+  tasks: BoardTask[] = [],
+): BoardColumn => ({ status, tasks });
+
+/**
+ * pickPointerScopedCollisions のテスト用フィクスチャ：
+ * task1/task2 は in_progress 列、task9 は in_review 列に属する。
+ */
+const columnOfCard = (id: string) =>
+  id === "task9" ? "in_review" : id.startsWith("task") ? "in_progress" : null;
+
 /**
  * フィルタ中の rank 重複バグ（Issue #92 修正1）の回帰テスト。
  * 可視カードの隣接だけから rank を発行すると、間に隠れたカードと同一 rank を
@@ -213,9 +229,6 @@ describe("pickCardFirstCollisions", () => {
  */
 describe("pickPointerScopedCollisions", () => {
   const columnIds: ReadonlySet<string> = new Set(["in_progress", "in_review"]);
-  // task1/task2 は in_progress 列、task9 は in_review 列に属する
-  const columnOfCard = (id: string) =>
-    id === "task9" ? "in_review" : id.startsWith("task") ? "in_progress" : null;
 
   it.each([
     // [ケース, pointerHits, rectHits, 期待（null=フォールバック委譲）]
@@ -256,7 +269,6 @@ describe("pickPointerScopedCollisions", () => {
       null,
     ],
   ])("%s", (_case, pointerIds, rectIds, expected) => {
-    const wrap = (ids: readonly string[]) => ids.map((id) => ({ id }));
     expect(
       pickPointerScopedCollisions(
         wrap(pointerIds),
@@ -275,11 +287,6 @@ describe("pickPointerScopedCollisions", () => {
  * AND 絞り込みだけを純粋関数として検証する。
  */
 describe("applyBoardFilter", () => {
-  const createColumn = (
-    status: TaskStatus,
-    tasks: BoardTask[] = [],
-  ): BoardColumn => ({ status, tasks });
-
   it("priority/assignee が両方 null なら入力をそのまま返す", () => {
     const columns = [createColumn("todo", [createTask()])];
     expect(applyBoardFilter(columns, EMPTY_FILTER)).toBe(columns);

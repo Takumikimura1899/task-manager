@@ -1,9 +1,7 @@
 // @vitest-environment edge-runtime
-/// <reference types="vite/client" />
-import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { internal } from "./_generated/api";
-import schema from "./schema";
+import { setup } from "../test/convexSupport";
 
 /**
  * seed（開発用デモデータ投入）の結合テスト。
@@ -13,9 +11,6 @@ import schema from "./schema";
  * ここでは「列（status）ごとに rank が全て相異なり、作成順（number 昇順）で
  * 単調増加である」ことを、投入後の DB の最終状態で検証する。
  */
-
-const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
-const setup = () => convexTest(schema, modules);
 
 describe("seed.demo", () => {
   it("2回実行してもプロジェクトは1件のまま増えず、既存データも変化しない（冪等性 #50）", async () => {
