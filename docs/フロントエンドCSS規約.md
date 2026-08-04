@@ -141,6 +141,15 @@ import s from "./TaskCard.module.css";
   Modulesがスコープを保証するため BEM 的な接頭辞は不要。
 - 真に横断的なものだけ `utilities` レイヤーのグローバルクラスにする。
 
+**画面ファミリで共有するスタイル語彙** — 同一の画面ファミリ（例: Issue 詳細 /
+Task 詳細）で byte 同一のクラスが複数ファイルに複製される場合は、代表
+コンポーネントの module.css に一元化し、ファミリ内の各画面から import して
+よい（例: `components/DetailPage/DetailPage.module.css` を
+`routes/TaskDetail` / `routes/IssueDetail` が共有）。utilities レイヤーへは
+昇格させない（`.page` / `.title` / `.section` のような一般名を最強レイヤーに
+置くと無関係な画面と意味が衝突するため）。片方の画面にしかない装飾は各画面の
+module.css に残す。
+
 ---
 
 ## 4. モダンCSSの活用指針
