@@ -12,6 +12,7 @@ import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
+import { loadTasksByIssue } from "./lib/tasks";
 import { rankBetween } from "./lib/rank";
 import {
   assertDateOrder,
@@ -596,21 +597,7 @@ export const gantt = query({
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
 
-    // N+1 回避: issues.list と同様、project 配下の Task を一括取得して
-    // メモリ上で Issue ごとにグルーピングする。
-    const projectTasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_project", (q) => q.eq("project", args.project))
-      .collect();
-    const tasksByIssue = new Map<Id<"issues">, Doc<"tasks">[]>();
-    for (const task of projectTasks) {
-      const group = tasksByIssue.get(task.issue);
-      if (group === undefined) {
-        tasksByIssue.set(task.issue, [task]);
-      } else {
-        group.push(task);
-      }
-    }
+    const tasksByIssue = await loadTasksByIssue(ctx, args.project);
 
     return issues.flatMap((issue) => {
       const tasks = (tasksByIssue.get(issue._id) ?? [])
