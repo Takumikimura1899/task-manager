@@ -1261,6 +1261,28 @@ describe("tasks.board（整形出力）", () => {
     const backlog = board.find((column) => column.status === "backlog")!;
     expect(backlog.tasks).toMatchObject([{ _id: task, assigneeName: null }]);
   });
+
+  it("参照先 Issue が欠落した Task は警告ログを残しつつ issueNumber: null で返す", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const project = await seedProject(t);
+    const { issue: staleIssue, task } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題（Issue 欠落予定）",
+      firstTask: { title: "Issue が消えるタスク" },
+    });
+    // Issue 側だけが欠落した状態を作る（実運用では通常発生しないが、
+    // 参照整合性が崩れても Task 自体は表示可能なことを保証する防御的分岐の検証）。
+    await t.run((ctx) => ctx.db.delete(staleIssue));
+
+    const board = await as.query(api.tasks.board, { project });
+
+    const backlog = board.find((column) => column.status === "backlog")!;
+    expect(backlog.tasks).toMatchObject([{ _id: task, issueNumber: null }]);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(task));
+    warnSpy.mockRestore();
+  });
 });
 
 // --- gantt（ガントチャート表示用・Issue #141） -------------------------------

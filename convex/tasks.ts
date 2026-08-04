@@ -54,8 +54,8 @@ async function assertMemberExists(
 }
 
 /**
- * 参照先ドキュメントを distinct id ごとに解決して Map にする（listMine の
- * projectKey・issueNumber 解決で共有。「収集→取得→Map 化」の同型処理を集約する）。
+ * 参照先ドキュメントを distinct id ごとに解決して Map にする（listMine・board の
+ * 参照解決で共有。「収集→取得→Map 化」の同型処理を集約する）。
  */
 async function resolveRefs<TableName extends "projects" | "issues", Value>(
   ctx: QueryCtx,
@@ -459,15 +459,10 @@ export const board = query({
 
     // Issue 番号はタスクが参照する Issue のみ取得する
     // （project 配下の issues 全件 .collect() は避ける・Issue #19）。
-    const issueIds = [
-      ...new Set(columnTasks.flatMap((c) => c.tasks.map((t) => t.issue))),
-    ];
-    const issueNumber = new Map<Id<"issues">, number>();
-    await Promise.all(
-      issueIds.map(async (id) => {
-        const issue = await ctx.db.get(id);
-        if (issue !== null) issueNumber.set(id, issue.number);
-      }),
+    const issueNumber = await resolveRefs(
+      ctx,
+      columnTasks.flatMap((c) => c.tasks.map((t) => t.issue)),
+      (issue) => issue.number,
     );
 
     // 担当者名は参照された分だけ解決する（members 全件 .collect() は避ける）。
@@ -478,14 +473,24 @@ export const board = query({
 
     return columnTasks.map(({ status, tasks }) => ({
       status,
-      tasks: tasks.map((t) => ({
-        ...t,
-        issueNumber: issueNumber.get(t.issue) ?? null,
-        assigneeName:
-          t.assignee === undefined
-            ? null
-            : (memberName.get(t.assignee) ?? null),
-      })),
+      tasks: tasks.map((t) => {
+        const number = issueNumber.get(t.issue);
+        if (number === undefined) {
+          // 参照先 Issue が欠落しても Task 自体は表示可能。listMine と同様、
+          // 握り潰さずログだけ残す（CLAUDE.md「サイレント失敗の回避」）。
+          console.warn(
+            `tasks.board: Task ${t._id} の Issue ${t.issue} が見つかりません`,
+          );
+        }
+        return {
+          ...t,
+          issueNumber: number ?? null,
+          assigneeName:
+            t.assignee === undefined
+              ? null
+              : (memberName.get(t.assignee) ?? null),
+        };
+      }),
     }));
   },
 });
