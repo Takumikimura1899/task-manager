@@ -12,10 +12,14 @@ import { Badge } from "../../components/Badge/Badge";
 import { ConfirmPanel } from "../../components/ConfirmPanel/ConfirmPanel";
 import { DetailEditForm } from "../../components/DetailEditForm/DetailEditForm";
 import { DetailMeta } from "../../components/DetailMeta/DetailMeta";
+import { DetailLoading } from "../../components/DetailPage/DetailLoading";
+import { DetailNotFound } from "../../components/DetailPage/DetailNotFound";
+import { DetailPage } from "../../components/DetailPage/DetailPage";
+import detail from "../../components/DetailPage/DetailPage.module.css";
+import { PriorityField } from "../../components/DetailPage/PriorityField";
 import { GitLinkList } from "../../components/GitLinkList/GitLinkList";
 import { Markdown } from "../../components/Markdown/Markdown";
 import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
-import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useDeleteFlow } from "../../hooks/useDeleteFlow";
 import { useEditForm } from "../../hooks/useEditForm";
 import { formatHours } from "../../lib/formatHours";
@@ -23,12 +27,13 @@ import { formatIssueRef } from "../../lib/formatIssueRef";
 import { parseRefNumber } from "../../lib/routeParams";
 import {
   PRIORITY_LABELS,
-  PRIORITY_OPTIONS,
   type Priority,
   TASK_STATUS_LABELS,
   type TaskStatus,
 } from "../../lib/taskMeta";
 import s from "./TaskDetail.module.css";
+
+const LIST_PATH = "/";
 
 /**
  * 編集フォームの下書き（タイトル・説明・優先度・予想/実績工数）。
@@ -70,25 +75,6 @@ function parseHoursDraft(label: string, raw: string): number | null {
   }
   return n;
 }
-
-// 読み込み中もページ枠と戻り導線を維持し、見出し・本文セクションの矩形を
-// スケルトンで示す（Issue #29：全画面差し替えをやめる）。props/state に
-// 依存しない静的な表示のためコンポーネント外に定義する（呼び出し側が
-// サンクとして呼ぶことで、読み込み完了後の再レンダーでは要素木を作らない・
-// Issue #104 レビュー対応）。
-const renderLoading = () => (
-  <main className={s.page}>
-    <Link className={s.back} to="/">
-      ← 一覧へ
-    </Link>
-    <output aria-label="Task を読み込み中" className={s.loading}>
-      <Skeleton className={s.skeletonHeading} />
-      <Skeleton className={s.skeletonTitle} />
-      <Skeleton className={s.skeletonSection} />
-      <Skeleton className={s.skeletonSection} />
-    </output>
-  </main>
-);
 
 export function TaskDetail() {
   const params = useParams();
@@ -192,32 +178,21 @@ export function TaskDetail() {
       if (task === null || task === undefined) return;
       await deleteTask({ id: task._id, expectedRevision: task.revision });
     },
-    onDeleted: () => navigate("/"), // 削除後は一覧へ戻る
+    onDeleted: () => navigate(LIST_PATH), // 削除後は一覧へ戻る
   });
 
-  const renderNotFound = () => (
-    <main className={s.page}>
-      <Link className={s.back} to="/">
-        ← 一覧へ
-      </Link>
-      <p className="hint">Task が見つかりませんでした。</p>
-      {/* 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
-          task===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
-          到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。 */}
-      {deleteFlow.error !== null && (
-        <p className="actionError" role="alert">
-          {deleteFlow.error}
-        </p>
-      )}
-    </main>
-  );
-
   if (number === null) {
-    return renderNotFound();
+    return (
+      <DetailNotFound
+        backTo={LIST_PATH}
+        entity="Task"
+        error={deleteFlow.error}
+      />
+    );
   }
 
   if (task === undefined) {
-    return renderLoading();
+    return <DetailLoading backTo={LIST_PATH} entity="Task" />;
   }
 
   if (task === null) {
@@ -227,7 +202,15 @@ export function TaskDetail() {
     // に留め、一致しなければ本当に見つからない（無効な参照・外部での削除等・
     // 削除 in-flight 中に別の Task へ遷移した後にその Task が存在しない
     // 場合）。
-    return deleteFlow.isDeletingCurrent ? renderLoading() : renderNotFound();
+    return deleteFlow.isDeletingCurrent ? (
+      <DetailLoading backTo={LIST_PATH} entity="Task" />
+    ) : (
+      <DetailNotFound
+        backTo={LIST_PATH}
+        entity="Task"
+        error={deleteFlow.error}
+      />
+    );
   }
 
   // 編集の初期値・競合後の再読込は常に最新の購読値から作る。
@@ -298,11 +281,7 @@ export function TaskDetail() {
   };
 
   return (
-    <main className={s.page}>
-      <Link className={s.back} to="/">
-        ← 一覧へ
-      </Link>
-
+    <DetailPage backTo={LIST_PATH}>
       {task.issueNumber !== null && (
         <Link
           className={s.breadcrumb}
@@ -313,15 +292,15 @@ export function TaskDetail() {
         </Link>
       )}
 
-      <header className={s.header}>
-        <div className={s.heading}>
-          <span className={s.ref}>
+      <header className={detail.header}>
+        <div className={detail.heading}>
+          <span className={detail.ref}>
             {task.projectKey}-{task.number}
           </span>
           <Badge status={task.status}>{TASK_STATUS_LABELS[task.status]}</Badge>
           {!edit.editing && (
             <button
-              className={s.edit}
+              className={detail.edit}
               onClick={() => edit.open(toDraft())}
               type="button"
             >
@@ -329,11 +308,11 @@ export function TaskDetail() {
             </button>
           )}
         </div>
-        {!edit.editing && <h1 className={s.title}>{task.title}</h1>}
+        {!edit.editing && <h1 className={detail.title}>{task.title}</h1>}
       </header>
 
       {edit.editing && edit.draft !== null ? (
-        <section className={s.section}>
+        <section className={detail.section}>
           <DetailEditForm
             conflict={edit.conflict}
             description={edit.draft.description}
@@ -348,23 +327,11 @@ export function TaskDetail() {
             templates={TASK_TEMPLATES}
             title={edit.draft.title}
           >
-            <label className={s.editField}>
-              優先度
-              <select
-                className={s.editSelect}
-                onChange={(e) =>
-                  edit.update({ priority: e.target.value as Priority })
-                }
-                value={edit.draft.priority}
-              >
-                {PRIORITY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={s.editField}>
+            <PriorityField
+              onChange={(priority) => edit.update({ priority })}
+              value={edit.draft.priority}
+            />
+            <label className={detail.editField}>
               開始日
               <input
                 className={s.editInput}
@@ -376,7 +343,7 @@ export function TaskDetail() {
                 value={edit.draft.startDate}
               />
             </label>
-            <label className={s.editField}>
+            <label className={detail.editField}>
               期限日
               <input
                 className={s.editInput}
@@ -388,7 +355,7 @@ export function TaskDetail() {
                 value={edit.draft.dueDate}
               />
             </label>
-            <label className={s.editField}>
+            <label className={detail.editField}>
               予想工数 (h)
               <input
                 className={s.editInput}
@@ -400,7 +367,7 @@ export function TaskDetail() {
                 value={edit.draft.estimate}
               />
             </label>
-            <label className={s.editField}>
+            <label className={detail.editField}>
               実績工数 (h)
               <input
                 className={s.editInput}
@@ -417,16 +384,16 @@ export function TaskDetail() {
       ) : (
         task.description !== undefined &&
         task.description !== "" && (
-          <section className={s.section}>
+          <section className={detail.section}>
             <Markdown>{task.description}</Markdown>
           </section>
         )
       )}
 
-      <section className={s.section}>
-        <dl className={s.props}>
-          <dt className={s.term}>ステータス</dt>
-          <dd className={s.value}>
+      <section className={detail.section}>
+        <dl className={detail.props}>
+          <dt className={detail.term}>ステータス</dt>
+          <dd className={detail.value}>
             <div className={s.statusRow}>
               {TASK_STATUS_LABELS[task.status]}
               {allowedTransitions(task.status).map((to) => (
@@ -441,18 +408,18 @@ export function TaskDetail() {
               ))}
             </div>
           </dd>
-          <dt className={s.term}>優先度</dt>
-          <dd className={s.value}>{PRIORITY_LABELS[task.priority]}</dd>
-          <dt className={s.term}>開始日</dt>
-          <dd className={`${s.value} ${s.mono}`}>
+          <dt className={detail.term}>優先度</dt>
+          <dd className={detail.value}>{PRIORITY_LABELS[task.priority]}</dd>
+          <dt className={detail.term}>開始日</dt>
+          <dd className={`${detail.value} ${s.mono}`}>
             {task.startDate === undefined ? "—" : task.startDate}
           </dd>
-          <dt className={s.term}>期限日</dt>
-          <dd className={`${s.value} ${s.mono}`}>
+          <dt className={detail.term}>期限日</dt>
+          <dd className={`${detail.value} ${s.mono}`}>
             {task.dueDate === undefined ? "—" : task.dueDate}
           </dd>
-          <dt className={s.term}>担当者</dt>
-          <dd className={s.value}>
+          <dt className={detail.term}>担当者</dt>
+          <dd className={detail.value}>
             <select
               aria-label="担当者"
               className={s.assigneeSelect}
@@ -478,12 +445,12 @@ export function TaskDetail() {
               ))}
             </select>
           </dd>
-          <dt className={s.term}>予想工数</dt>
-          <dd className={`${s.value} ${s.mono}`}>
+          <dt className={detail.term}>予想工数</dt>
+          <dd className={`${detail.value} ${s.mono}`}>
             {task.estimate === undefined ? "—" : formatHours(task.estimate)}
           </dd>
-          <dt className={s.term}>実績工数</dt>
-          <dd className={`${s.value} ${s.mono}`}>
+          <dt className={detail.term}>実績工数</dt>
+          <dd className={`${detail.value} ${s.mono}`}>
             {task.actual === undefined ? "—" : formatHours(task.actual)}
           </dd>
         </dl>
@@ -503,12 +470,12 @@ export function TaskDetail() {
         />
       )}
 
-      <section className={s.section}>
-        <h2 className={s.sectionTitle}>Git 連携</h2>
+      <section className={detail.section}>
+        <h2 className={detail.sectionTitle}>Git 連携</h2>
         <GitLinkList links={task.gitLinks} />
       </section>
 
-      <section className={s.section}>
+      <section className={detail.section}>
         <DetailMeta
           createdAt={task._creationTime}
           createdByName={task.createdByName}
@@ -517,7 +484,7 @@ export function TaskDetail() {
       </section>
 
       <section className="dangerSection">
-        <h2 className={s.sectionTitle}>操作</h2>
+        <h2 className={detail.sectionTitle}>操作</h2>
         <button className="dangerOutline" onClick={requestDelete} type="button">
           Task を削除
         </button>
@@ -535,6 +502,6 @@ export function TaskDetail() {
           />
         )}
       </section>
-    </main>
+    </DetailPage>
   );
 }
