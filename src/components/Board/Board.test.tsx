@@ -1,9 +1,13 @@
 import type {
+  Active,
+  ClientRect,
+  CollisionDetection,
   DndContextProps,
   DragCancelEvent,
   DragEndEvent,
   DragOverEvent,
   DragStartEvent,
+  DroppableContainer,
 } from "@dnd-kit/core";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -134,6 +138,53 @@ const cardOrder = () =>
 /** ラベルに対応するドラッグハンドル（`${label} を移動` ボタン）を取得する。 */
 const handleFor = (label: string) =>
   screen.getByRole("button", { name: `${label} を移動` });
+
+/**
+ * collisionDetection 配線テスト（Issue #150）用のヘルパ。pointerWithin /
+ * rectIntersection は droppableRects（Map）と座標だけを見る純粋関数のため、
+ * DOM 計測なしで dnd-kit の ClientRect を組み立てられる。
+ * rect(top, left, width, height) の順で呼ぶ。
+ */
+const rect = (
+  top: number,
+  left: number,
+  width: number,
+  height: number,
+): ClientRect => ({
+  top,
+  left,
+  right: left + width,
+  bottom: top + height,
+  width,
+  height,
+});
+
+/**
+ * collisionDetection（CollisionDetection 型）に渡す引数を組み立てる。
+ * droppableContainers は pointerWithin / rectIntersection が `id` しか
+ * 参照しないため、droppableRects のキーから最小限の形で生成する。
+ * active / droppableContainers は実際の DndContext が持つ完全な形
+ * （data・node・rect 参照など）を持たないため、必要最小限のキャストで補う。
+ */
+const buildCollisionArgs = ({
+  activeId,
+  collisionRect,
+  droppableRects,
+  pointerCoordinates,
+}: {
+  activeId: string;
+  collisionRect: ClientRect;
+  droppableRects: Map<string, ClientRect>;
+  pointerCoordinates: { x: number; y: number } | null;
+}): Parameters<CollisionDetection>[0] => ({
+  active: { id: activeId } as unknown as Active,
+  collisionRect,
+  droppableRects,
+  droppableContainers: [...droppableRects.keys()].map(
+    (id) => ({ id }) as unknown as DroppableContainer,
+  ),
+  pointerCoordinates,
+});
 
 describe("Board のローディング表示", () => {
   it("読み込み中は列枠（全ステータスの列見出し）を維持したままスケルトンを表示する", () => {
@@ -983,5 +1034,104 @@ describe("Board の空状態メッセージの基準（Issue #92 再レビュー
 
     expect(screen.getByRole("link", { name: "TASK-12" })).toBeInTheDocument();
     expect(screen.queryByText(/Task がありません/)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * collisionDetection の配線検証（Issue #150）。
+ *
+ * ポインタ列スコープ（lib/board.ts の pickPointerScopedCollisions）は過去
+ * 3度デグレした最重要不変条件（#51/#53/#65）だが、他の Board テストは
+ * onDragStart/Over/End/Cancel を直接駆動するのみで collisionDetection 自体を
+ * 一度も通らない。ここでは DndContext モックが捕捉した DndContextProps から
+ * collisionDetection を取り出し、dnd-kit の pointerWithin / rectIntersection
+ * が実際に読む引数（droppableRects・collisionRect・pointerCoordinates）を
+ * 直接与えて駆動する。DOM 計測やポインタイベントは不要（詳細は上の
+ * buildCollisionArgs/rect ヘルパのコメント参照）。
+ */
+describe("Board の collisionDetection 配線（Issue #150）", () => {
+  it("ポインタが隣列の余白にあり、掴んだカードの矩形が元列に残っている場合、先頭ヒットは隣列の列droppableになる（元列カードに吸われない・#65型デグレの検知）", () => {
+    const dragged = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      status: "todo",
+      rank: "a0",
+    });
+    const neighbor = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      status: "todo",
+      rank: "a1",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [dragged, neighbor] }));
+    renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+    const collisionDetection = handlers.collisionDetection;
+    if (!collisionDetection)
+      throw new Error("collisionDetection が渡されていません");
+
+    const droppableRects = new Map<string, ClientRect>([
+      ["todo", rect(0, 0, 200, 600)],
+      ["in_progress", rect(0, 220, 200, 600)],
+      // 元列（todo）に残っているカード。rectIntersection は座標上これに
+      // 最も強くヒットするが、ポインタが in_progress にいる以上、
+      // ポインタ列スコープはこのカードを候補から除外しなければならない。
+      ["task_2", rect(70, 10, 180, 50)],
+    ]);
+
+    const result = collisionDetection(
+      buildCollisionArgs({
+        activeId: "task_1",
+        // 掴んだカード（task_1）の矩形はドラッグ中も元列側に残っている
+        collisionRect: rect(60, 60, 180, 50),
+        droppableRects,
+        // ポインタは隣列（in_progress）の余白にいる
+        pointerCoordinates: { x: 300, y: 400 },
+      }),
+    );
+
+    expect(result[0]?.id).toBe("in_progress");
+  });
+
+  it("ポインタがカード上にあるときはそのカードに直接ヒットする（同一列内の通常ドラッグ）", () => {
+    const dragged = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      status: "todo",
+      rank: "a0",
+    });
+    const target = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      status: "todo",
+      rank: "a1",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [dragged, target] }));
+    renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+    const collisionDetection = handlers.collisionDetection;
+    if (!collisionDetection)
+      throw new Error("collisionDetection が渡されていません");
+
+    const droppableRects = new Map<string, ClientRect>([
+      ["todo", rect(0, 0, 200, 600)],
+      ["task_2", rect(70, 10, 180, 50)],
+    ]);
+
+    const result = collisionDetection(
+      buildCollisionArgs({
+        activeId: "task_1",
+        collisionRect: rect(70, 10, 180, 50),
+        droppableRects,
+        // ポインタは task_2 の矩形内
+        pointerCoordinates: { x: 100, y: 90 },
+      }),
+    );
+
+    expect(result[0]?.id).toBe("task_2");
   });
 });
