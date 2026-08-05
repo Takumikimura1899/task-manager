@@ -92,9 +92,6 @@ export function IssueDetail() {
     onDeleted: () => navigate(LIST_PATH), // 削除後は Issue 一覧へ戻る
   });
 
-  // 並行削除（他ユーザーが先に削除）と自分の削除失敗が重なった場合、
-  // issue===null で notFound へ来てしまい ConfirmPanel 内のエラー表示に
-  // 到達できない。ここで拾わないとサイレント失敗になる（Issue #104）。
   if (number === null) {
     return (
       <DetailNotFound
