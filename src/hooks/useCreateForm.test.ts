@@ -24,8 +24,6 @@ const createOptions = (
 const createSubmitEvent = () =>
   ({ preventDefault: vi.fn<() => void>() }) as unknown as FormEvent;
 
-let resolveSubmit = () => {};
-
 describe("useCreateForm", () => {
   it("初期状態ではクローズ・空入力で送信できない", () => {
     const { result } = renderHook(() => useCreateForm(createOptions()));
@@ -97,6 +95,7 @@ describe("useCreateForm", () => {
   });
 
   it("送信中は再送信できない", async () => {
+    let resolveSubmit!: () => void;
     const options = createOptions({
       onSubmit: vi.fn<CreateFormOptions["onSubmit"]>(
         () =>
