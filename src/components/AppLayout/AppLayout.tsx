@@ -50,7 +50,13 @@ function writeSelectedProject(id: Id<"projects">): void {
 
 type AppOutletContext = {
   projects: Doc<"projects">[];
-  selected: Doc<"projects">;
+  /**
+   * プロジェクトが0件のときは null（My Page はプロジェクトスコープを
+   * 持たないため、この場合でも描画される唯一の子ルート）。
+   * Task/Issue/Gantt など selected を要求するビューは
+   * assertSelectedProject で non-null を確定させてから使う。
+   */
+  selected: Doc<"projects"> | null;
   members: MemberSummary[] | undefined;
   currentMember: CurrentMember | null;
   /** currentMember が null のとき「未ロード」か「未リンク」かを区別する。 */
@@ -58,17 +64,45 @@ type AppOutletContext = {
   selectProject: (id: Id<"projects">) => void;
 };
 
-/** 子ルート（TasksView / IssuesView / MyPageView）から選択中プロジェクトと購読済みメンバーを取り出す。 */
+/** 子ルート（TasksView / IssuesView / GanttView / MyPageView）から選択中プロジェクトと購読済みメンバーを取り出す。 */
 export function useAppOutletContext(): AppOutletContext {
   return useOutletContext<AppOutletContext>();
+}
+
+/**
+ * プロジェクトスコープのビュー（TasksView / IssuesView / GanttView）専用の
+ * 非null 化アサーション。AppLayout はプロジェクトが0件のときこれらのルートを
+ * 描画しない（0件表示は AppLayout 自前のヒントに委ねる。My Page だけが
+ * 0件でも描画される）ため、selected が null なのは到達しないはずの分岐。
+ * 到達したら握り潰さず例外にする（CLAUDE.md「サイレント失敗の回避」）。
+ */
+export function assertSelectedProject(
+  selected: Doc<"projects"> | null,
+): asserts selected is Doc<"projects"> {
+  if (selected === null) {
+    throw new Error(
+      "selected プロジェクトが存在しません（到達しないはずの分岐）",
+    );
+  }
 }
 
 export function AppLayout() {
   const projects = useQuery(api.projects.list, {});
   const { members, currentMember, currentMemberLoading } = useCurrentMember();
   const { signOut } = useAuthActions();
-  // My Page（/mypage）表示中はプロジェクト選択が効かないため、効かない操作を見せない
-  const onMyPage = useMatch("/mypage") !== null;
+  // My Page（/mypage）表示中はプロジェクト選択が効かないため、効かない操作を見せない。
+  // 旧パス /my-tasks は <Navigate>（副作用ベースの遷移）で /mypage へリダイレクト
+  // されるため、初回コミットの1フレームだけ pathname が /my-tasks のまま残る
+  // （AppLayout は /my-tasks も子ルートとして持つため、この間も AppLayout 自体は
+  // 通常どおり描画される）。その一瞬だけ picker が再出現するのを防ぐため、
+  // リダイレクト元のパスもここで判定に含める。
+  // 短絡評価で2つ目の useMatch がスキップされないよう、それぞれ独立した
+  // 変数へ受けてから OR を取る（|| の右辺を直接 useMatch(...) にすると、
+  // 左辺が真の render だけ呼び出しがスキップされ、レンダーごとに呼ばれる
+  // フック数が変わって Rules of Hooks 違反になる）。
+  const matchesMyPage = useMatch("/mypage") !== null;
+  const matchesMyTasksRedirect = useMatch("/my-tasks") !== null;
+  const onMyPage = matchesMyPage || matchesMyTasksRedirect;
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
@@ -131,7 +165,9 @@ export function AppLayout() {
       <main className={s.app}>
         <header className={s.header}>
           <h1 className={s.title}>Task Manager</h1>
-          <Skeleton className={s.skeletonPicker} />
+          <output aria-label="プロジェクト選択を読み込み中">
+            <Skeleton className={s.skeletonPicker} />
+          </output>
         </header>
         <output aria-label="プロジェクトを読み込み中" className={s.loading}>
           <Skeleton className={s.skeletonPanel} />
@@ -141,22 +177,15 @@ export function AppLayout() {
     );
   }
 
-  if (projects.length === 0) {
-    return (
-      <main className={s.app}>
-        <header className={s.header}>
-          <h1 className={s.title}>Task Manager</h1>
-          {session}
-        </header>
-        <p className="hint">
-          プロジェクトがありません。MCP もしくは Convex
-          ダッシュボードから作成してください。
-        </p>
-      </main>
-    );
-  }
-
-  const selected = projects.find((p) => p._id === selectedId) ?? projects[0];
+  const hasProjects = projects.length > 0;
+  // hasProjects が false のとき、selected（プロジェクトスコープ選択）は
+  // 用意できない。Task/Issue/Gantt はプロジェクトが無いと描画できないため
+  // 下記でヒント表示に差し替えるが、My Page は全プロジェクト横断ビューで
+  // selected に依存しないため、0件でも通常どおりヘッダー＋Outlet を描画する
+  // （0件時に /mypage へ到達できず My Page ナビ自体も消えていた不具合の修正）。
+  const selected = hasProjects
+    ? (projects.find((p) => p._id === selectedId) ?? projects[0])
+    : null;
 
   return (
     <div className={s.app}>
@@ -175,7 +204,7 @@ export function AppLayout() {
               Gantt
             </NavLink>
           </nav>
-          {!onMyPage && (
+          {selected !== null && !onMyPage && (
             <label className={s.picker}>
               プロジェクト
               <select
@@ -194,7 +223,9 @@ export function AppLayout() {
             </label>
           )}
         </div>
-        {/* 右＝個人スコープ（My Page＋ユーザー名＋ログアウト）。 */}
+        {/* 右＝個人スコープ（My Page＋ユーザー名＋ログアウト）。プロジェクト
+            0件でも認証済みであることに変わりはないため常に表示する
+            （無いと My Page にも別アカウントへの切替にも到達できず詰む）。 */}
         <div className={s.right}>
           <NavLink className={s.navLink} to="/mypage">
             My Page
@@ -207,20 +238,29 @@ export function AppLayout() {
           ここで一元的にカバーする。members.me 読み込み中は判定できないため
           何も出さない。 */}
       {!currentMemberLoading && currentMember === null && <NoMembersNotice />}
-      {/* 画面本体（タスク一覧 / Issue 一覧）は子ルートが描画する。main
-          ランドマークは各子ルート（TasksView / IssuesView）側が持つため、
-          ここでは main にしない（Issue #17 の ErrorBoundary フォールバックも
-          main を持つため、二重にしない）。 */}
-      <Outlet
-        context={{
-          projects,
-          selected,
-          members,
-          currentMember,
-          currentMemberLoading,
-          selectProject,
-        }}
-      />
+      {hasProjects || onMyPage ? (
+        // 画面本体（タスク一覧 / Issue 一覧 / My Page）は子ルートが描画する。main
+        // ランドマークは各子ルート（TasksView / IssuesView / MyPageView）側が
+        // 持つため、ここでは main にしない（Issue #17 の ErrorBoundary
+        // フォールバックも main を持つため、二重にしない）。
+        <Outlet
+          context={{
+            projects,
+            selected,
+            members,
+            currentMember,
+            currentMemberLoading,
+            selectProject,
+          }}
+        />
+      ) : (
+        // このブランチだけ子ルート（main ランドマークを持つ）が描画されない
+        // ため、他の空状態（TaskDetail.tsx 等）と同様にここで main を持つ。
+        <main className="hint">
+          プロジェクトがありません。MCP もしくは Convex
+          ダッシュボードから作成してください。
+        </main>
+      )}
     </div>
   );
 }

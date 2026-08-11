@@ -95,6 +95,38 @@ describe("AppLayout のプロジェクト0件分岐", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("プロジェクトが0件でも /mypage は通常どおりヘッダーと子ルートを描画する（レビュー指摘#1の回帰防止）", () => {
+    useQueryMock.mockImplementation((name) =>
+      name === "projects:list" ? [] : undefined,
+    );
+    renderAppLayout(["/mypage"]);
+
+    expect(
+      screen.queryByText(
+        "プロジェクトがありません。MCP もしくは Convex ダッシュボードから作成してください。",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("My Page画面")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "My Page" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("プロジェクトが0件で /mypage 以外なら Task/Issue/Gantt は案内を表示する", () => {
+    useQueryMock.mockImplementation((name) =>
+      name === "projects:list" ? [] : undefined,
+    );
+    renderAppLayout(["/issues"]);
+
+    expect(
+      screen.getByText(
+        "プロジェクトがありません。MCP もしくは Convex ダッシュボードから作成してください。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Issue画面")).not.toBeInTheDocument();
+  });
 });
 
 describe("AppLayout のタブナビ", () => {

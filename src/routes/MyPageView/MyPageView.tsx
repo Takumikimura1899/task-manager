@@ -6,7 +6,7 @@ import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useAppOutletContext } from "../../components/AppLayout/AppLayout";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { TaskCard } from "../../components/TaskCard/TaskCard";
-import { todayIso } from "../../lib/gantt";
+import { useTodayIso } from "../../hooks/useTodayIso";
 import { MEMBER_ROLE_LABELS } from "../../lib/memberMeta";
 import { DUE_BUCKET_LABELS, groupMyTasksByDueDate } from "../../lib/myTasks";
 import s from "./MyPageView.module.css";
@@ -30,13 +30,16 @@ export function MyPageView() {
   const tasks = useQuery(api.tasks.listMine, {});
   const { projects, currentMember, currentMemberLoading, selectProject } =
     useAppOutletContext();
+  // レンダー時に todayIso() を直接評価するだけだと、購読データに変化が
+  // ない限り日跨ぎ後も前日の today のまま期限バケットが固定されてしまう
+  // ため、日付境界の自動更新を持つ useTodayIso 経由で取得する
+  // （GanttView.tsx の表示レンジと同じ理由・同じフックを共有する）。
+  const today = useTodayIso();
 
   const groups = useMemo(
     () =>
-      tasks === undefined
-        ? undefined
-        : groupMyTasksByDueDate(tasks, todayIso()),
-    [tasks],
+      tasks === undefined ? undefined : groupMyTasksByDueDate(tasks, today),
+    [tasks, today],
   );
 
   const projectChips = useMemo(() => {
@@ -56,7 +59,9 @@ export function MyPageView() {
     <main className={s.page}>
       <section className={s.profile}>
         {currentMemberLoading ? (
-          <Skeleton className={s.skeletonProfile} />
+          <output aria-label="プロフィールを読み込み中">
+            <Skeleton className={s.skeletonProfile} />
+          </output>
         ) : (
           currentMember !== null && (
             <div className={s.identity}>

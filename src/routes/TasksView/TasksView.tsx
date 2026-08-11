@@ -1,5 +1,8 @@
 import { ActiveIssueStrip } from "../../components/ActiveIssueStrip/ActiveIssueStrip";
-import { useAppOutletContext } from "../../components/AppLayout/AppLayout";
+import {
+  assertSelectedProject,
+  useAppOutletContext,
+} from "../../components/AppLayout/AppLayout";
 import { Board } from "../../components/Board/Board";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
 import { useFilterParams } from "../../lib/filterParams";
@@ -16,6 +19,10 @@ import s from "./TasksView.module.css";
  */
 export function TasksView() {
   const { selected, members } = useAppOutletContext();
+  // AppLayout はプロジェクトが0件のときこのルートを描画しない（0件表示は
+  // AppLayout 自前のヒントに委ねる）ため、selected が null なのは到達しない
+  // はずの分岐。到達したら握り潰さず例外にする（CLAUDE.md「サイレント失敗の回避」）。
+  assertSelectedProject(selected);
   const [filter, setFilter] = useFilterParams();
 
   return (

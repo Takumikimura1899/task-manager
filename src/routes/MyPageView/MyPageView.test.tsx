@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -149,11 +149,14 @@ describe("MyPageView の空状態", () => {
 });
 
 describe("MyPageView のプロフィール行", () => {
-  it("読み込み中はスケルトンを表示する", () => {
+  it("読み込み中は aria-label 付きのスケルトンを表示する（規約: 裸の Skeleton を置かない）", () => {
     mocks.tasks = [];
     renderMyPageView({ currentMember: null, currentMemberLoading: true });
 
     expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "プロフィールを読み込み中" }),
+    ).toBeInTheDocument();
   });
 
   it("名前と role を表示する", () => {
@@ -269,5 +272,30 @@ describe("MyPageView の期限軸グルーピング", () => {
     renderMyPageView();
 
     expect(screen.getByText("進行中")).toBeInTheDocument();
+  });
+
+  it("日付境界を跨ぐと today が更新され、期限バケットが翌日基準に切り替わる（レビュー指摘#2の回帰防止）", () => {
+    vi.setSystemTime(new Date(2026, 7, 11, 23, 59, 30)); // 2026-08-11 23:59:30
+    mocks.tasks = [
+      createTask({ _id: "task_1" as Id<"tasks">, dueDate: "2026-08-12" }),
+    ];
+    renderMyPageView();
+
+    // 08-11 時点では dueDate は today+1 なので「今後7日」バケット
+    expect(
+      screen.getByRole("heading", { name: "今後7日1" }),
+    ).toBeInTheDocument();
+
+    // 日付境界（+1秒の余裕）を跨ぐまで進めると、購読データの変化なしでも
+    // today が前進する（useTodayIso の自前タイマー）
+    act(() => {
+      vi.advanceTimersByTime(32_000);
+    });
+
+    // 08-12 になった今、dueDate 08-12 は today 自身なので「今日」バケットへ移る
+    expect(screen.getByRole("heading", { name: "今日1" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "今後7日1" }),
+    ).not.toBeInTheDocument();
   });
 });
