@@ -9,6 +9,9 @@
   // 本構成では利用できないため、Worker 追加のコストを避けて許容する（Issue #10 項目3）。
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "task-manager",
+  // デプロイ先アカウントを固定する（誤アカウントでログイン中の deploy を失敗させるガード。
+  // 別アカウントへ誤デプロイした事故の再発防止）
+  "account_id": "49ecd1d92b25799a404c156643ccc264",
   "compatibility_date": "2025-06-01",
   "assets": {
     "directory": "./dist",
