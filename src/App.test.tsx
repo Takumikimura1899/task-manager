@@ -23,6 +23,8 @@ import { App } from "./App";
  * のモックが必要になる（ディスパッチの詳細は test/reactQuerySupport.ts 参照）。
  * NotFound ケースへの影響はない（NotFound は Convex の hooks を呼ばない）。
  * 既存ルート（TasksView / 詳細画面）の描画内容は各画面のテストに委ねる。
+ * 旧パス /my-tasks → /mypage の互換リダイレクト（Navigate replace）は
+ * MyPageView が実際にマウントされることで検証する。
  */
 
 const { useQueryMock, mutate, authState } = vi.hoisted(() => ({
@@ -108,6 +110,35 @@ describe("App の認証ゲート（Issue #1）", () => {
     expect(
       screen.queryByRole("button", { name: "ログイン" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("App の /my-tasks 互換リダイレクト", () => {
+  it("/my-tasks は /mypage へリダイレクトし MyPageView をマウントする", () => {
+    const project = createProject();
+    const member = createMember();
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [project],
+        "members:list": [member],
+        "members:me": createCurrentMember(),
+        "tasks:listMine": [],
+      }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/my-tasks"]}>
+        <App />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole("link", { name: "My Page" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      screen.getByText(/担当している Task がありません。/),
+    ).toBeInTheDocument();
   });
 });
 
