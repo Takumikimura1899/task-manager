@@ -1,5 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { type FormEvent, useId, useState } from "react";
+import { useMatch, useNavigate } from "react-router-dom";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { convexErrorMessage } from "../../lib/convexErrorMessage";
 import s from "./SignIn.module.css";
@@ -28,6 +29,12 @@ const FALLBACK_ERRORS: Record<Flow, string> = {
  */
 export function SignIn() {
   const { signIn } = useAuthActions();
+  const navigate = useNavigate();
+  // ログイン後の既定着地点は My Page（/mypage）。deep link（具体的な URL）で
+  // 開いた場合は現在地を維持するため、現在地がアプリのルート（"/"）のときだけ
+  // 遷移する（末尾スラッシュ等の表記ゆれも同一視するため pathname の文字列
+  // 比較ではなく useMatch を使う）。
+  const atRoot = useMatch("/") !== null;
   const [flow, setFlow] = useState<Flow>("signIn");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,6 +67,9 @@ export function SignIn() {
       });
       // 成功時は Authenticated ゲート（App.tsx）が画面ごと切り替えるため、
       // アンマウント後の setState を避けて submitting は戻さない。
+      if (atRoot) {
+        navigate("/mypage", { replace: true });
+      }
     } catch (err) {
       setError(convexErrorMessage(err, FALLBACK_ERRORS[flow]));
       setSubmitting(false);

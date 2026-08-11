@@ -137,6 +137,14 @@
     gap: var(--space-2);
   }
 
+  /* status バッジ（showStatus）＋優先度の左側グループ。assignee と対で
+     .meta の space-between による2群配置を保つ。 */
+  .metaStart {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
   .priority {
     font-size: var(--font-size-xs);
     color: var(--color-text-muted);

@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConvexError } from "convex/values";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SignIn } from "./SignIn";
 
@@ -9,6 +10,11 @@ import { SignIn } from "./SignIn";
  * 認証は外部依存（@convex-dev/auth）のためモックし、signIn 呼び出しの
  * 引数とエラー表示（ConvexError はサーバ文言・それ以外は定型文言）を
  * 観測可能な結果として検証する。
+ *
+ * SignIn は成功時の遷移判定（現在地が "/" かどうか）に useMatch/useNavigate
+ * を使うため MemoryRouter でラップする（main.tsx の BrowserRouter を模す）。
+ * 遷移先の検証は隣に置いた LocationProbe（useLocation）の表示で行う
+ * （MemoryRouter 自体は現在地を外部から観測する API を持たないため）。
  */
 
 const { signIn } = vi.hoisted(() => ({
@@ -28,6 +34,19 @@ beforeEach(() => {
   signIn.mockResolvedValue(undefined);
 });
 
+function LocationProbe() {
+  const location = useLocation();
+  return <span data-testid="location">{location.pathname}</span>;
+}
+
+const renderSignIn = (initialPath = "/") =>
+  render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <SignIn />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+
 const fillCredentials = async (
   user: ReturnType<typeof userEvent.setup>,
   email = "taro@example.com",
@@ -40,7 +59,7 @@ const fillCredentials = async (
 describe("SignIn のログインフロー", () => {
   it("メールアドレスとパスワードの両方を入力するまで送信できない", async () => {
     const user = userEvent.setup();
-    render(<SignIn />);
+    renderSignIn();
 
     const submit = screen.getByRole("button", { name: "ログイン" });
     expect(submit).toBeDisabled();
@@ -54,7 +73,7 @@ describe("SignIn のログインフロー", () => {
 
   it("送信すると前後空白を除いた email と flow=signIn で signIn を呼ぶ", async () => {
     const user = userEvent.setup();
-    render(<SignIn />);
+    renderSignIn();
 
     await fillCredentials(user, "  taro@example.com  ");
     await user.click(screen.getByRole("button", { name: "ログイン" }));
@@ -69,7 +88,7 @@ describe("SignIn のログインフロー", () => {
   it("失敗（資格情報エラー等の内部例外）は定型文言に丸めて表示し、再送信できる", async () => {
     const user = userEvent.setup();
     signIn.mockRejectedValueOnce(new Error("InvalidSecret"));
-    render(<SignIn />);
+    renderSignIn();
 
     await fillCredentials(user);
     await user.click(screen.getByRole("button", { name: "ログイン" }));
@@ -86,7 +105,7 @@ describe("SignIn のログインフロー", () => {
 describe("SignIn の新規登録フロー", () => {
   it("「新規登録へ」で切り替えると flow=signUp で signIn を呼ぶ", async () => {
     const user = userEvent.setup();
-    render(<SignIn />);
+    renderSignIn();
 
     await user.click(screen.getByRole("button", { name: "新規登録へ" }));
     await fillCredentials(user);
@@ -100,14 +119,14 @@ describe("SignIn の新規登録フロー", () => {
   });
 
   it("ログインフローでは招待コード欄を表示しない", () => {
-    render(<SignIn />);
+    renderSignIn();
 
     expect(screen.queryByLabelText("招待コード")).not.toBeInTheDocument();
   });
 
   it("新規登録フローでは招待コード欄を表示する", async () => {
     const user = userEvent.setup();
-    render(<SignIn />);
+    renderSignIn();
 
     await user.click(screen.getByRole("button", { name: "新規登録へ" }));
 
@@ -116,7 +135,7 @@ describe("SignIn の新規登録フロー", () => {
 
   it("招待コードを入力すると trim して送信する", async () => {
     const user = userEvent.setup();
-    render(<SignIn />);
+    renderSignIn();
 
     await user.click(screen.getByRole("button", { name: "新規登録へ" }));
     await fillCredentials(user);
@@ -133,7 +152,7 @@ describe("SignIn の新規登録フロー", () => {
 
   it("招待コードが空欄のときは inviteCode キー自体を送らない（ブートストラップ用）", async () => {
     const user = userEvent.setup();
-    render(<SignIn />);
+    renderSignIn();
 
     await user.click(screen.getByRole("button", { name: "新規登録へ" }));
     await fillCredentials(user);
@@ -155,7 +174,7 @@ describe("SignIn の新規登録フロー", () => {
     const invited =
       "このメールアドレスは招待されていません。管理者にメンバー登録を依頼してください。";
     signIn.mockRejectedValueOnce(new ConvexError(invited));
-    render(<SignIn />);
+    renderSignIn();
 
     await user.click(screen.getByRole("button", { name: "新規登録へ" }));
     await fillCredentials(user, "attacker@example.com");
@@ -167,7 +186,7 @@ describe("SignIn の新規登録フロー", () => {
   it("フローを切り替えると前のエラー表示を消す", async () => {
     const user = userEvent.setup();
     signIn.mockRejectedValueOnce(new Error("boom"));
-    render(<SignIn />);
+    renderSignIn();
 
     await fillCredentials(user);
     await user.click(screen.getByRole("button", { name: "ログイン" }));
@@ -175,6 +194,28 @@ describe("SignIn の新規登録フロー", () => {
 
     await user.click(screen.getByRole("button", { name: "新規登録へ" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("SignIn のログイン後の遷移", () => {
+  it('現在地が "/" のログイン成功時は /mypage へ遷移する', async () => {
+    const user = userEvent.setup();
+    renderSignIn("/");
+
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "ログイン" }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent("/mypage");
+  });
+
+  it("deep link（具体的な URL）でのログイン成功時は現在地を維持する", async () => {
+    const user = userEvent.setup();
+    renderSignIn("/issues");
+
+    await fillCredentials(user);
+    await user.click(screen.getByRole("button", { name: "ログイン" }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent("/issues");
   });
 });
 
@@ -188,7 +229,7 @@ describe("SignIn の送信中表示", () => {
           resolveSignIn = resolve;
         }),
     );
-    render(<SignIn />);
+    renderSignIn();
 
     await fillCredentials(user);
     await user.click(screen.getByRole("button", { name: "ログイン" }));

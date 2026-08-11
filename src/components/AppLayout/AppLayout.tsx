@@ -5,6 +5,7 @@ import { NavLink, Outlet, useMatch, useOutletContext } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import {
+  type CurrentMember,
   type MemberSummary,
   useCurrentMember,
 } from "../../hooks/useCurrentMember";
@@ -51,10 +52,13 @@ type AppOutletContext = {
   projects: Doc<"projects">[];
   selected: Doc<"projects">;
   members: MemberSummary[] | undefined;
-  currentMember: MemberSummary | null;
+  currentMember: CurrentMember | null;
+  /** currentMember が null のとき「未ロード」か「未リンク」かを区別する。 */
+  currentMemberLoading: boolean;
+  selectProject: (id: Id<"projects">) => void;
 };
 
-/** 子ルート（TasksView / IssuesView）から選択中プロジェクトと購読済みメンバーを取り出す。 */
+/** 子ルート（TasksView / IssuesView / MyPageView）から選択中プロジェクトと購読済みメンバーを取り出す。 */
 export function useAppOutletContext(): AppOutletContext {
   return useOutletContext<AppOutletContext>();
 }
@@ -63,8 +67,8 @@ export function AppLayout() {
   const projects = useQuery(api.projects.list, {});
   const { members, currentMember, currentMemberLoading } = useCurrentMember();
   const { signOut } = useAuthActions();
-  // 全プロジェクト横断ビューではプロジェクト選択が効かないため、効かない操作を見せない
-  const crossProject = useMatch("/my-tasks") !== null;
+  // My Page（/mypage）表示中はプロジェクト選択が効かないため、効かない操作を見せない
+  const onMyPage = useMatch("/mypage") !== null;
   const [selectedId, setSelectedId] = useState<Id<"projects"> | null>(
     readSelectedProject,
   );
@@ -157,38 +161,46 @@ export function AppLayout() {
   return (
     <div className={s.app}>
       <header className={s.header}>
-        <h1 className={s.title}>Task Manager</h1>
-        <nav className={s.nav}>
-          <NavLink className={s.navLink} end to="/">
-            Task
+        {/* 左＝プロジェクトスコープ群（Task/Issue/Gantt＋プロジェクト選択）。 */}
+        <div className={s.left}>
+          <h1 className={s.title}>Task Manager</h1>
+          <nav className={s.nav}>
+            <NavLink className={s.navLink} end to="/">
+              Task
+            </NavLink>
+            <NavLink className={s.navLink} to="/issues">
+              Issue
+            </NavLink>
+            <NavLink className={s.navLink} to="/gantt">
+              Gantt
+            </NavLink>
+          </nav>
+          {!onMyPage && (
+            <label className={s.picker}>
+              プロジェクト
+              <select
+                className={s.select}
+                onChange={(e) =>
+                  selectProject(e.target.value as Id<"projects">)
+                }
+                value={selected._id}
+              >
+                {projects.map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {p.key} — {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+        {/* 右＝個人スコープ（My Page＋ユーザー名＋ログアウト）。 */}
+        <div className={s.right}>
+          <NavLink className={s.navLink} to="/mypage">
+            My Page
           </NavLink>
-          <NavLink className={s.navLink} to="/issues">
-            Issue
-          </NavLink>
-          <NavLink className={s.navLink} to="/gantt">
-            Gantt
-          </NavLink>
-          <NavLink className={s.navLink} to="/my-tasks">
-            My Tasks
-          </NavLink>
-        </nav>
-        {!crossProject && (
-          <label className={s.picker}>
-            プロジェクト
-            <select
-              className={s.select}
-              onChange={(e) => selectProject(e.target.value as Id<"projects">)}
-              value={selected._id}
-            >
-              {projects.map((p) => (
-                <option key={p._id} value={p._id}>
-                  {p.key} — {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {session}
+          {session}
+        </div>
       </header>
       {/* 認証済みでも対応する Member が未リンクだと作成手段が消えるため、
           黙って隠さず理由を案内する（Issue #16 / #1）。/ と /issues の両方を
@@ -199,7 +211,16 @@ export function AppLayout() {
           ランドマークは各子ルート（TasksView / IssuesView）側が持つため、
           ここでは main にしない（Issue #17 の ErrorBoundary フォールバックも
           main を持つため、二重にしない）。 */}
-      <Outlet context={{ projects, selected, members, currentMember }} />
+      <Outlet
+        context={{
+          projects,
+          selected,
+          members,
+          currentMember,
+          currentMemberLoading,
+          selectProject,
+        }}
+      />
     </div>
   );
 }

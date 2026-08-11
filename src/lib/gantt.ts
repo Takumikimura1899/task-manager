@@ -92,7 +92,8 @@ function toUtcMs(date: string): number {
   return Date.UTC(y, m - 1, d);
 }
 
-function addDaysIso(date: string, days: number): string {
+/** ISO 日付（YYYY-MM-DD）に日数を加算する。src/lib/myTasks.ts の期限バケット判定と共有する。 */
+export function addDaysIso(date: string, days: number): string {
   const d = new Date(toUtcMs(date) + days * MS_PER_DAY);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");

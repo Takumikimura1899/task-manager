@@ -624,8 +624,8 @@ export const gantt = query({
 });
 
 /**
- * 「My Tasks」ビュー用（全プロジェクト横断で「担当者=自分」の Task 一覧）。
- * status グルーピング・優先度ソートはフロント（src/lib/myTasks.ts）に委ねる
+ * 「My Page」ビュー用（全プロジェクト横断で「担当者=自分」の Task 一覧）。
+ * 期限軸グルーピング・優先度ソートはフロント（src/lib/myTasks.ts）に委ねる
  * （PRIORITY_WEIGHT の二重管理を避ける）。表示専用のため mutation はない。
  */
 export const listMine = query({

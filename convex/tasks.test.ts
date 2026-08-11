@@ -1386,7 +1386,7 @@ describe("tasks.gantt", () => {
   });
 });
 
-// --- listMine（「My Tasks」ビュー用・全プロジェクト横断） -----------------------
+// --- listMine（「My Page」ビュー用・全プロジェクト横断） -----------------------
 
 describe("tasks.listMine", () => {
   it("全プロジェクト横断で自分の担当 Task だけを返し、projectKey と issueNumber を付与する", async () => {

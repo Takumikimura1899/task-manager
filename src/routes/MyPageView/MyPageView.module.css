@@ -7,6 +7,64 @@
     gap: var(--space-4);
   }
 
+  /* プロフィール1行（名前・role＋所属プロジェクトのチップ）。タスクセクションと
+     区切るため下線を引く。 */
+  .profile {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .identity {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .name {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+  }
+
+  .role {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-muted);
+  }
+
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* プロジェクト所属チップ。クリックでそのプロジェクトのカンバンへ遷移する。 */
+  .chip {
+    display: inline-block;
+    padding: 2px var(--space-3);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text);
+    text-decoration: none;
+    background: var(--color-chip);
+    border-radius: var(--radius-pill);
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .chip:hover {
+    color: var(--color-accent);
+  }
+
+  .skeletonProfile {
+    width: min(320px, 60cqw);
+    height: 28px;
+  }
+
   .loading {
     display: flex;
     flex-direction: column;

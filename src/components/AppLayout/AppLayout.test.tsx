@@ -51,7 +51,7 @@ const renderAppLayout = (initialEntries: string[] = ["/"]) =>
           <Route element={<p>タスク画面</p>} path="/" />
           <Route element={<p>Issue画面</p>} path="/issues" />
           <Route element={<p>Gantt画面</p>} path="/gantt" />
-          <Route element={<p>My Tasks画面</p>} path="/my-tasks" />
+          <Route element={<p>My Page画面</p>} path="/mypage" />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -110,10 +110,10 @@ describe("AppLayout のタブナビ", () => {
   });
 
   it.each([
-    ["/", "Task", ["Issue", "Gantt", "My Tasks"]],
-    ["/issues", "Issue", ["Task", "Gantt", "My Tasks"]],
-    ["/gantt", "Gantt", ["Task", "Issue", "My Tasks"]],
-    ["/my-tasks", "My Tasks", ["Task", "Issue", "Gantt"]],
+    ["/", "Task", ["Issue", "Gantt", "My Page"]],
+    ["/issues", "Issue", ["Task", "Gantt", "My Page"]],
+    ["/gantt", "Gantt", ["Task", "Issue", "My Page"]],
+    ["/mypage", "My Page", ["Task", "Issue", "Gantt"]],
   ] as const)(
     "現在地 %s では %s タブに aria-current=page が付く",
     (path, activeLabel, inactiveLabels) => {
@@ -292,28 +292,28 @@ describe("AppLayout のプロジェクト select", () => {
     ).toBeInTheDocument();
   });
 
-  it("/my-tasks（全プロジェクト横断ビュー）ではプロジェクト選択を表示しない", () => {
+  it("/mypage（個人スコープビュー）ではプロジェクト選択を表示しない", () => {
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [createProject()],
         "members:list": [createMember()],
       }),
     );
-    renderAppLayout(["/my-tasks"]);
+    renderAppLayout(["/mypage"]);
 
     expect(
       screen.queryByRole("combobox", { name: "プロジェクト" }),
     ).not.toBeInTheDocument();
   });
 
-  it("/my-tasks/（末尾スラッシュ）でもプロジェクト選択を表示しない", () => {
+  it("/mypage/（末尾スラッシュ）でもプロジェクト選択を表示しない", () => {
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [createProject()],
         "members:list": [createMember()],
       }),
     );
-    renderAppLayout(["/my-tasks/"]);
+    renderAppLayout(["/mypage/"]);
 
     expect(
       screen.queryByRole("combobox", { name: "プロジェクト" }),
