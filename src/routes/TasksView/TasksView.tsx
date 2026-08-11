@@ -1,5 +1,5 @@
 import { ActiveIssueStrip } from "../../components/ActiveIssueStrip/ActiveIssueStrip";
-import { useAppOutletContext } from "../../components/AppLayout/AppLayout";
+import { useSelectedProject } from "../../components/AppLayout/AppLayout";
 import { Board } from "../../components/Board/Board";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
 import { useFilterParams } from "../../lib/filterParams";
@@ -15,7 +15,7 @@ import s from "./TasksView.module.css";
  * 両者は常に同じフィルタ状態を見る。
  */
 export function TasksView() {
-  const { selected, members } = useAppOutletContext();
+  const { selected, members } = useSelectedProject();
   const [filter, setFilter] = useFilterParams();
 
   return (

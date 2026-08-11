@@ -51,7 +51,7 @@ const renderAppLayout = (initialEntries: string[] = ["/"]) =>
           <Route element={<p>タスク画面</p>} path="/" />
           <Route element={<p>Issue画面</p>} path="/issues" />
           <Route element={<p>Gantt画面</p>} path="/gantt" />
-          <Route element={<p>My Tasks画面</p>} path="/my-tasks" />
+          <Route element={<p>My Page画面</p>} path="/mypage" />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -95,6 +95,78 @@ describe("AppLayout のプロジェクト0件分岐", () => {
       ),
     ).toBeInTheDocument();
   });
+
+  it("プロジェクトが0件でも /mypage は通常どおりヘッダーと子ルートを描画する（レビュー指摘#1の回帰防止）", () => {
+    useQueryMock.mockImplementation((name) =>
+      name === "projects:list" ? [] : undefined,
+    );
+    renderAppLayout(["/mypage"]);
+
+    expect(
+      screen.queryByText(
+        "プロジェクトがありません。MCP もしくは Convex ダッシュボードから作成してください。",
+      ),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("My Page画面")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "My Page" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("プロジェクトが0件で /mypage 以外なら Task/Issue/Gantt は案内を表示する", () => {
+    useQueryMock.mockImplementation((name) =>
+      name === "projects:list" ? [] : undefined,
+    );
+    renderAppLayout(["/issues"]);
+
+    expect(
+      screen.getByText(
+        "プロジェクトがありません。MCP もしくは Convex ダッシュボードから作成してください。",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Issue画面")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppLayout のタブ表示可否（レビュー指摘#1の回帰防止）", () => {
+  it("プロジェクトが0件のとき Task/Issue/Gantt タブとプロジェクト選択を隠し、My Page は表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [],
+        "members:list": [],
+      }),
+    );
+    renderAppLayout(["/mypage"]);
+
+    expect(
+      screen.queryByRole("link", { name: "Task" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Issue" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Gantt" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "プロジェクト" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "My Page" })).toBeInTheDocument();
+  });
+
+  it("プロジェクトが1件以上なら Task/Issue/Gantt タブを表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout();
+
+    expect(screen.getByRole("link", { name: "Task" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Issue" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Gantt" })).toBeInTheDocument();
+  });
 });
 
 describe("AppLayout のタブナビ", () => {
@@ -110,10 +182,10 @@ describe("AppLayout のタブナビ", () => {
   });
 
   it.each([
-    ["/", "Task", ["Issue", "Gantt", "My Tasks"]],
-    ["/issues", "Issue", ["Task", "Gantt", "My Tasks"]],
-    ["/gantt", "Gantt", ["Task", "Issue", "My Tasks"]],
-    ["/my-tasks", "My Tasks", ["Task", "Issue", "Gantt"]],
+    ["/", "Task", ["Issue", "Gantt", "My Page"]],
+    ["/issues", "Issue", ["Task", "Gantt", "My Page"]],
+    ["/gantt", "Gantt", ["Task", "Issue", "My Page"]],
+    ["/mypage", "My Page", ["Task", "Issue", "Gantt"]],
   ] as const)(
     "現在地 %s では %s タブに aria-current=page が付く",
     (path, activeLabel, inactiveLabels) => {
@@ -292,28 +364,28 @@ describe("AppLayout のプロジェクト select", () => {
     ).toBeInTheDocument();
   });
 
-  it("/my-tasks（全プロジェクト横断ビュー）ではプロジェクト選択を表示しない", () => {
+  it("/mypage（個人スコープビュー）ではプロジェクト選択を表示しない", () => {
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [createProject()],
         "members:list": [createMember()],
       }),
     );
-    renderAppLayout(["/my-tasks"]);
+    renderAppLayout(["/mypage"]);
 
     expect(
       screen.queryByRole("combobox", { name: "プロジェクト" }),
     ).not.toBeInTheDocument();
   });
 
-  it("/my-tasks/（末尾スラッシュ）でもプロジェクト選択を表示しない", () => {
+  it("/mypage/（末尾スラッシュ）でもプロジェクト選択を表示しない", () => {
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [createProject()],
         "members:list": [createMember()],
       }),
     );
-    renderAppLayout(["/my-tasks/"]);
+    renderAppLayout(["/mypage/"]);
 
     expect(
       screen.queryByRole("combobox", { name: "プロジェクト" }),

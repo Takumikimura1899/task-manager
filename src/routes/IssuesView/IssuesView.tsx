@@ -1,7 +1,7 @@
 import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "../../../convex/_generated/api";
-import { useAppOutletContext } from "../../components/AppLayout/AppLayout";
+import { useSelectedProject } from "../../components/AppLayout/AppLayout";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
 import { IssueStats } from "../../components/IssueStats/IssueStats";
 import { IssueTable } from "../../components/IssueTable/IssueTable";
@@ -32,7 +32,7 @@ import s from "./IssuesView.module.css";
  * IssueTable にはフィルタ→ソート後を渡す（件数表示・並び順が追従する）。
  */
 export function IssuesView() {
-  const { selected, currentMember, members } = useAppOutletContext();
+  const { selected, currentMember, members } = useSelectedProject();
   const issues = useQuery(api.issues.list, { project: selected._id });
   const [{ filter, sort }, setListParams] = useIssueListParams();
 

@@ -2,7 +2,8 @@ import { memo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { Doc } from "../../../convex/_generated/dataModel";
 import { formatIssueRef } from "../../lib/formatIssueRef";
-import { PRIORITY_LABELS } from "../../lib/taskMeta";
+import { PRIORITY_LABELS, TASK_STATUS_LABELS } from "../../lib/taskMeta";
+import { Badge } from "../Badge/Badge";
 import s from "./TaskCard.module.css";
 
 /**
@@ -16,6 +17,7 @@ export const TaskCard = memo(function TaskCard({
   issueNumber = null,
   assigneeName = null,
   dragHandle = null,
+  showStatus = false,
 }: {
   task: Doc<"tasks">;
   projectKey: string;
@@ -23,6 +25,12 @@ export const TaskCard = memo(function TaskCard({
   assigneeName?: string | null;
   /** D&D 用のドラッグハンドル（SortableTaskCard が注入する）。表示位置だけをここで決める。 */
   dragHandle?: ReactNode;
+  /**
+   * status バッジの表示可否。Board 内ではカラム見出しが status を兼ねるため
+   * 既定は false。My Page（期限軸グルーピング）等、status をカード単位で
+   * 独立に示す必要がある文脈で true にする。
+   */
+  showStatus?: boolean;
 }) {
   return (
     <article className={s.card}>
@@ -43,8 +51,15 @@ export const TaskCard = memo(function TaskCard({
       </span>
       <h3 className={s.title}>{task.title}</h3>
       <div className={s.meta}>
-        <span className={s.priority}>
-          優先度: {PRIORITY_LABELS[task.priority]}
+        <span className={s.metaStart}>
+          {showStatus && (
+            <Badge status={task.status}>
+              {TASK_STATUS_LABELS[task.status]}
+            </Badge>
+          )}
+          <span className={s.priority}>
+            優先度: {PRIORITY_LABELS[task.priority]}
+          </span>
         </span>
         {assigneeName !== null && (
           <span className={s.assignee}>{assigneeName}</span>

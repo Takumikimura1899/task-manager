@@ -30,6 +30,16 @@
     }
   }
 
+  /* ヘッダー内の2群（左＝プロジェクトスコープ／右＝個人スコープ）。
+     .header の space-between で両者を左右へ振り分ける。 */
+  .left,
+  .right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+  }
+
   /* アプリ名はディスプレイフォント+ネオングラデ文字。
      background-clip: text 非対応環境は accent 単色にフォールバック */
   .title {

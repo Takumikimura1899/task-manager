@@ -1,11 +1,11 @@
 import { AuthLoading, Authenticated, Unauthenticated } from "convex/react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout/AppLayout";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { GanttView } from "./routes/GanttView/GanttView";
 import { IssueDetail } from "./routes/IssueDetail/IssueDetail";
 import { IssuesView } from "./routes/IssuesView/IssuesView";
-import { MyTasksView } from "./routes/MyTasksView/MyTasksView";
+import { MyPageView } from "./routes/MyPageView/MyPageView";
 import { NotFound } from "./routes/NotFound/NotFound";
 import { AuthLoadingScreen, SignIn } from "./routes/SignIn/SignIn";
 import { TaskDetail } from "./routes/TaskDetail/TaskDetail";
@@ -73,11 +73,13 @@ function AppRoutes() {
         <Route
           element={
             <ErrorBoundary>
-              <MyTasksView />
+              <MyPageView />
             </ErrorBoundary>
           }
-          path="/my-tasks"
+          path="/mypage"
         />
+        {/* 旧パス（改名前の URL）を保護する互換リダイレクト */}
+        <Route element={<Navigate replace to="/mypage" />} path="/my-tasks" />
       </Route>
       <Route
         element={
