@@ -129,6 +129,46 @@ describe("AppLayout のプロジェクト0件分岐", () => {
   });
 });
 
+describe("AppLayout のタブ表示可否（レビュー指摘#1の回帰防止）", () => {
+  it("プロジェクトが0件のとき Task/Issue/Gantt タブとプロジェクト選択を隠し、My Page は表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [],
+        "members:list": [],
+      }),
+    );
+    renderAppLayout(["/mypage"]);
+
+    expect(
+      screen.queryByRole("link", { name: "Task" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Issue" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Gantt" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "プロジェクト" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "My Page" })).toBeInTheDocument();
+  });
+
+  it("プロジェクトが1件以上なら Task/Issue/Gantt タブを表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout();
+
+    expect(screen.getByRole("link", { name: "Task" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Issue" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Gantt" })).toBeInTheDocument();
+  });
+});
+
 describe("AppLayout のタブナビ", () => {
   beforeEach(() => {
     const project = createProject();

@@ -298,4 +298,33 @@ describe("MyPageView の期限軸グルーピング", () => {
       screen.queryByRole("heading", { name: "今後7日1" }),
     ).not.toBeInTheDocument();
   });
+
+  it("バックグラウンドタブでタイマーが遅延しても、可視化復帰で today を追いつかせる（レビュー指摘#2追補の回帰防止）", () => {
+    mocks.tasks = [
+      createTask({ _id: "task_1" as Id<"tasks">, dueDate: "2026-08-12" }),
+    ];
+    renderMyPageView();
+
+    // 08-11 時点では dueDate は today+1 なので「今後7日」バケット
+    expect(
+      screen.getByRole("heading", { name: "今後7日1" }),
+    ).toBeInTheDocument();
+
+    // バックグラウンドタブで setTimeout がスロットリング/凍結され発火しない
+    // まま実時刻だけが進んだ状況を模す（vi.advanceTimersByTime は呼ばず、
+    // システム時刻だけ進めてから visibilitychange を発火する）。
+    act(() => {
+      vi.setSystemTime(new Date(2026, 7, 12, 9, 0, 0)); // 2026-08-12 09:00
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        value: "visible",
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(screen.getByRole("heading", { name: "今日1" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "今後7日1" }),
+    ).not.toBeInTheDocument();
+  });
 });

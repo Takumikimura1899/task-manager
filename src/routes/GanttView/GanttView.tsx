@@ -2,10 +2,7 @@ import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
-import {
-  assertSelectedProject,
-  useAppOutletContext,
-} from "../../components/AppLayout/AppLayout";
+import { useSelectedProject } from "../../components/AppLayout/AppLayout";
 import { GanttChart } from "../../components/GanttChart/GanttChart";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useTodayIso } from "../../hooks/useTodayIso";
@@ -18,11 +15,7 @@ import s from "./GanttView.module.css";
  * mutation・書き込み導線は置かない。
  */
 export function GanttView() {
-  const { selected } = useAppOutletContext();
-  // AppLayout はプロジェクトが0件のときこのルートを描画しない（0件表示は
-  // AppLayout 自前のヒントに委ねる）ため、selected が null なのは到達しない
-  // はずの分岐。到達したら握り潰さず例外にする（CLAUDE.md「サイレント失敗の回避」）。
-  assertSelectedProject(selected);
+  const { selected } = useSelectedProject();
   const issues = useQuery(api.tasks.gantt, { project: selected._id });
   const today = useTodayIso();
 

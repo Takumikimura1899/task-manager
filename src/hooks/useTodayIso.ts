@@ -36,5 +36,22 @@ export function useTodayIso(): string {
     return () => clearTimeout(id);
   }, []);
 
+  useEffect(() => {
+    // バックグラウンドタブは setTimeout がスロットリング/凍結されうるため、
+    // 単一タイマーだけでは日跨ぎの発火が遅れることがある（レビュー指摘）。
+    // タブがアクティブへ復帰した瞬間に todayIso() を再評価するフォール
+    // バックを設け、ずれていれば追いつかせる（一致していれば setState しない）。
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      setToday((prev) => {
+        const current = todayIso();
+        return prev === current ? prev : current;
+      });
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
   return today;
 }

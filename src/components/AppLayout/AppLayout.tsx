@@ -54,7 +54,8 @@ type AppOutletContext = {
    * プロジェクトが0件のときは null（My Page はプロジェクトスコープを
    * 持たないため、この場合でも描画される唯一の子ルート）。
    * Task/Issue/Gantt など selected を要求するビューは
-   * assertSelectedProject で non-null を確定させてから使う。
+   * useAppOutletContext ではなく useSelectedProject を使い、
+   * non-null を確定させたうえで取得する。
    */
   selected: Doc<"projects"> | null;
   members: MemberSummary[] | undefined;
@@ -76,7 +77,7 @@ export function useAppOutletContext(): AppOutletContext {
  * 0件でも描画される）ため、selected が null なのは到達しないはずの分岐。
  * 到達したら握り潰さず例外にする（CLAUDE.md「サイレント失敗の回避」）。
  */
-export function assertSelectedProject(
+function assertSelectedProject(
   selected: Doc<"projects"> | null,
 ): asserts selected is Doc<"projects"> {
   if (selected === null) {
@@ -84,6 +85,20 @@ export function assertSelectedProject(
       "selected プロジェクトが存在しません（到達しないはずの分岐）",
     );
   }
+}
+
+/**
+ * プロジェクトスコープのビュー（TasksView / IssuesView / GanttView）専用の
+ * Outlet context フック。useAppOutletContext + assertSelectedProject の
+ * 組み合わせが3ビューへ逐語重複していたため、selected を非null で返す
+ * 形にここへ集約した（呼び出し側は selected の null チェックを書かない）。
+ */
+export function useSelectedProject(): Omit<AppOutletContext, "selected"> & {
+  selected: Doc<"projects">;
+} {
+  const { selected, ...rest } = useAppOutletContext();
+  assertSelectedProject(selected);
+  return { ...rest, selected };
 }
 
 export function AppLayout() {
@@ -193,17 +208,22 @@ export function AppLayout() {
         {/* 左＝プロジェクトスコープ群（Task/Issue/Gantt＋プロジェクト選択）。 */}
         <div className={s.left}>
           <h1 className={s.title}>Task Manager</h1>
-          <nav className={s.nav}>
-            <NavLink className={s.navLink} end to="/">
-              Task
-            </NavLink>
-            <NavLink className={s.navLink} to="/issues">
-              Issue
-            </NavLink>
-            <NavLink className={s.navLink} to="/gantt">
-              Gantt
-            </NavLink>
-          </nav>
+          {/* プロジェクトが0件だと Task/Issue/Gantt は汎用ヒントしか出せない
+              （selected が無く描画できない）ため、効かない操作を見せない
+              方針（プロジェクト選択と同じ）でタブ自体を隠す。 */}
+          {selected !== null && (
+            <nav className={s.nav}>
+              <NavLink className={s.navLink} end to="/">
+                Task
+              </NavLink>
+              <NavLink className={s.navLink} to="/issues">
+                Issue
+              </NavLink>
+              <NavLink className={s.navLink} to="/gantt">
+                Gantt
+              </NavLink>
+            </nav>
+          )}
           {selected !== null && !onMyPage && (
             <label className={s.picker}>
               プロジェクト
