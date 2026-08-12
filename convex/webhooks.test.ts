@@ -477,10 +477,12 @@ describe("webhooks.processEvent（pull_request）", () => {
     expect((await loadTask(t, task)).status).toBe("in_review");
   });
 
-  it("closed（未マージ）は pr_closed として扱われるが、backlog は差し戻し対象でないため遷移しない（action→kind 写像）", async () => {
+  it("closed（未マージ）は pr_closed として扱われ、in_review → in_progress に差し戻す（action→kind 写像）", async () => {
+    // in_review 始点なら pr_merged（→ done）と結果が分かれるため、
+    // merged: false が pr_closed に写像されることを一意に固定できる
     const t = setup();
-    const { project, task, repository } = await seedTaskWithRepository(t);
-    const before = await loadTask(t, task);
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "in_review");
 
     await t.mutation(internal.webhooks.processEvent, {
       deliveryId: "",
@@ -490,9 +492,10 @@ describe("webhooks.processEvent（pull_request）", () => {
       ),
     });
 
-    const after = await loadTask(t, task);
-    expect(after.status).toBe("backlog");
-    expect(after.revision).toBe(before.revision);
+    expect((await loadTask(t, task)).status).toBe("in_progress");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "pull_request", externalRef: "5", prState: "closed" },
+    ]);
   });
 
   it("参照はタイトルを最優先で解決する（本文の参照より優先）", async () => {
