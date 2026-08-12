@@ -28,6 +28,7 @@ import type * as lib_revision from "../lib/revision.js";
 import type * as lib_taskStatus from "../lib/taskStatus.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as members from "../members.js";
+import type * as migrations from "../migrations.js";
 import type * as projects from "../projects.js";
 import type * as reconcile from "../reconcile.js";
 import type * as repositories from "../repositories.js";
@@ -62,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   "lib/taskStatus": typeof lib_taskStatus;
   "lib/validators": typeof lib_validators;
   members: typeof members;
+  migrations: typeof migrations;
   projects: typeof projects;
   reconcile: typeof reconcile;
   repositories: typeof repositories;
