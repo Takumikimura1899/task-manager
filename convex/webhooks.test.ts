@@ -135,21 +135,27 @@ describe("webhooks.processEvent（branch_created）", () => {
 // --- 自動遷移の共通規則（applyTransition: 前進のみ + 末尾 rank） --------------
 
 describe("Git イベントによる自動遷移（applyTransition）", () => {
-  it("branch_created は完了済み（done）のタスクを上書きしない（前進のみ。他の前進しすぎ・手動操作の尊重パターンは gitAutomation.test.ts の「適用されない」describe が保証）", async () => {
-    const t = setup();
-    const { as, project, task } = await seedTaskWithRepository(t);
-    await driveTo(as, task, "done");
-    const before = await loadTask(t, task);
+  it.each([
+    { name: "in_review", target: "in_review" as const },
+    { name: "done（終端）", target: "done" as const },
+  ])(
+    "branch_created は既に進んだ（$name）タスクを上書きしない（前進のみ。他の前進しすぎ・手動操作の尊重パターンは gitAutomation.test.ts の「適用されない」describe が保証。in_progress 始点は gitAutomation.test.ts が被覆済み）",
+    async ({ target }) => {
+      const t = setup();
+      const { as, project, task } = await seedTaskWithRepository(t);
+      await driveTo(as, task, target);
+      const before = await loadTask(t, task);
 
-    await t.mutation(internal.webhooks.processEvent, {
-      deliveryId: "",
-      event: createBranchCreatedEvent(project),
-    });
+      await t.mutation(internal.webhooks.processEvent, {
+        deliveryId: "",
+        event: createBranchCreatedEvent(project),
+      });
 
-    const after = await loadTask(t, task);
-    expect(after.status).toBe("done");
-    expect(after.revision).toBe(before.revision);
-  });
+      const after = await loadTask(t, task);
+      expect(after.status).toBe(target);
+      expect(after.revision).toBe(before.revision);
+    },
+  );
 
   it("backlog からの branch_created は隣接遷移でないため適用しない（スキップ前進禁止）", async () => {
     const t = setup();
@@ -379,6 +385,9 @@ describe("webhooks.processEvent（pull_request）", () => {
   // prState マッピングと action ごとの遷移は元々それぞれ it.each で網羅していたが、
   // webhooks.ts の分岐自体は単純な三項演算子の連鎖であり、GitLink 反映と状態遷移を
   // 同時に固定する代表3件（型変更・no-op・終端 done）に縮小する。
+  // action 文字列 → GitEventKind の写像（processPullRequest の else-if 連鎖）自体は、
+  // 上記3件（opened/synchronize/closed+merged）に加えて下記3件
+  // （reopened/ready_for_review/closed+unmerged）で全分岐を1回ずつ踏む。
   it("opened（draft）で GitLink(pull_request) を prState=draft で記録し、todo → in_progress に進める", async () => {
     const t = setup();
     const { as, project, task, repository } = await seedTaskWithRepository(t);
@@ -434,6 +443,56 @@ describe("webhooks.processEvent（pull_request）", () => {
     expect(await listTaskGitLinks(t, task)).toMatchObject([
       { type: "pull_request", externalRef: "5", prState: "merged" },
     ]);
+  });
+
+  it("reopened は pr_opened として扱われ、todo → in_progress に進める（action→kind 写像）", async () => {
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "todo");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "reopened", draft: false, merged: false },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("in_progress");
+  });
+
+  it("ready_for_review は pr_ready として扱われ、in_progress → in_review に進める（action→kind 写像）", async () => {
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "in_progress");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "ready_for_review", draft: false, merged: false },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("in_review");
+  });
+
+  it("closed（未マージ）は pr_closed として扱われるが、backlog は差し戻し対象でないため遷移しない（action→kind 写像）", async () => {
+    const t = setup();
+    const { project, task, repository } = await seedTaskWithRepository(t);
+    const before = await loadTask(t, task);
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "closed", draft: false, merged: false },
+      ),
+    });
+
+    const after = await loadTask(t, task);
+    expect(after.status).toBe("backlog");
+    expect(after.revision).toBe(before.revision);
   });
 
   it("参照はタイトルを最優先で解決する（本文の参照より優先）", async () => {

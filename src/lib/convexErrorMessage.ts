@@ -1,4 +1,4 @@
-import { ConvexError } from "convex/values";
+import { ConvexError, type Value } from "convex/values";
 
 /**
  * サーバーへの往復（Convex ミューテーション）を経ないクライアント側の
@@ -10,6 +10,17 @@ import { ConvexError } from "convex/values";
 export class DisplayableError extends Error {}
 
 /**
+ * ユーザーにそのまま見せてよい（表示可能な）エラーかどうかの判定。
+ * convexErrorMessage（肯定形分岐）と reportConvexError（否定形ガード）の
+ * 両方から使い、判定条件をこの1箇所に集約する。
+ */
+function isDisplayableError(
+  err: unknown,
+): err is ConvexError<Value> | DisplayableError {
+  return err instanceof ConvexError || err instanceof DisplayableError;
+}
+
+/**
  * Convex ミューテーション呼び出しの失敗からユーザー向けメッセージを抽出する。
  * ConvexError（サーバー側が意図して投げたバリデーション/競合エラー等）と
  * DisplayableError（クライアント側の検証エラー等）は data / message を
@@ -19,9 +30,8 @@ export class DisplayableError extends Error {}
  * で共有・Issue #104）。
  */
 export function convexErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof ConvexError) return String(err.data);
-  if (err instanceof DisplayableError) return err.message;
-  return fallback;
+  if (!isDisplayableError(err)) return fallback;
+  return err instanceof ConvexError ? String(err.data) : err.message;
 }
 
 /**
@@ -32,7 +42,7 @@ export function convexErrorMessage(err: unknown, fallback: string): string {
  * （サイレント失敗）を防ぐ（監査 H-1）。
  */
 export function reportConvexError(err: unknown, fallback: string): string {
-  if (!(err instanceof ConvexError) && !(err instanceof DisplayableError)) {
+  if (!isDisplayableError(err)) {
     console.error(err);
   }
   return convexErrorMessage(err, fallback);
