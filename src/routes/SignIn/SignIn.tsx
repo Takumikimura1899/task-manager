@@ -2,7 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { type FormEvent, useId, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
-import { convexErrorMessage } from "../../lib/convexErrorMessage";
+import { reportConvexError } from "../../lib/convexErrorMessage";
 import s from "./SignIn.module.css";
 
 type Flow = "signIn" | "signUp";
@@ -14,7 +14,8 @@ const SUBMIT_LABELS: Record<Flow, string> = {
 
 // 資格情報不一致などの内部例外は詳細を晒さず「{操作}に失敗しました」形式へ
 // 丸める（docs/UI文言・配置規約.md §6-2）。招待外拒否などサーバが意図して
-// 投げた ConvexError は convexErrorMessage が data をそのまま表示する。
+// 投げた ConvexError は reportConvexError が data をそのまま表示する。
+// ConvexError 以外の想定外の例外は同関数が console.error に残す（H-1）。
 const FALLBACK_ERRORS: Record<Flow, string> = {
   signIn:
     "ログインに失敗しました。メールアドレスとパスワードを確認してください。",
@@ -71,7 +72,7 @@ export function SignIn() {
         navigate("/mypage", { replace: true });
       }
     } catch (err) {
-      setError(convexErrorMessage(err, FALLBACK_ERRORS[flow]));
+      setError(reportConvexError(err, FALLBACK_ERRORS[flow]));
       setSubmitting(false);
     }
   }
