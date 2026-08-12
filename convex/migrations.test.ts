@@ -3,11 +3,12 @@ import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
+  type As,
   getTask,
   seedAuthedMember,
+  seedIssueWithTask,
   seedProject,
   setup,
-  type As,
 } from "../test/convexSupport";
 
 /**
@@ -18,15 +19,8 @@ import {
  * （現在は convex/tasks.ts の rankForInsert がサーバー側で実隣接を再導出する
  * ため新規発生しない）。ここでは既存データの重複を t.run で直接注入し、
  * 修復の観測可能な結果（一意な rank・列順の保存・冪等性）を検証する。
+ * seedIssueWithTask は test/convexSupport.ts に一元化（tasks.test.ts と共有）。
  */
-
-/** Issue と最初の Task を Core API 経由で作成する（INVARIANT-5 を尊重）。 */
-const seedIssueWithTask = (as: As, project: Id<"projects">) =>
-  as.mutation(api.issues.create, {
-    project,
-    title: "課題",
-    firstTask: { title: "最初のタスク" },
-  });
 
 /** backlog 列の Task を rank 昇順（＝ボード表示順）に _id で返す。 */
 const columnIds = async (
