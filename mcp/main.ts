@@ -291,13 +291,15 @@ async function main() {
     },
     async (uri, { key }) => {
       const project = await resolveProject(String(key));
+      // listFiltered の status 絞り込みは単一ステータスのみで「アクティブ
+      // （done/canceled 以外）」の複数ステータス集合は表現できないため、
+      // project + assignee のサーバー側絞り込み（by_assignee インデックス）
+      // までを寄せ、active 判定はここでクライアント側フィルタとして残す。
       const tasks = await convex.query(
-        api.tasks.listByProject,
-        withToken({ project: project._id }),
+        api.tasks.listFiltered,
+        withToken({ project: project._id, assignee: agentMemberId }),
       );
-      const mine = tasks.filter(
-        (t) => t.assignee === agentMemberId && isActiveStatus(t.status),
-      );
+      const mine = tasks.filter((t) => isActiveStatus(t.status));
       return {
         contents: [
           {

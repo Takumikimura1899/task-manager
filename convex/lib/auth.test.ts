@@ -24,7 +24,7 @@ import { requireActor, requireAgentToken } from "./auth";
  *   意図が明確なため、こちらで検証する。
  * - 「全公開関数がゲートされているか」自体は各 *.test.ts（tasks/issues/members/
  *   projects/gitLinks/repositories）の各テストが認証済み identity 経由の呼び出しで
- *   間接的に固定しており、ここでは代表例（tasks.listByProject）で結線を確認する。
+ *   間接的に固定しており、ここでは代表例（tasks.listFiltered）で結線を確認する。
  */
 
 afterEach(() => {
@@ -34,12 +34,12 @@ afterEach(() => {
 // --- ブラウザ経路（accessToken なし） -----------------------------------------
 
 describe("requireActor（ブラウザ経路）", () => {
-  it("未認証で公開関数を呼ぶと ConvexError で拒否する（例: tasks.listByProject）", async () => {
+  it("未認証で公開関数を呼ぶと ConvexError で拒否する（例: tasks.listFiltered）", async () => {
     const t = setup();
     const project = await seedProject(t);
 
     await expect(
-      t.query(api.tasks.listByProject, { project }),
+      t.query(api.tasks.listFiltered, { project }),
     ).rejects.toThrowError("認証が必要です");
   });
 
@@ -50,7 +50,7 @@ describe("requireActor（ブラウザ経路）", () => {
     const asUnlinked = t.withIdentity({ subject: authSubject(userId) });
 
     await expect(
-      asUnlinked.query(api.tasks.listByProject, { project }),
+      asUnlinked.query(api.tasks.listFiltered, { project }),
     ).resolves.toEqual([]);
   });
 

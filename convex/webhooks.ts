@@ -284,23 +284,3 @@ export const processEvent = internalMutation({
     return "processed" as const;
   },
 });
-
-// --- internal API（イベント単体の入口。実処理は process* ヘルパーと共有） -------
-
-/** ブランチ作成イベント単体を処理する（冪等化なし。結合テスト・補正処理用）。 */
-export const handleBranchCreated = internalMutation({
-  args: branchCreatedFields,
-  handler: processBranchCreated,
-});
-
-/** push イベント単体を処理する（冪等化なし。結合テスト・補正処理用）。 */
-export const handlePush = internalMutation({
-  args: pushFields,
-  handler: processPush,
-});
-
-/** pull_request イベント単体を処理する（冪等化なし。結合テスト・補正処理用）。 */
-export const handlePullRequest = internalMutation({
-  args: pullRequestFields,
-  handler: processPullRequest,
-});

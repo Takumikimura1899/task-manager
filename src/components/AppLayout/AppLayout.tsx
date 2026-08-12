@@ -9,7 +9,7 @@ import {
   type MemberSummary,
   useCurrentMember,
 } from "../../hooks/useCurrentMember";
-import { convexErrorMessage } from "../../lib/convexErrorMessage";
+import { reportConvexError } from "../../lib/convexErrorMessage";
 import { NoMembersNotice } from "../NoMembersNotice/NoMembersNotice";
 import { Skeleton } from "../Skeleton/Skeleton";
 import s from "./AppLayout.module.css";
@@ -137,11 +137,12 @@ export function AppLayout() {
       // 成功時は Unauthenticated ゲート（App.tsx）が画面ごと切り替えるため、
       // アンマウント後の setState を避けて signingOut は戻さない。
     } catch (err) {
-      // 画面表示（再操作の促し）と console（実例外の調査ログ）の両方に残す
-      // （CLAUDE.md「サイレント失敗の回避」。定型文言だけでは原因調査ができない）。
-      console.error("ログアウトに失敗しました", err);
+      // 画面表示（再操作の促し）と console（想定外の例外の調査ログ）の両方に
+      // 残す（CLAUDE.md「サイレント失敗の回避」。定型文言だけでは原因調査が
+      // できない）。ログ出力は reportConvexError に集約している
+      // （convexErrorMessage.ts・監査 H-1）。
       setSignOutError(
-        convexErrorMessage(
+        reportConvexError(
           err,
           "ログアウトに失敗しました。再度お試しください。",
         ),

@@ -1,5 +1,4 @@
 import { useMutation, useQuery } from "convex/react";
-import { ConvexError } from "convex/values";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
@@ -22,6 +21,10 @@ import { Markdown } from "../../components/Markdown/Markdown";
 import { TASK_TEMPLATES } from "../../components/MarkdownEditor/templates";
 import { useDeleteFlow } from "../../hooks/useDeleteFlow";
 import { useEditForm } from "../../hooks/useEditForm";
+import {
+  DisplayableError,
+  reportConvexError,
+} from "../../lib/convexErrorMessage";
 import { formatHours } from "../../lib/formatHours";
 import { formatIssueRef } from "../../lib/formatIssueRef";
 import { parseRefNumber } from "../../lib/routeParams";
@@ -58,8 +61,10 @@ type TaskDraft = {
  * 空文字（空白のみ含む）は未設定への変更（null）、非空なら 0 以上の
  * 有限数のみ許容する。trim しないと空白のみが Number() で 0 になり、
  * 未設定のつもりが 0h として登録されてしまう。
- * 不正値は ConvexError として投げ、useEditForm の既存エラー表示（role=alert）に
- * 乗せて画面に伝える（サイレント失敗を避ける・送信もしない）。
+ * 不正値は DisplayableError として投げ、useEditForm の既存エラー表示
+ * （role=alert）に乗せて画面に伝える（サイレント失敗を避ける・送信もしない）。
+ * ConvexError はサーバーが意図して投げるエラー専用の型のため、Convex への
+ * 往復を経ないこのクライアント検証には型流用しない（監査 L-8）。
  *
  * 前提: 呼び出し元が badInput（例: Firefox で type="number" に非数値文字を
  * 入力すると、テキストは見えたまま DOM の value だけが空文字になる状態）を
@@ -71,7 +76,7 @@ function parseHoursDraft(label: string, raw: string): number | null {
   if (trimmed === "") return null;
   const n = Number(trimmed);
   if (!Number.isFinite(n) || n < 0) {
-    throw new ConvexError(`${label}は 0 以上の数値で指定してください`);
+    throw new DisplayableError(`${label}は 0 以上の数値で指定してください`);
   }
   return n;
 }
@@ -117,16 +122,16 @@ export function TaskDetail() {
       // badInput のまま parseHoursDraft に通すと空文字＝未設定と誤解釈され、
       // 既存の見積がサイレントにクリアされて保存されてしまうため先に弾く。
       if (estimateInputRef.current?.validity.badInput) {
-        throw new ConvexError("予想工数は数値で入力してください");
+        throw new DisplayableError("予想工数は数値で入力してください");
       }
       if (actualInputRef.current?.validity.badInput) {
-        throw new ConvexError("実績工数は数値で入力してください");
+        throw new DisplayableError("実績工数は数値で入力してください");
       }
       if (startDateInputRef.current?.validity.badInput) {
-        throw new ConvexError("開始日は日付形式で入力してください");
+        throw new DisplayableError("開始日は日付形式で入力してください");
       }
       if (dueDateInputRef.current?.validity.badInput) {
-        throw new ConvexError("期限日は日付形式で入力してください");
+        throw new DisplayableError("期限日は日付形式で入力してください");
       }
       const estimate = parseHoursDraft("予想工数", draft.estimate);
       const actual = parseHoursDraft("実績工数", draft.actual);
@@ -230,9 +235,7 @@ export function TaskDetail() {
     try {
       await action();
     } catch (err) {
-      setActionError(
-        err instanceof ConvexError ? String(err.data) : "操作に失敗しました",
-      );
+      setActionError(reportConvexError(err, "操作に失敗しました"));
     }
   };
 

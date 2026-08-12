@@ -15,16 +15,23 @@ import {
 } from "../test/convexSupport";
 
 /**
- * Webhook internal 関数の結合テスト（基本設計書 §5 自動遷移 / §7）。
+ * Webhook イベント処理の結合テスト（基本設計書 §5 自動遷移 / §7）。
  *
- * HTTP 層（署名検証・冪等化・ディスパッチ）は http.test.ts で検証し、ここでは
- * internal ミューテーション単位で「Git イベントが DB の最終状態にどう反映されるか」を
- * 固定する（古典学派・結合テスト層）。参照抽出（gitRef）・遷移表（gitAutomation）の
- * 純粋関数は lib/*.test.ts で単体検証済みで、ここでは結線を検証する。
+ * HTTP 層（署名検証・ヘッダ解析）は http.test.ts で検証し、ここでは
+ * processEvent（webhooks.ts）を呼び出して「Git イベントが DB の最終状態に
+ * どう反映されるか」を固定する（古典学派・結合テスト層）。processEvent は
+ * 冪等マーキングとイベント種別ごとのディスパッチを単一トランザクションで
+ * 行うため、ここでの呼び出しは本番と同じ経路をそのまま通る。
+ * イベント種別ごとの分岐（branch_created / push / pull_request）を単体で
+ * 検証するテストは deliveryId: "" を渡し、冪等化を経路から外す（webhooks.ts の
+ * markDeliveryIfNew は空文字を「マーカーを残さず常に処理する」防御的分岐として
+ * 許容している）。
+ * 参照抽出（gitRef）・遷移表（gitAutomation）の純粋関数は lib/*.test.ts で
+ * 単体検証済みで、ここでは結線と DB 反映を検証する。
  *
- * 冪等マーキングとイベント反映は processEvent が単一トランザクションで行う
- * （Issue #12）。処理失敗時にマーカーが残らず再送で再処理できることも
- * ここで固定する（processEvent の describe を参照）。
+ * 冪等マーキングとイベント反映が同一トランザクションで行われること
+ * （処理失敗時にマーカーが残らず再送で再処理できること）は
+ * webhooks.processEvent（冪等マーキング）の describe を参照。
  */
 
 // seedRepository が webhookSecret を暗号化するため、本番同様に環境変数で鍵を注入する
@@ -44,7 +51,7 @@ const loadTask = async (t: T, id: Id<"tasks">) => {
 
 // key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する
 // seedTaskWithRepository（test/convexSupport.ts に一元化）を使う。internal
-// ミューテーション（handleBranchCreated 等）自体は無認証のままでよい。
+// ミューテーション（processEvent 等）自体は無認証のままでよい。
 
 /** 同じ Issue に Task を1件追加する（連番で TASK-2, TASK-3, … になる）。 */
 const addTask = (as: As, issue: Id<"issues">, title = "追加タスク") =>
@@ -71,17 +78,30 @@ const driveTo = async (
   }
 };
 
-// --- handleBranchCreated（findTask 照合 + branch_created 遷移） ---------------
+/** processEvent へ渡す branch_created イベント入力のファクトリ。 */
+const createBranchCreatedEvent = (
+  projectId: Id<"projects">,
+  overrides: Partial<{ branchName: string }> = {},
+) => ({
+  kind: "branch_created" as const,
+  projectId,
+  branchName: "TASK-1-fix",
+  ...overrides,
+});
 
-describe("webhooks.handleBranchCreated", () => {
+// --- branch_created（findTask 照合 + 遷移） -----------------------------------
+
+describe("webhooks.processEvent（branch_created）", () => {
   it("ブランチ名の参照に一致するタスクを todo → in_progress に進める", async () => {
     const t = setup();
     const { as, project, task } = await seedTaskWithRepository(t);
     await driveTo(as, task, "todo");
 
-    await t.mutation(internal.webhooks.handleBranchCreated, {
-      projectId: project,
-      branchName: "feature/TASK-1-login",
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createBranchCreatedEvent(project, {
+        branchName: "feature/TASK-1-login",
+      }),
     });
 
     const after = await loadTask(t, task);
@@ -101,9 +121,9 @@ describe("webhooks.handleBranchCreated", () => {
     const { as, project, task } = await seedTaskWithRepository(t);
     await driveTo(as, task, "todo");
 
-    await t.mutation(internal.webhooks.handleBranchCreated, {
-      projectId: project,
-      branchName,
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createBranchCreatedEvent(project, { branchName }),
     });
 
     const after = await loadTask(t, task);
@@ -116,24 +136,23 @@ describe("webhooks.handleBranchCreated", () => {
 
 describe("Git イベントによる自動遷移（applyTransition）", () => {
   it.each([
-    { name: "既に目標状態に到達している", from: "in_progress" },
-    { name: "手動で先へ進めてある", from: "in_review" },
-    { name: "完了済みの", from: "done" },
-  ] as const)(
-    "branch_created は $name タスク（$from）を上書きしない（前進のみ）",
-    async ({ from }) => {
+    { name: "in_review", target: "in_review" as const },
+    { name: "done（終端）", target: "done" as const },
+  ])(
+    "branch_created は既に進んだ（$name）タスクを上書きしない（前進のみ。他の前進しすぎ・手動操作の尊重パターンは gitAutomation.test.ts の「適用されない」describe が保証。in_progress 始点は gitAutomation.test.ts が被覆済み）",
+    async ({ target }) => {
       const t = setup();
       const { as, project, task } = await seedTaskWithRepository(t);
-      await driveTo(as, task, from);
+      await driveTo(as, task, target);
       const before = await loadTask(t, task);
 
-      await t.mutation(internal.webhooks.handleBranchCreated, {
-        projectId: project,
-        branchName: "TASK-1-fix",
+      await t.mutation(internal.webhooks.processEvent, {
+        deliveryId: "",
+        event: createBranchCreatedEvent(project),
       });
 
       const after = await loadTask(t, task);
-      expect(after.status).toBe(from);
+      expect(after.status).toBe(target);
       expect(after.revision).toBe(before.revision);
     },
   );
@@ -142,9 +161,9 @@ describe("Git イベントによる自動遷移（applyTransition）", () => {
     const t = setup();
     const { project, task } = await seedTaskWithRepository(t);
 
-    await t.mutation(internal.webhooks.handleBranchCreated, {
-      projectId: project,
-      branchName: "TASK-1-fix",
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createBranchCreatedEvent(project),
     });
 
     expect((await loadTask(t, task)).status).toBe("backlog");
@@ -157,9 +176,9 @@ describe("Git イベントによる自動遷移（applyTransition）", () => {
     await driveTo(as, second, "in_progress"); // 遷移先列に既存タスクを置いておく
     await driveTo(as, task, "todo");
 
-    await t.mutation(internal.webhooks.handleBranchCreated, {
-      projectId: project,
-      branchName: "TASK-1-fix",
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createBranchCreatedEvent(project),
     });
 
     const moved = await loadTask(t, task);
@@ -169,9 +188,9 @@ describe("Git イベントによる自動遷移（applyTransition）", () => {
   });
 });
 
-// --- handlePush（commit メッセージの [KEY-番号] → GitLink） -------------------
+// --- push（commit メッセージの [KEY-番号] → GitLink） -------------------------
 
-/** handlePush へ渡す commit のファクトリ。 */
+/** push イベントの commits へ渡す commit 1件分のファクトリ。 */
 const createCommit = (
   overrides: Partial<{ message: string; sha: string; url: string }> = {},
 ) => ({
@@ -181,15 +200,25 @@ const createCommit = (
   ...overrides,
 });
 
-describe("webhooks.handlePush", () => {
+/** processEvent へ渡す push イベント入力のファクトリ。 */
+const createPushEvent = (
+  ids: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
+  overrides: Partial<{ commits: ReturnType<typeof createCommit>[] }> = {},
+) => ({
+  kind: "push" as const,
+  ...ids,
+  commits: [createCommit()],
+  ...overrides,
+});
+
+describe("webhooks.processEvent（push）", () => {
   it("[KEY-番号] を含むコミットに GitLink(commit) を追加する（ステータス遷移はしない）", async () => {
     const t = setup();
     const { project, task, repository } = await seedTaskWithRepository(t);
 
-    await t.mutation(internal.webhooks.handlePush, {
-      repositoryId: repository,
-      projectId: project,
-      commits: [createCommit()],
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPushEvent({ repositoryId: repository, projectId: project }),
     });
 
     expect(await listTaskGitLinks(t, task)).toMatchObject([
@@ -212,13 +241,17 @@ describe("webhooks.handlePush", () => {
       await seedTaskWithRepository(t);
     const second = await addTask(as, issue); // TASK-2
 
-    await t.mutation(internal.webhooks.handlePush, {
-      repositoryId: repository,
-      projectId: project,
-      commits: [
-        createCommit({ message: "[TASK-1] fix" }),
-        createCommit({ message: "[TASK-2] refactor", sha: "def456" }),
-      ],
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPushEvent(
+        { repositoryId: repository, projectId: project },
+        {
+          commits: [
+            createCommit({ message: "[TASK-1] fix" }),
+            createCommit({ message: "[TASK-2] refactor", sha: "def456" }),
+          ],
+        },
+      ),
     });
 
     expect(await listTaskGitLinks(t, task)).toMatchObject([
@@ -237,10 +270,12 @@ describe("webhooks.handlePush", () => {
       await seedTaskWithRepository(t);
     const second = await addTask(as, issue); // TASK-2
 
-    await t.mutation(internal.webhooks.handlePush, {
-      repositoryId: repository,
-      projectId: project,
-      commits: [createCommit({ message: "[TASK-1][TASK-2] refactor" })],
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPushEvent(
+        { repositoryId: repository, projectId: project },
+        { commits: [createCommit({ message: "[TASK-1][TASK-2] refactor" })] },
+      ),
     });
 
     expect(await listTaskGitLinks(t, task)).toMatchObject([
@@ -256,31 +291,34 @@ describe("webhooks.handlePush", () => {
     const { as, project, issue, task, repository } =
       await seedTaskWithRepository(t);
     const second = await addTask(as, issue); // TASK-2
-    const args = {
-      repositoryId: repository,
-      projectId: project,
-      commits: [createCommit({ message: "[TASK-1][TASK-2] refactor" })],
-    };
-    await t.mutation(internal.webhooks.handlePush, args);
+    const event = createPushEvent(
+      { repositoryId: repository, projectId: project },
+      { commits: [createCommit({ message: "[TASK-1][TASK-2] refactor" })] },
+    );
 
-    await t.mutation(internal.webhooks.handlePush, args);
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event,
+    });
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event,
+    });
 
     expect(await listTaskGitLinks(t, task)).toHaveLength(1);
     expect(await listTaskGitLinks(t, second)).toHaveLength(1);
   });
 
-  it.each([
-    { name: "角括弧のない参照（規約外）", message: "TASK-1 を修正" },
-    { name: "未知のタスク番号", message: "[TASK-999] 修正" },
-    { name: "別プロジェクトキーの参照", message: "[OTHER-1] 修正" },
-  ])("$name を含むコミットは無視する", async ({ message }) => {
+  it("未知のタスク番号を含むコミットは無視する（参照抽出そのものの失敗パターンは gitRef.test.ts が保証）", async () => {
     const t = setup();
     const { project, task, repository } = await seedTaskWithRepository(t);
 
-    await t.mutation(internal.webhooks.handlePush, {
-      repositoryId: repository,
-      projectId: project,
-      commits: [createCommit({ message })],
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPushEvent(
+        { repositoryId: repository, projectId: project },
+        { commits: [createCommit({ message: "[TASK-999] 修正" })] },
+      ),
     });
 
     expect(await listTaskGitLinks(t, task)).toHaveLength(0);
@@ -295,10 +333,9 @@ describe("webhooks.handlePush", () => {
       { type: "commit", externalRef: "abc123", url: "https://old.example.com" },
     );
 
-    await t.mutation(internal.webhooks.handlePush, {
-      repositoryId: repository,
-      projectId: project,
-      commits: [createCommit()],
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPushEvent({ repositoryId: repository, projectId: project }),
     });
 
     const links = await listTaskGitLinks(t, task);
@@ -310,9 +347,9 @@ describe("webhooks.handlePush", () => {
   });
 });
 
-// --- handlePullRequest（GitLink upsert + PR state / action ごとの遷移） -------
+// --- pull_request（GitLink upsert + PR state / action ごとの遷移） -----------
 
-/** handlePullRequest へ渡す引数のファクトリ（既定はタイトルに TASK-1 参照を持つ opened）。 */
+/** pull_request イベントの本体引数のファクトリ（既定はタイトルに TASK-1 参照を持つ opened）。 */
 const createPrArgs = (
   ids: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
   overrides: Partial<{
@@ -338,125 +375,127 @@ const createPrArgs = (
   ...overrides,
 });
 
-describe("webhooks.handlePullRequest", () => {
-  it.each([
-    {
-      name: "Draft PR",
-      action: "opened",
-      draft: true,
-      merged: false,
-      prState: "draft",
-    },
-    {
-      name: "通常の PR",
-      action: "opened",
-      draft: false,
-      merged: false,
-      prState: "open",
-    },
-    {
-      name: "マージ済みクローズ",
-      action: "closed",
-      draft: false,
-      merged: true,
-      prState: "merged",
-    },
-    {
-      name: "未マージクローズ",
-      action: "closed",
-      draft: false,
-      merged: false,
-      prState: "closed",
-    },
-  ] as const)(
-    "$name は prState=$prState の GitLink(pull_request) を記録する",
-    async ({ action, draft, merged, prState }) => {
-      const t = setup();
-      const { project, task, repository } = await seedTaskWithRepository(t);
+/** processEvent へ渡す pull_request イベント入力のファクトリ。 */
+const createPullRequestEvent = (
+  ids: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
+  overrides: Parameters<typeof createPrArgs>[1] = {},
+) => ({ kind: "pull_request" as const, ...createPrArgs(ids, overrides) });
 
-      await t.mutation(
-        internal.webhooks.handlePullRequest,
-        createPrArgs(
-          { repositoryId: repository, projectId: project },
-          { action, draft, merged },
-        ),
-      );
-
-      expect(await listTaskGitLinks(t, task)).toMatchObject([
-        {
-          type: "pull_request",
-          externalRef: "5",
-          url: "https://github.com/acme/repo/pull/5",
-          prState,
-        },
-      ]);
-    },
-  );
-
-  it.each([
-    {
-      name: "opened で todo → in_progress",
-      action: "opened",
-      merged: false,
-      from: "todo",
-      expected: "in_progress",
-    },
-    {
-      name: "reopened で todo → in_progress",
-      action: "reopened",
-      merged: false,
-      from: "todo",
-      expected: "in_progress",
-    },
-    {
-      name: "ready_for_review で in_progress → in_review",
-      action: "ready_for_review",
-      merged: false,
-      from: "in_progress",
-      expected: "in_review",
-    },
-    {
-      name: "closed（マージ済み）で in_review → done",
-      action: "closed",
-      merged: true,
-      from: "in_review",
-      expected: "done",
-    },
-    {
-      name: "closed（未マージ）で in_review → in_progress へ差し戻し",
-      action: "closed",
-      merged: false,
-      from: "in_review",
-      expected: "in_progress",
-    },
-    {
-      name: "closed（未マージ）は in_review 以外では差し戻さない",
-      action: "closed",
-      merged: false,
-      from: "in_progress",
-      expected: "in_progress",
-    },
-    {
-      name: "synchronize は遷移の対象外",
-      action: "synchronize",
-      merged: false,
-      from: "in_progress",
-      expected: "in_progress",
-    },
-  ] as const)("$name", async ({ action, merged, from, expected }) => {
+describe("webhooks.processEvent（pull_request）", () => {
+  // prState マッピングと action ごとの遷移は元々それぞれ it.each で網羅していたが、
+  // webhooks.ts の分岐自体は単純な三項演算子の連鎖であり、GitLink 反映と状態遷移を
+  // 同時に固定する代表3件（型変更・no-op・終端 done）に縮小する。
+  // action 文字列 → GitEventKind の写像（processPullRequest の else-if 連鎖）自体は、
+  // 上記3件（opened/synchronize/closed+merged）に加えて下記3件
+  // （reopened/ready_for_review/closed+unmerged）で全分岐を1回ずつ踏む。
+  it("opened（draft）で GitLink(pull_request) を prState=draft で記録し、todo → in_progress に進める", async () => {
     const t = setup();
     const { as, project, task, repository } = await seedTaskWithRepository(t);
-    await driveTo(as, task, from);
+    await driveTo(as, task, "todo");
 
-    await t.mutation(
-      internal.webhooks.handlePullRequest,
-      createPrArgs(
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
         { repositoryId: repository, projectId: project },
-        { action, merged },
+        { action: "opened", draft: true, merged: false },
       ),
-    );
+    });
 
-    expect((await loadTask(t, task)).status).toBe(expected);
+    expect((await loadTask(t, task)).status).toBe("in_progress");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "pull_request", externalRef: "5", prState: "draft" },
+    ]);
+  });
+
+  it("synchronize は GitLink(pull_request) を更新するが、ステータスは変えない", async () => {
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "in_progress");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "synchronize", draft: false, merged: false },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("in_progress");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "pull_request", externalRef: "5", prState: "open" },
+    ]);
+  });
+
+  it("closed（マージ済み）で GitLink(pull_request) を prState=merged とし、in_review → done に進める", async () => {
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "in_review");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "closed", draft: false, merged: true },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("done");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "pull_request", externalRef: "5", prState: "merged" },
+    ]);
+  });
+
+  it("reopened は pr_opened として扱われ、todo → in_progress に進める（action→kind 写像）", async () => {
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "todo");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "reopened", draft: false, merged: false },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("in_progress");
+  });
+
+  it("ready_for_review は pr_ready として扱われ、in_progress → in_review に進める（action→kind 写像）", async () => {
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "in_progress");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "ready_for_review", draft: false, merged: false },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("in_review");
+  });
+
+  it("closed（未マージ）は pr_closed として扱われ、in_review → in_progress に差し戻す（action→kind 写像）", async () => {
+    // in_review 始点なら pr_merged（→ done）と結果が分かれるため、
+    // merged: false が pr_closed に写像されることを一意に固定できる
+    const t = setup();
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
+    await driveTo(as, task, "in_review");
+
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        { action: "closed", draft: false, merged: false },
+      ),
+    });
+
+    expect((await loadTask(t, task)).status).toBe("in_progress");
+    expect(await listTaskGitLinks(t, task)).toMatchObject([
+      { type: "pull_request", externalRef: "5", prState: "closed" },
+    ]);
   });
 
   it("参照はタイトルを最優先で解決する（本文の参照より優先）", async () => {
@@ -465,43 +504,33 @@ describe("webhooks.handlePullRequest", () => {
       await seedTaskWithRepository(t);
     const second = await addTask(as, issue); // TASK-2
 
-    await t.mutation(
-      internal.webhooks.handlePullRequest,
-      createPrArgs(
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
         { repositoryId: repository, projectId: project },
         { title: "TASK-2 対応", body: "TASK-1 も関連" },
       ),
-    );
+    });
 
     expect(await listTaskGitLinks(t, second)).toHaveLength(1);
     expect(await listTaskGitLinks(t, task)).toHaveLength(0);
   });
 
-  it.each([
-    {
-      name: "本文",
-      overrides: {
-        title: "リファクタリング",
-        body: "TASK-1 を解決する",
-        branch: "feature/x",
-      },
-    },
-    {
-      name: "ブランチ名",
-      overrides: {
-        title: "リファクタリング",
-        body: "説明なし",
-        branch: "feature/TASK-1-refactor",
-      },
-    },
-  ])("タイトルに参照がなければ $name から解決する", async ({ overrides }) => {
+  it("タイトル・本文に参照がなければブランチ名から解決する（優先順位の各段の抽出結果は gitRef.test.ts が保証）", async () => {
     const t = setup();
     const { project, task, repository } = await seedTaskWithRepository(t);
 
-    await t.mutation(
-      internal.webhooks.handlePullRequest,
-      createPrArgs({ repositoryId: repository, projectId: project }, overrides),
-    );
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
+        { repositoryId: repository, projectId: project },
+        {
+          title: "リファクタリング",
+          body: "説明なし",
+          branch: "feature/TASK-1-refactor",
+        },
+      ),
+    });
 
     expect(await listTaskGitLinks(t, task)).toHaveLength(1);
   });
@@ -510,13 +539,13 @@ describe("webhooks.handlePullRequest", () => {
     const t = setup();
     const { project, task, repository } = await seedTaskWithRepository(t);
 
-    await t.mutation(
-      internal.webhooks.handlePullRequest,
-      createPrArgs(
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(
         { repositoryId: repository, projectId: project },
         { title: "リファクタリング", body: "", branch: "feature/refactor" },
       ),
-    );
+    });
 
     expect(await listTaskGitLinks(t, task)).toHaveLength(0);
   });
@@ -526,11 +555,14 @@ describe("webhooks.handlePullRequest", () => {
     const { project, task, repository } = await seedTaskWithRepository(t);
     const ids = { repositoryId: repository, projectId: project };
 
-    await t.mutation(internal.webhooks.handlePullRequest, createPrArgs(ids)); // opened
-    await t.mutation(
-      internal.webhooks.handlePullRequest,
-      createPrArgs(ids, { action: "closed", merged: true }),
-    );
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(ids), // opened
+    });
+    await t.mutation(internal.webhooks.processEvent, {
+      deliveryId: "",
+      event: createPullRequestEvent(ids, { action: "closed", merged: true }),
+    });
 
     const links = await listTaskGitLinks(t, task);
     expect(links).toHaveLength(1);
@@ -540,18 +572,7 @@ describe("webhooks.handlePullRequest", () => {
 
 // --- processEvent（冪等マーキング + イベント反映の単一トランザクション、Issue #12） ---
 
-/** processEvent へ渡す push イベント入力のファクトリ。 */
-const createPushEvent = (
-  ids: { repositoryId: Id<"repositories">; projectId: Id<"projects"> },
-  overrides: Partial<{ commits: ReturnType<typeof createCommit>[] }> = {},
-) => ({
-  kind: "push" as const,
-  ...ids,
-  commits: [createCommit()],
-  ...overrides,
-});
-
-describe("webhooks.processEvent", () => {
+describe("webhooks.processEvent（冪等マーキング）", () => {
   it("新規 delivery はイベントを反映して processed を返し、delivery を記録する", async () => {
     const t = setup();
     const { project, task, repository } = await seedTaskWithRepository(t);

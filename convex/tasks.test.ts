@@ -1077,37 +1077,6 @@ describe("tasks.updateFields", () => {
   });
 });
 
-// --- listByProject ------------------------------------------------------------
-
-describe("tasks.listByProject", () => {
-  it("指定プロジェクトの Task のみ返す（他プロジェクトの Task は含まない）", async () => {
-    const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
-    const other = await seedProject(t, { key: "OTHER" });
-    const { issue } = await seedIssueWithTask(as, project);
-    await as.mutation(api.tasks.create, {
-      issue,
-      title: "2つ目",
-    });
-    await seedIssueWithTask(as, other); // 他プロジェクト側にも Task を作る
-
-    const listed = await as.query(api.tasks.listByProject, { project });
-
-    expect(listed).toHaveLength(2);
-    expect(listed.every((task) => task.project === project)).toBe(true);
-    expect(listed.map((task) => task.number).toSorted()).toEqual([1, 2]);
-  });
-
-  it("Task のないプロジェクトは空配列を返す", async () => {
-    const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-
-    expect(await as.query(api.tasks.listByProject, { project })).toEqual([]);
-  });
-});
-
 // --- listFiltered（MCP list_tasks 用のサーバー側絞り込み） --------------------
 
 /**
@@ -1154,7 +1123,7 @@ const arrangeFilteredTasks = async (t: T) => {
 describe("tasks.listFiltered", () => {
   const arrange = arrangeFilteredTasks;
 
-  it("絞り込みなしならプロジェクトの全 Task を返す（listByProject と同じ内容）", async () => {
+  it("絞り込みなしならプロジェクトの全 Task を返す", async () => {
     const t = setup();
     const { as, project } = await arrange(t);
 

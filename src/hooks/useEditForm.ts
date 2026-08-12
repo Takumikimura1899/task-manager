@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { convexErrorMessage } from "../lib/convexErrorMessage";
+import { reportConvexError } from "../lib/convexErrorMessage";
 
 /**
  * 詳細画面（Issue / Task）共通の編集モード状態管理フック。
@@ -53,7 +53,7 @@ export function useEditForm<T>({
       await save(draft);
       close();
     } catch (err) {
-      const message = convexErrorMessage(err, "保存に失敗しました");
+      const message = reportConvexError(err, "保存に失敗しました");
       setError(message);
       setConflict(message.includes("競合"));
     } finally {

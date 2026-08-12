@@ -956,7 +956,8 @@ describe("Board のドラッグ直列化（Issue #92 4周目レビュー指摘1�
     });
     await act(async () => {
       // 実運用の競合エラーは ConvexError（assertRevision）で投げられる。
-      // errorMessage は ConvexError のみ data をそのまま表示する。
+      // catch 側は reportConvexError（src/lib/convexErrorMessage.ts）を経由し、
+      // ConvexError は console.error を出さず data をそのまま表示する。
       rejectMutation(
         new ConvexError("リビジョンが古いため反映できませんでした"),
       );
