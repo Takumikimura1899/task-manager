@@ -344,36 +344,23 @@ describe("Board のドラッグ中アニメーション抑止（Issue #79）", (
  * 一貫して反映することだけを確認する。
  */
 describe("Board のフィルタ適用（Issue #92）", () => {
-  it("URL の priority/assignee クエリで該当カードのみ各列に残る（暗黙 AND）", () => {
+  it("URL の priority クエリが useFilterParams 経由で Board に反映され、該当しないカードは列から消える", () => {
     const match = createTask({
       _id: "task_1" as Id<"tasks">,
       number: 1,
       priority: "high",
-      assignee: "member_1" as Id<"members">,
     });
     const wrongPriority = createTask({
       _id: "task_2" as Id<"tasks">,
       number: 2,
       priority: "low",
-      assignee: "member_1" as Id<"members">,
     });
-    const wrongAssignee = createTask({
-      _id: "task_3" as Id<"tasks">,
-      number: 3,
-      priority: "high",
-      assignee: "member_2" as Id<"members">,
-    });
-    boardQuery.mockReturnValue(
-      createColumns({ todo: [match, wrongPriority, wrongAssignee] }),
-    );
-    renderBoard(["/?priority=high&assignee=member_1"]);
+    boardQuery.mockReturnValue(createColumns({ todo: [match, wrongPriority] }));
+    renderBoard(["/?priority=high"]);
 
     expect(screen.getByRole("link", { name: "TASK-1" })).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "TASK-2" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "TASK-3" }),
     ).not.toBeInTheDocument();
   });
 

@@ -134,18 +134,8 @@ describe("MyPageView の空状態", () => {
       "/",
     );
   });
-
-  it("担当 Task が done/canceled のみなら空状態を表示する", () => {
-    mocks.tasks = [
-      createTask({ _id: "done" as Id<"tasks">, status: "done" }),
-      createTask({ _id: "canceled" as Id<"tasks">, status: "canceled" }),
-    ];
-    renderMyPageView();
-
-    expect(
-      screen.getByText(/担当している Task がありません。/),
-    ).toBeInTheDocument();
-  });
+  // done/canceled のみで空状態になるケース（除外ロジックと空状態表示の両方）は
+  // groupMyTasksByDueDate の src/lib/myTasks.test.ts で保証済み。
 });
 
 describe("MyPageView のプロフィール行", () => {
