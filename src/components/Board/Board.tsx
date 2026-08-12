@@ -319,13 +319,6 @@ export function Board({
         );
         if (targetIndex === null) return;
         columnTasks = arrayMove(columnTasks, oldIndex, targetIndex);
-        setBoard((prev) =>
-          prev === null
-            ? prev
-            : prev.map((c, i) =>
-                i === toCol ? { ...c, tasks: columnTasks } : c,
-              ),
-        );
         const position = insertAnchor(
           columnTasks[targetIndex - 1] ?? null,
           columnTasks[targetIndex + 1] ?? null,
@@ -334,7 +327,16 @@ export function Board({
         // 返さなかった）ということは、同一列に少なくとももう1枚タスクが
         // あるため、insertAnchor は必ずアンカーを返す（tasks.move の
         // position は必須）。undefined になることは実際には無い到達不能分岐。
+        // L-2: この確定を setBoard より前に置き、position が undefined の
+        // ときに楽観更新だけ適用して mutation を呼ばない矛盾状態を防ぐ。
         if (position === undefined) return;
+        setBoard((prev) =>
+          prev === null
+            ? prev
+            : prev.map((c, i) =>
+                i === toCol ? { ...c, tasks: columnTasks } : c,
+              ),
+        );
         mutationPromise = moveTask({
           id: dragged._id,
           position,
