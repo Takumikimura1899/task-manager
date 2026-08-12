@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
-import { type MutationCtx, mutation, query } from "./_generated/server";
+import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireActor, requireAuthed } from "./lib/auth";
+import { actorMutation, authedQuery } from "./lib/auth";
 import { gitLinkType, prState } from "./schema";
 
 /**
@@ -52,19 +52,16 @@ export async function upsertGitLink(
   });
 }
 
-export const link = mutation({
-  args: {
+export const link = actorMutation(
+  {
     task: v.id("tasks"),
     repository: v.id("repositories"),
     type: gitLinkType,
     externalRef: v.string(),
     url: v.string(),
     prState: v.optional(prState),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     // 参照整合性（INVARIANT-3）
     if ((await ctx.db.get(args.task)) === null) {
       throw new ConvexError("指定されたタスクが存在しません");
@@ -74,16 +71,14 @@ export const link = mutation({
     }
     return await upsertGitLink(ctx, args);
   },
-});
+);
 
-export const listByTask = query({
-  args: { task: v.id("tasks"), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const listByTask = authedQuery(
+  { task: v.id("tasks") },
+  async (ctx, args) => {
     return await ctx.db
       .query("gitLinks")
       .withIndex("by_task", (q) => q.eq("task", args.task))
       .collect();
   },
-});
+);

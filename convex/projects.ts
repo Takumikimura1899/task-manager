@@ -1,6 +1,5 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
-import { requireActor, requireAuthed } from "./lib/auth";
+import { actorMutation, authedQuery } from "./lib/auth";
 import { findProjectByKey } from "./lib/projects";
 import { isValidProjectKey } from "./lib/validators";
 
@@ -10,16 +9,13 @@ import { isValidProjectKey } from "./lib/validators";
  * Convex のトランザクション（OCC）により保証する。
  */
 
-export const create = mutation({
-  args: {
+export const create = actorMutation(
+  {
     key: v.string(),
     name: v.string(),
     description: v.optional(v.string()),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     if (!isValidProjectKey(args.key)) {
       throw new ConvexError(
         `プロジェクトキーが不正です: "${args.key}"（大文字英字2〜10文字）`,
@@ -42,22 +38,12 @@ export const create = mutation({
       nextIssueNumber: 1,
     });
   },
+);
+
+export const getByKey = authedQuery({ key: v.string() }, async (ctx, args) => {
+  return await findProjectByKey(ctx, args.key);
 });
 
-export const getByKey = query({
-  args: { key: v.string(), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
-    return await findProjectByKey(ctx, args.key);
-  },
-});
-
-export const list = query({
-  args: { accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
-    return await ctx.db.query("projects").collect();
-  },
+export const list = authedQuery({}, async (ctx) => {
+  return await ctx.db.query("projects").collect();
 });

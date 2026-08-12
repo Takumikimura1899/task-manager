@@ -1,13 +1,8 @@
 import { ConvexError, v } from "convex/values";
-import {
-  type MutationCtx,
-  type QueryCtx,
-  mutation,
-  query,
-} from "./_generated/server";
+import { type MutationCtx, type QueryCtx, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
-import { requireActor, requireAuthed, requireAuthedMember } from "./lib/auth";
+import { actorMutation, authedQuery, requireAuthedMember } from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
@@ -226,8 +221,8 @@ export async function insertTask(
 
 // --- Mutations --------------------------------------------------------------
 
-export const create = mutation({
-  args: {
+export const create = actorMutation(
+  {
     issue: v.id("issues"),
     title: v.string(),
     description: v.optional(v.string()),
@@ -235,11 +230,8 @@ export const create = mutation({
     assignee: v.optional(v.id("members")),
     startDate: v.optional(v.string()),
     dueDate: v.optional(v.string()),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const actor = await requireActor(ctx, args.accessToken);
-
+  async (ctx, args, actor) => {
     // Task は必ず Issue に従属する（INVARIANT-5）。project は Issue から解決する。
     const issue = await ctx.db.get(args.issue);
     if (issue === null) {
@@ -258,11 +250,11 @@ export const create = mutation({
       dueDate: args.dueDate,
     });
   },
-});
+);
 
 /** タイトル・説明・優先度・見積/実績工数・開始日/期限日の更新（status/assignee/rank は専用 mutation を使う）。 */
-export const updateFields = mutation({
-  args: {
+export const updateFields = actorMutation(
+  {
     id: v.id("tasks"),
     expectedRevision: v.number(),
     title: v.optional(v.string()),
@@ -273,11 +265,8 @@ export const updateFields = mutation({
     actual: v.optional(v.union(v.number(), v.null())),
     startDate: v.optional(v.union(v.string(), v.null())),
     dueDate: v.optional(v.union(v.string(), v.null())),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -308,7 +297,7 @@ export const updateFields = mutation({
 
     await ctx.db.patch(task._id, patch);
   },
-});
+);
 
 /**
  * ステータス遷移（§5 状態機械）。遷移先列へ再配置する。
@@ -323,17 +312,14 @@ export const updateFields = mutation({
  * 破壊的遷移（done/canceled）の Human-in-the-Loop 承認はホスト（MCP/UI）の責務で、
  * ここでは遷移の妥当性のみを強制する。
  */
-export const transitionStatus = mutation({
-  args: {
+export const transitionStatus = actorMutation(
+  {
     id: v.id("tasks"),
     to: taskStatus,
     expectedRevision: v.number(),
     position: v.optional(positionValidator),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -355,19 +341,16 @@ export const transitionStatus = mutation({
       ...nextMeta(task),
     });
   },
-});
+);
 
 /** 担当者の割り当て・解除（null で解除）。 */
-export const assign = mutation({
-  args: {
+export const assign = actorMutation(
+  {
     id: v.id("tasks"),
     assignee: v.union(v.id("members"), v.null()),
     expectedRevision: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
     if (args.assignee !== null) {
@@ -379,7 +362,7 @@ export const assign = mutation({
       ...nextMeta(task),
     });
   },
-});
+);
 
 /**
  * 同一列内の D&D 並べ替え。position（{afterTask} または {beforeTask}、
@@ -389,16 +372,13 @@ export const assign = mutation({
  * （project × status）を読み直して解決する（rankForInsert）。呼び出し元は
  * Board のみのため position は必須（省略を末尾扱いで黙認しない）。
  */
-export const move = mutation({
-  args: {
+export const move = actorMutation(
+  {
     id: v.id("tasks"),
     position: positionValidator,
     expectedRevision: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -415,21 +395,18 @@ export const move = mutation({
       ...nextMeta(task),
     });
   },
-});
+);
 
 /**
  * タスク削除（破壊的操作・§6 で Human-in-the-Loop 承認必須）。
  * 参照整合性（INVARIANT-3）維持のため、関連する GitLink も併せて削除する。
  */
-export const deleteTask = mutation({
-  args: {
+export const deleteTask = actorMutation(
+  {
     id: v.id("tasks"),
     expectedRevision: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
@@ -454,21 +431,19 @@ export const deleteTask = mutation({
     }
     await ctx.db.delete(task._id);
   },
-});
+);
 
 // --- Queries ----------------------------------------------------------------
 
-export const listByProject = query({
-  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const listByProject = authedQuery(
+  { project: v.id("projects") },
+  async (ctx, args) => {
     return await ctx.db
       .query("tasks")
       .withIndex("by_project", (q) => q.eq("project", args.project))
       .collect();
   },
-});
+);
 
 /**
  * status / assignee / priority で絞り込んだプロジェクトの Task 一覧（MCP list_tasks 用）。
@@ -481,17 +456,14 @@ export const listByProject = query({
  * priority にはインデックスを追加せず、上記いずれの分岐でも読み取り後のメモリ
  * フィルタで適用する（既存の assignee×status 併用と同じ後段フィルタ方式・Issue #94）。
  */
-export const listFiltered = query({
-  args: {
+export const listFiltered = authedQuery(
+  {
     project: v.id("projects"),
     status: v.optional(taskStatus),
     assignee: v.optional(v.id("members")),
     priority: v.optional(taskPriority),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const byPriority = (t: Doc<"tasks">) =>
       args.priority === undefined || t.priority === args.priority;
 
@@ -524,18 +496,16 @@ export const listFiltered = query({
       .collect();
     return tasks.filter(byPriority);
   },
-});
+);
 
 /**
  * カンバン表示用: 固定6状態の列順で、各列を rank 昇順に整列して返す。
  * 表示の利便のため、各 Task に所属 Issue 番号と担当者名を付与する
  * （member の email 等 PII は返さず name のみ）。
  */
-export const board = query({
-  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const board = authedQuery(
+  { project: v.id("projects") },
+  async (ctx, args) => {
     const columnTasks = await Promise.all(
       TASK_STATUSES.map(async (status) => ({
         status,
@@ -584,22 +554,19 @@ export const board = query({
       }),
     }));
   },
-});
+);
 
 /**
  * {key}-{number} 形式の参照から素の Task ドキュメントを解決する。
  * MCP（get_task / task:// リソース）が依存する安定した契約のため、
  * 表示用の join は付与しない（詳細画面は getDetail を使う）。
  */
-export const getByRef = query({
-  args: {
+export const getByRef = authedQuery(
+  {
     projectKey: v.string(),
     number: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 
@@ -610,7 +577,7 @@ export const getByRef = query({
       )
       .unique();
   },
-});
+);
 
 /**
  * Task 詳細画面用に、表示に必要な関連情報を付与して Task を解決する。
@@ -620,15 +587,12 @@ export const getByRef = query({
  * - GitLink 一覧（repository.remoteUrl を join）
  * - projectKey（表示・リンク生成用）
  */
-export const getDetail = query({
-  args: {
+export const getDetail = authedQuery(
+  {
     projectKey: v.string(),
     number: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
 
@@ -663,7 +627,7 @@ export const getDetail = query({
       gitLinks,
     };
   },
-});
+);
 
 /**
  * ガントチャート表示用（Issue #141）: startDate/dueDate のいずれかが設定された
@@ -677,11 +641,9 @@ export const getDetail = query({
  * startDate/dueDate は null に正規化する（getDetail の undefined 透過とは
  * 表現が割れるが、gantt 専用 DTO のための選択であり Convex の制約ではない）。
  */
-export const gantt = query({
-  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const gantt = authedQuery(
+  { project: v.id("projects") },
+  async (ctx, args) => {
     const issues = await ctx.db
       .query("issues")
       .withIndex("by_project", (q) => q.eq("project", args.project))
@@ -711,7 +673,7 @@ export const gantt = query({
       ];
     });
   },
-});
+);
 
 /**
  * 「My Page」ビュー用（全プロジェクト横断で「担当者=自分」の Task 一覧）。

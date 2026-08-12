@@ -1,7 +1,17 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { ConvexError } from "convex/values";
+import {
+  ConvexError,
+  type ObjectType,
+  type PropertyValidators,
+  v,
+} from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { QueryCtx } from "../_generated/server";
+import {
+  type MutationCtx,
+  type QueryCtx,
+  mutation,
+  query,
+} from "../_generated/server";
 import { timingSafeTokenEqual } from "./crypto";
 import { isValidEmail, normalizeEmail } from "./validators";
 
@@ -164,4 +174,60 @@ export async function requireAuthedMember(
 ): Promise<Doc<"members"> | null> {
   const userId = await requireAuthUserId(ctx);
   return await findMemberByAuthUserId(ctx, userId);
+}
+
+/**
+ * 認証ゲートのビルダー（監査 H1）。
+ *
+ * 公開 query/mutation はこれまで各関数が `accessToken: v.optional(v.string())`
+ * を args に手書きし、handler 冒頭で requireAuthed/requireActor を呼ぶ方式
+ * だった。1関数でも呼び忘れると当該関数がインターネットに完全公開される
+ * ため、ゲートを「呼ぶもの」から「関数定義の型」へ移す: authedQuery /
+ * actorMutation で登録した関数は、accessToken の付与と
+ * ゲート呼び出しがビルダー自身の責務になり、呼び出し忘れが構造的に起きない。
+ *
+ * 対象外（ゲート形が異なるため据え置き）: tasks.listMine / members.me /
+ * members.ensureAgent。
+ */
+
+/** query 用ビルダー: requireAuthed を結線した query() のラッパー。 */
+export function authedQuery<A extends PropertyValidators, R>(
+  // accessToken はビルダーが付与する予約キー。呼び出し側の同名定義は
+  // spread で無警告に上書きされるため、型レベルで衝突を拒否する
+  argDefs: A & { accessToken?: never },
+  handler: (
+    ctx: QueryCtx,
+    args: ObjectType<A> & { accessToken?: string },
+  ) => Promise<R>,
+) {
+  return query({
+    args: { ...argDefs, accessToken: v.optional(v.string()) },
+    handler: async (ctx, args) => {
+      await requireAuthed(ctx, args.accessToken);
+      return await handler(ctx, args);
+    },
+  });
+}
+
+/**
+ * mutation 用ビルダー: requireActor を結線し、解決した actor（member）を
+ * handler の第3引数として渡す（既存呼び出し箇所の `const actor =
+ * await requireActor(...)` を置き換える）。
+ */
+export function actorMutation<A extends PropertyValidators, R>(
+  // 予約キー衝突の拒否は authedQuery と同旨
+  argDefs: A & { accessToken?: never },
+  handler: (
+    ctx: MutationCtx,
+    args: ObjectType<A> & { accessToken?: string },
+    actor: Doc<"members">,
+  ) => Promise<R>,
+) {
+  return mutation({
+    args: { ...argDefs, accessToken: v.optional(v.string()) },
+    handler: async (ctx, args) => {
+      const actor = await requireActor(ctx, args.accessToken);
+      return await handler(ctx, args, actor);
+    },
+  });
 }
