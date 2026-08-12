@@ -273,12 +273,22 @@ export function Board({
     }
     const dragged = activeTask;
     setActiveTask(null);
-    if (!over || !dragged) return; // L-1: boardRef.current → board closure
+    if (!over || !dragged) {
+      // 反例A対策: 列またぎ dragOver で一度でも局所適用していれば、盤面外
+      // ドロップ（over: null）等でこのまま return すると mutation も resync
+      // も走らず、ローカル board が server の真実と恒久的に desync する。
+      if (crossColumnDirtyRef.current) resyncFromServer();
+      return; // L-1: boardRef.current → board closure
+    }
 
     const activeId = active.id as string;
     const overId = over.id as string;
     const toCol = columnIndexOf(board, overId);
-    if (toCol === -1) return;
+    if (toCol === -1) {
+      // 反例A対策（上記 !over || !dragged 分岐と同様）。
+      if (crossColumnDirtyRef.current) resyncFromServer();
+      return;
+    }
 
     const targetStatus = board[toCol].status;
     const columnTasks = board[toCol].tasks;

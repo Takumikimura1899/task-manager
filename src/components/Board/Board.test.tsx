@@ -370,6 +370,64 @@ describe("Board の列またぎ dragOver → 元列復帰 → 同位置ドロッ
     // dirty だったため resync され、server 順（task_1, task_2）へ戻る。
     expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
   });
+
+  it("列またぎ dragOver 後に盤面外（over: null）でドロップしても mutation を呼ばず表示が server 順へ戻る", () => {
+    const a = createTask({ _id: "task_1" as Id<"tasks">, number: 1 });
+    const b = createTask({ _id: "task_2" as Id<"tasks">, number: 2 });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+    renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+      // 列またぎ: task_1 を in_progress へ
+      handlers.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "in_progress" },
+      } as DragOverEvent);
+    });
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).getByRole("link", {
+        name: "TASK-1",
+      }),
+    ).toBeInTheDocument();
+
+    const afterFirstOver = dndHandlers.current;
+    if (!afterFirstOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 元列（todo）へ復帰。task_2 の後ろへ挿入されるため、server 順
+      // （task_1, task_2）とローカル順（task_2, task_1）がずれる。
+      afterFirstOver.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "todo" },
+      } as DragOverEvent);
+    });
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    const afterSecondOver = dndHandlers.current;
+    if (!afterSecondOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 盤面外ドロップ（over: null）。!over || !dragged の早期 return に
+      // 到達する（Board.test.tsx の「ドラッグ中アニメーション抑止」テストが
+      // 実在経路として扱っている挙動と同じ入力）。
+      afterSecondOver.onDragEnd?.({
+        active: { id: "task_1" },
+        over: null,
+      } as DragEndEvent);
+    });
+
+    expect(mutate).not.toHaveBeenCalled();
+    // dirty だったため resync され、server 順（task_1, task_2）へ戻り、
+    // in_progress へ残留しない。
+    expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).queryByRole("link", {
+        name: "TASK-1",
+      }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("Board のドラッグ中アニメーション抑止（Issue #79）", () => {
