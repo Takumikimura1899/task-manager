@@ -4,11 +4,11 @@ import { mutation, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { memberRole } from "./schema";
 import {
+  actorMutation,
+  authedQuery,
   findMemberByAuthUserId,
-  requireActor,
   requireAgentEmail,
   requireAgentToken,
-  requireAuthed,
 } from "./lib/auth";
 import { generateInviteToken, sha256Hex } from "./lib/crypto";
 import { isValidEmail, normalizeEmail } from "./lib/validators";
@@ -35,16 +35,13 @@ function toMemberSummary(member: Doc<"members">) {
   };
 }
 
-export const create = mutation({
-  args: {
+export const create = actorMutation(
+  {
     name: v.string(),
     email: v.string(),
     role: memberRole,
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const email = normalizeEmail(args.email);
     if (!isValidEmail(email)) {
       throw new ConvexError(`メールアドレスが不正です: "${args.email}"`);
@@ -72,7 +69,7 @@ export const create = mutation({
     });
     return { memberId, inviteToken };
   },
-});
+);
 
 /**
  * 招待トークンの再発行（Issue #1 追補・救済経路）。
@@ -90,13 +87,11 @@ export const create = mutation({
  * - members.create と同一の設計: 平文トークンは呼び出し元へこの一度だけ返し、
  *   DB には SHA-256 ハッシュのみを保存する。
  */
-export const reissueInviteToken = mutation({
-  args: {
+export const reissueInviteToken = actorMutation(
+  {
     memberId: v.id("members"),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const actor = await requireActor(ctx, args.accessToken);
+  async (ctx, args, actor) => {
     if (actor.role !== "admin") {
       throw new ConvexError("この操作には admin 権限が必要です");
     }
@@ -117,13 +112,11 @@ export const reissueInviteToken = mutation({
 
     return { memberId: target._id, inviteToken };
   },
-});
+);
 
-export const getByEmail = query({
-  args: { email: v.string(), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const getByEmail = authedQuery(
+  { email: v.string() },
+  async (ctx, args) => {
     const member = await ctx.db
       .query("members")
       .withIndex("by_email", (q) => q.eq("email", normalizeEmail(args.email)))
@@ -132,7 +125,7 @@ export const getByEmail = query({
 
     return toMemberSummary(member);
   },
-});
+);
 
 /**
  * サインイン中の自分自身の member 情報を返す。
@@ -160,15 +153,10 @@ export const me = query({
   },
 });
 
-export const list = query({
-  args: { accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
-    const members = await ctx.db.query("members").collect();
-    // PII（email）を未認証クライアントへ露出しない。UI に必要な最小限のみ返す。
-    return members.map((m) => ({ _id: m._id, name: m.name }));
-  },
+export const list = authedQuery({}, async (ctx) => {
+  const members = await ctx.db.query("members").collect();
+  // PII（email）を未認証クライアントへ露出しない。UI に必要な最小限のみ返す。
+  return members.map((m) => ({ _id: m._id, name: m.name }));
 });
 
 /**

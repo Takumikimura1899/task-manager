@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
-import { type QueryCtx, mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { requireActor, requireAuthed } from "./lib/auth";
+import { actorMutation, authedQuery } from "./lib/auth";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import { findProjectByKey } from "./lib/projects";
@@ -45,8 +45,8 @@ async function tasksOfIssue(
 /**
  * Issue を作成する。INVARIANT-5 を満たすため、最初の Task を必ず同時に作成する。
  */
-export const create = mutation({
-  args: {
+export const create = actorMutation(
+  {
     project: v.id("projects"),
     title: v.string(),
     description: v.optional(v.string()),
@@ -57,11 +57,8 @@ export const create = mutation({
       priority: v.optional(taskPriority),
       assignee: v.optional(v.id("members")),
     }),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const actor = await requireActor(ctx, args.accessToken);
-
+  async (ctx, args, actor) => {
     const project = await ctx.db.get(args.project);
     if (project === null) {
       throw new ConvexError("指定されたプロジェクトが存在しません");
@@ -98,24 +95,21 @@ export const create = mutation({
 
     return { issue, task };
   },
-});
+);
 
 /**
  * タイトル・説明の更新（revision 楽観ロック・INVARIANT-2）。
  * status は子 Task 群からの派生（§5.1）のためここでは扱わない。
  */
-export const update = mutation({
-  args: {
+export const update = actorMutation(
+  {
     id: v.id("issues"),
     expectedRevision: v.number(),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const issue = await getIssueOrThrow(ctx, args.id);
     assertRevision(issue, args.expectedRevision);
 
@@ -126,21 +120,18 @@ export const update = mutation({
 
     await ctx.db.patch(issue._id, patch);
   },
-});
+);
 
 /**
  * Issue 削除（破壊的・§6 で Human-in-the-Loop 承認必須）。
  * 配下 Task と、その GitLink も併せて削除する（参照整合性の維持）。
  */
-export const remove = mutation({
-  args: {
+export const remove = actorMutation(
+  {
     id: v.id("issues"),
     expectedRevision: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireActor(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const issue = await getIssueOrThrow(ctx, args.id);
     assertRevision(issue, args.expectedRevision);
 
@@ -156,16 +147,14 @@ export const remove = mutation({
     }
     await ctx.db.delete(issue._id);
   },
-});
+);
 
 // --- Queries ----------------------------------------------------------------
 
 /** プロジェクトの Issue 一覧。各 Issue に派生ステータスと Task 数を付与する。 */
-export const list = query({
-  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const list = authedQuery(
+  { project: v.id("projects") },
+  async (ctx, args) => {
     const issues = await ctx.db
       .query("issues")
       .withIndex("by_project", (q) => q.eq("project", args.project))
@@ -196,7 +185,7 @@ export const list = query({
       };
     });
   },
-});
+);
 
 /**
  * 進行中（in_progress）の Issue だけを、表示に必要な最小フィールドで返す。
@@ -207,11 +196,9 @@ export const list = query({
  * list と異なり estimateTotal/actualTotal の reduce や Issue ドキュメント全体の
  * スプレッドは行わず、in_progress の Issue のみを最小フィールドで返す。
  */
-export const listInProgress = query({
-  args: { project: v.id("projects"), accessToken: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+export const listInProgress = authedQuery(
+  { project: v.id("projects") },
+  async (ctx, args) => {
     const issues = await ctx.db
       .query("issues")
       .withIndex("by_project", (q) => q.eq("project", args.project))
@@ -243,7 +230,7 @@ export const listInProgress = query({
     }
     return result;
   },
-});
+);
 
 /**
  * {key}#{number} 参照から project と issue を引く共通前段。
@@ -273,34 +260,28 @@ async function findIssueByRef(
  * getByRef は配下 Task と担当者名まで join するため、_id しか要らない
  * 更新系（MCP の update_issue 等）はこちらを使う。
  */
-export const getIdByRef = query({
-  args: {
+export const getIdByRef = authedQuery(
+  {
     projectKey: v.string(),
     number: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     return found === null ? null : found.issue._id;
   },
-});
+);
 
 /**
  * {key}#{number} 形式の参照から Issue を解決し、派生ステータスと配下 Task を返す。
  * 詳細画面の表示用に作成者名と各 Task の担当者名を付与する
  * （member の PII は返さず name のみ）。
  */
-export const getByRef = query({
-  args: {
+export const getByRef = authedQuery(
+  {
     projectKey: v.string(),
     number: v.number(),
-    accessToken: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    await requireAuthed(ctx, args.accessToken);
-
+  async (ctx, args) => {
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     if (found === null) return null;
     const { project, issue } = found;
@@ -328,4 +309,4 @@ export const getByRef = query({
       })),
     };
   },
-});
+);
