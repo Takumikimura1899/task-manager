@@ -141,6 +141,8 @@ export function useBoardSnapshot({
     if (dragging) return;
     if (pendingRef.current) return;
     const cols = columnsRef.current;
+    // 主同期 effect と同一コミットで両方発火しても、先に走った側の resync が
+    // syncedRef を更新し他方は差分チェックで no-op になる（順序非依存・冪等）。
     if (cols !== undefined && syncedRef.current !== cols) resyncFromServer();
   }, [recoverEpoch, dragging, resyncFromServer]);
 
