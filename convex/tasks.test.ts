@@ -151,7 +151,11 @@ describe("tasks.create", () => {
       expect(await loadTask(t, taskId)).toMatchObject(args);
     });
 
-    it("不正形式（ゼロ埋めなし）の日付は拒否する", async () => {
+    // 不正な日付形式（ゼロ埋めなし・非実在日等）のフル網羅は
+    // convex/lib/validators.test.ts の assertDateString が保証する。
+    // ここでは startDate/dueDate それぞれが実際にその検証へ配線されている
+    // （ラベルどおりの項目名でエラーになる）ことだけを固定する。
+    it("不正な日付（startDate/dueDate）は各項目名のエラーで拒否する", async () => {
       const t = setup();
       const { as } = await seedAuthedMember(t);
       const project = await seedProject(t);
@@ -161,22 +165,15 @@ describe("tasks.create", () => {
         as.mutation(api.tasks.create, {
           issue,
           title: "不正形式",
-          startDate: "2026-2-3",
+          startDate: "2026-2-3", // ゼロ埋めなし
         }),
       ).rejects.toThrowError("開始日");
-    });
-
-    it("非実在日（2月30日）は拒否する", async () => {
-      const t = setup();
-      const { as } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      const { issue } = await seedIssueWithTask(as, project);
 
       await expect(
         as.mutation(api.tasks.create, {
           issue,
           title: "非実在日",
-          dueDate: "2026-02-30",
+          dueDate: "2026-02-30", // 2月に30日は存在しない
         }),
       ).rejects.toThrowError("期限日");
     });
@@ -857,27 +854,14 @@ describe("tasks.updateFields", () => {
     expect(after.revision).toBe(2);
   });
 
+  // 代表2件（estimate/actual それぞれ1件）に絞る。フルの不正値網羅
+  // （負数・NaN・Infinity）は convex/lib/validators.test.ts の
+  // assertHours が保証する（本 mutation はそこへ委譲するだけの配線）。
   it.each([
     { name: "estimate に負数", args: { estimate: -1 }, message: "見積工数" },
     {
-      name: "estimate に NaN",
-      args: { estimate: Number.NaN },
-      message: "見積工数",
-    },
-    {
-      name: "estimate に Infinity",
-      args: { estimate: Number.POSITIVE_INFINITY },
-      message: "見積工数",
-    },
-    { name: "actual に負数", args: { actual: -1 }, message: "実績工数" },
-    {
       name: "actual に NaN",
       args: { actual: Number.NaN },
-      message: "実績工数",
-    },
-    {
-      name: "actual に Infinity",
-      args: { actual: Number.POSITIVE_INFINITY },
       message: "実績工数",
     },
   ])(

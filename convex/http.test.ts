@@ -30,7 +30,9 @@ import {
  *
  * 冪等マーキングとイベント反映は単一トランザクション（webhooks.processEvent）で
  * 行われる（Issue #12）。処理失敗（500）時にマーカーが残らず、GitHub の再送で
- * 再処理される（at-least-once）ことも「重複配信」の describe で固定する。
+ * 再処理される（at-least-once）ことのロールバック網羅は、processEvent を直接
+ * 呼ぶ webhooks.test.ts に委ねる（processEvent は本ハンドラの薄いラッパのため
+ * ここでは二重に検証しない）。
  */
 
 // findRepositoryByUrls が webhookSecret を復号するため、本番同様に環境変数で鍵を注入する
@@ -286,6 +288,48 @@ describe("POST /webhooks/github のリポジトリ解決失敗", () => {
   });
 });
 
+// --- イベント処理失敗（processEvent の throw、Issue #12） -----------------------
+
+describe("POST /webhooks/github の processEvent 失敗", () => {
+  // 検証対象は HTTP 層の try/catch（runMutation(processEvent) が throw した場合に
+  // 500 を返す写像）のみ。冪等マーカーごとロールバックされ再送で再処理できる
+  // ことの網羅は、processEvent を直接呼ぶ webhooks.test.ts に委ねる（ここでの
+  // 再検証はしない）。
+  it("processEvent が throw すると 500 を返す", async () => {
+    const t = setup();
+    const { task, repository } = await seedTaskWithRepository(t);
+    // 同一 (task, repository, type, externalRef) の GitLink を2件用意し、
+    // processEvent 内の upsertGitLink の .unique() を実際の経路で失敗させる
+    // （webhooks.test.ts の「イベント処理が失敗するとマーカーごとロールバック
+    // する」テストと同じデータ不整合の注入方法）。
+    await seedGitLink(
+      t,
+      { task, repository },
+      {
+        type: "commit",
+        externalRef: "abc123",
+        url: "https://old-1.example.com",
+      },
+    );
+    await seedGitLink(
+      t,
+      { task, repository },
+      {
+        type: "commit",
+        externalRef: "abc123",
+        url: "https://old-2.example.com",
+      },
+    );
+
+    const res = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+    });
+
+    expect(res.status).toBe(500);
+  });
+});
+
 // --- 冪等化（X-GitHub-Delivery） ------------------------------------------------
 
 describe("POST /webhooks/github の重複配信", () => {
@@ -339,58 +383,6 @@ describe("POST /webhooks/github の重複配信", () => {
     const links = await listTaskGitLinks(t, task);
     expect(links).toHaveLength(1);
     expect(links[0]).toMatchObject({ externalRef: "abc123" });
-  });
-
-  it("処理に失敗した配信は 500 を返し、マーカーが残らないため再送で処理される", async () => {
-    const t = setup();
-    const { task, repository } = await seedTaskWithRepository(t);
-    // 同一 (task, repository, type, externalRef) の GitLink を2件用意し、
-    // upsertGitLink の .unique() を実際の経路で失敗させる（データ不整合の注入）
-    await seedGitLink(
-      t,
-      { task, repository },
-      {
-        type: "commit",
-        externalRef: "abc123",
-        url: "https://old-1.example.com",
-      },
-    );
-    const extra = await seedGitLink(
-      t,
-      { task, repository },
-      {
-        type: "commit",
-        externalRef: "abc123",
-        url: "https://old-2.example.com",
-      },
-    );
-    const delivery = "delivery-retry";
-
-    const first = await postWebhook(t, {
-      event: "push",
-      payload: createPushPayload(),
-      delivery,
-    });
-    expect(first.status).toBe(500);
-    // 冪等マーカーは処理と同一トランザクションでロールバックされ、残らない
-    expect(await listWebhookDeliveries(t)).toHaveLength(0);
-
-    // 障害（データ不整合）を解消してから、GitHub の再送を模す
-    // （同一 delivery-id・同一ペイロード）。duplicate 扱いにならず処理される
-    await t.run((ctx) => ctx.db.delete(extra));
-    const second = await postWebhook(t, {
-      event: "push",
-      payload: createPushPayload(),
-      delivery,
-    });
-    expect(second.status).toBe(200);
-    expect(await second.text()).toBe("ok");
-    const links = await listTaskGitLinks(t, task);
-    expect(links).toHaveLength(1);
-    expect(links[0]).toMatchObject({
-      externalRef: "abc123",
-      url: `${TEST_REPO_REMOTE_URL}/commit/abc123`,
-    });
   });
 });
 

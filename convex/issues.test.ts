@@ -124,32 +124,16 @@ const statusOf = async (as: As, project: Id<"projects">) => {
 describe("issues.list（派生ステータス）", () => {
   const arrange = arrangeSingleIssue;
 
+  // 中間状態（in_progress/done への遷移）の deriveIssueStatus 自体の分岐網羅は
+  // convex/lib/issueStatus.test.ts が保証する。ここでは open（初期状態）と
+  // canceled（進捗の集計除外という副作用を伴う）の2点で、ミューテーション経由の
+  // 配線を固定する。
   it("全 Task が未着手なら open、進捗は active 基準で集計する", async () => {
     const t = setup();
     const { as, project } = await arrange(t);
 
     const issue = await statusOf(as, project);
     expect(issue).toMatchObject({ status: "open", taskCount: 1, doneCount: 0 });
-  });
-
-  it("着手済みの Task があれば in_progress になる", async () => {
-    const t = setup();
-    const { as, project, task } = await arrange(t);
-    await driveTo(as, task, "in_progress");
-
-    expect((await statusOf(as, project)).status).toBe("in_progress");
-  });
-
-  it("active が全て done なら done、doneCount に反映される", async () => {
-    const t = setup();
-    const { as, project, task } = await arrange(t);
-    await driveTo(as, task, "done");
-
-    expect(await statusOf(as, project)).toMatchObject({
-      status: "done",
-      taskCount: 1,
-      doneCount: 1,
-    });
   });
 
   it("active が空（全 Task が canceled）なら canceled、進捗は 0 件になる", async () => {
@@ -165,6 +149,22 @@ describe("issues.list（派生ステータス）", () => {
       status: "canceled",
       taskCount: 0, // canceled は集計対象外
       doneCount: 0,
+    });
+  });
+
+  // doneCount 集計（active.filter(status === "done").length）は issues.ts の
+  // list に直書きされたインラインロジックで、lib 層（issueStatus.ts）に
+  // 保証元を持たない。done の Task を含むケースを1本、実際に doneCount が
+  // 非0で加算されることまで固定する。
+  it("done の Task を含む Issue では doneCount に加算する", async () => {
+    const t = setup();
+    const { as, project, task } = await arrange(t);
+    await driveTo(as, task, "done");
+
+    expect(await statusOf(as, project)).toMatchObject({
+      status: "done",
+      taskCount: 1,
+      doneCount: 1,
     });
   });
 });

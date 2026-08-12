@@ -65,13 +65,11 @@ describe("App のルーティング", () => {
       </MemoryRouter>,
     );
 
+    // 見出し以降の表示内容（戻り導線の href 等）は NotFound.test.tsx が保証する。
+    // ここでは path="*" のフォールバックが NotFound をマウントすることのみ固定する。
     expect(
       screen.getByRole("heading", { name: "ページが見つかりませんでした" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "← 一覧へ" })).toHaveAttribute(
-      "href",
-      "/",
-    );
   });
 });
 

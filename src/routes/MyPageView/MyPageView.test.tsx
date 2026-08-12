@@ -134,16 +134,26 @@ describe("MyPageView の空状態", () => {
       "/",
     );
   });
-
-  it("担当 Task が done/canceled のみなら空状態を表示する", () => {
+  // done/canceled のみで空状態になるケース（除外ロジックそのもの）は
+  // groupMyTasksByDueDate の src/lib/myTasks.test.ts で保証済み。
+  it("担当 Task が done/canceled のみ（生配列は非空）なら空状態を表示する", () => {
+    // 空判定は groups.length（groupMyTasksByDueDate で done/canceled を除外した
+    // 導出後の配列）基準であることを固定する。tasks.length 基準への退行
+    // （done/canceled のみでも tasks 自体は非空なため空状態が出なくなる）を検知する。
     mocks.tasks = [
-      createTask({ _id: "done" as Id<"tasks">, status: "done" }),
-      createTask({ _id: "canceled" as Id<"tasks">, status: "canceled" }),
+      createTask({ _id: "task_done" as Id<"tasks">, status: "done" }),
+      createTask({
+        _id: "task_canceled" as Id<"tasks">,
+        number: 10,
+        status: "canceled",
+      }),
     ];
     renderMyPageView();
 
     expect(
-      screen.getByText(/担当している Task がありません。/),
+      screen.getByText(
+        /担当している Task がありません。Task の詳細画面の「担当者」で自分を選ぶと、ここに表示されます。/,
+      ),
     ).toBeInTheDocument();
   });
 });

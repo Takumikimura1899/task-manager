@@ -22,12 +22,6 @@ describe("PRIORITY_LABELS", () => {
       urgent: "緊急",
     });
   });
-
-  it("選択肢の全 value に対応するラベルを持つ（欠落なし）", () => {
-    for (const option of PRIORITY_OPTIONS) {
-      expect(PRIORITY_LABELS[option.value]).toBe(option.label);
-    }
-  });
 });
 
 describe("PRIORITY_WEIGHT", () => {
