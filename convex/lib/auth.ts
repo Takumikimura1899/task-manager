@@ -183,7 +183,7 @@ export async function requireAuthedMember(
  * を args に手書きし、handler 冒頭で requireAuthed/requireActor を呼ぶ方式
  * だった。1関数でも呼び忘れると当該関数がインターネットに完全公開される
  * ため、ゲートを「呼ぶもの」から「関数定義の型」へ移す: authedQuery /
- * authedMutation / actorMutation で登録した関数は、accessToken の付与と
+ * actorMutation で登録した関数は、accessToken の付与と
  * ゲート呼び出しがビルダー自身の責務になり、呼び出し忘れが構造的に起きない。
  *
  * 対象外（ゲート形が異なるため据え置き）: tasks.listMine / members.me /
@@ -199,23 +199,6 @@ export function authedQuery<A extends PropertyValidators, R>(
   ) => Promise<R>,
 ) {
   return query({
-    args: { ...argDefs, accessToken: v.optional(v.string()) },
-    handler: async (ctx, args) => {
-      await requireAuthed(ctx, args.accessToken);
-      return await handler(ctx, args);
-    },
-  });
-}
-
-/** mutation 用ビルダー: requireAuthed を結線した mutation() のラッパー。 */
-export function authedMutation<A extends PropertyValidators, R>(
-  argDefs: A,
-  handler: (
-    ctx: MutationCtx,
-    args: ObjectType<A> & { accessToken?: string },
-  ) => Promise<R>,
-) {
-  return mutation({
     args: { ...argDefs, accessToken: v.optional(v.string()) },
     handler: async (ctx, args) => {
       await requireAuthed(ctx, args.accessToken);
