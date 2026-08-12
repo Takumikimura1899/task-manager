@@ -435,23 +435,14 @@ export const deleteTask = actorMutation(
 
 // --- Queries ----------------------------------------------------------------
 
-export const listByProject = authedQuery(
-  { project: v.id("projects") },
-  async (ctx, args) => {
-    return await ctx.db
-      .query("tasks")
-      .withIndex("by_project", (q) => q.eq("project", args.project))
-      .collect();
-  },
-);
-
 /**
- * status / assignee / priority で絞り込んだプロジェクトの Task 一覧（MCP list_tasks 用）。
+ * status / assignee / priority で絞り込んだプロジェクトの Task 一覧
+ * （MCP list_tasks / task://{key}/mine 用）。
  * 全件転送してクライアント側でフィルタする代わりに、条件に応じたインデックスで
  * サーバー側に絞り込みを寄せる（Issue #19）:
  * - assignee 指定あり → by_assignee で担当者の Task だけ読み、project/status を照合
  * - status のみ → by_project_and_status で該当列だけ読む
- * - 指定なし → by_project（listByProject と同じ読み取り）
+ * - 指定なし → by_project の全件
  *
  * priority にはインデックスを追加せず、上記いずれの分岐でも読み取り後のメモリ
  * フィルタで適用する（既存の assignee×status 併用と同じ後段フィルタ方式・Issue #94）。
