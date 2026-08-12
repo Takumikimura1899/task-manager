@@ -10,10 +10,8 @@ import {
   getTask,
   listTaskGitLinks,
   listWebhookDeliveries,
-  seedAuthedMember,
   seedGitLink,
-  seedProject,
-  seedRepository,
+  seedTaskWithRepository,
   setup,
   type T,
 } from "../test/convexSupport";
@@ -156,23 +154,10 @@ const createPullRequestPayload = (
 });
 
 // --- シナリオ seed ------------------------------------------------------------
-
-/**
- * key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する。
- * Issue 作成は公開 API（認証ゲート配下）なので seedAuthedMember の `as` を使う。
- * Webhook 受信自体（postWebhook）は internal 関数のため無認証のままでよい。
- */
-const seedScenario = async (t: T) => {
-  const { as, memberId: member } = await seedAuthedMember(t);
-  const project = await seedProject(t);
-  const { issue, task } = await as.mutation(api.issues.create, {
-    project,
-    title: "課題",
-    firstTask: { title: "最初のタスク" },
-  });
-  const repository = await seedRepository(t, project);
-  return { as, project, member, issue, task, repository };
-};
+//
+// key=TASK のプロジェクトに Issue と TASK-1（backlog）、連携先リポジトリを用意する
+// seedTaskWithRepository（test/convexSupport.ts に一元化）を使う。Webhook 受信自体
+// （postWebhook）は internal 関数のため無認証のままでよい。
 
 /** Task を todo へ進める（branch_created / pr_opened の自動遷移が効く状態にする）。 */
 const toTodo = (as: As, task: Id<"tasks">) =>
@@ -187,7 +172,7 @@ const toTodo = (as: As, task: Id<"tasks">) =>
 describe("POST /webhooks/github の署名検証", () => {
   it("正しい署名の push を 200 で受理し、コミットの GitLink を反映する", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
+    const { task } = await seedTaskWithRepository(t);
 
     const res = await postWebhook(t, {
       event: "push",
@@ -213,7 +198,7 @@ describe("POST /webhooks/github の署名検証", () => {
     "$name リクエストは 404 で拒否し、何も反映しない",
     async ({ override }) => {
       const t = setup();
-      const { task } = await seedScenario(t);
+      const { task } = await seedTaskWithRepository(t);
 
       const res = await postWebhook(t, {
         event: "push",
@@ -229,7 +214,7 @@ describe("POST /webhooks/github の署名検証", () => {
 
   it("未登録リポジトリからのリクエストは 404 を返し、何も反映しない", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
+    const { task } = await seedTaskWithRepository(t);
 
     const res = await postWebhook(t, {
       event: "push",
@@ -245,7 +230,7 @@ describe("POST /webhooks/github の署名検証", () => {
 
   it("未登録リポジトリと署名不一致の応答は status・ボディともに同一で区別できない（Issue #18）", async () => {
     const t = setup();
-    await seedScenario(t);
+    await seedTaskWithRepository(t);
 
     // 未登録の remoteUrl へ、形式上正しい署名を付けて送る
     const unregistered = await postWebhook(t, {
@@ -267,7 +252,7 @@ describe("POST /webhooks/github の署名検証", () => {
 
   it("JSON として解釈できないボディは 400 を返す", async () => {
     const t = setup();
-    await seedScenario(t);
+    await seedTaskWithRepository(t);
 
     const res = await postWebhook(t, { event: "push", rawBody: "not-json" });
 
@@ -288,7 +273,7 @@ describe("POST /webhooks/github のリポジトリ解決失敗", () => {
   ])("$name 場合は貫通させず 500 を返し、何も反映しない", async ({ key }) => {
     const t = setup();
     // seed は正しい鍵（beforeEach で注入済み）で行い、受信時だけ構成を壊す
-    const { task } = await seedScenario(t);
+    const { task } = await seedTaskWithRepository(t);
     vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", key);
 
     const res = await postWebhook(t, {
@@ -308,7 +293,7 @@ describe("POST /webhooks/github の重複配信", () => {
   // 空文字ヘッダの送信で「欠落」と同じ経路を検証できる。
   it("x-github-delivery の無いリクエストは冪等化できないため 400 で拒否し、何も反映しない（Issue #16）", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
+    const { task } = await seedTaskWithRepository(t);
 
     const res = await postWebhook(t, {
       event: "push",
@@ -323,7 +308,7 @@ describe("POST /webhooks/github の重複配信", () => {
 
   it("同一 delivery-id の再送は duplicate として 200 で無視する", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
+    const { task } = await seedTaskWithRepository(t);
     const delivery = "delivery-1";
 
     const first = await postWebhook(t, {
@@ -358,7 +343,7 @@ describe("POST /webhooks/github の重複配信", () => {
 
   it("処理に失敗した配信は 500 を返し、マーカーが残らないため再送で処理される", async () => {
     const t = setup();
-    const { task, repository } = await seedScenario(t);
+    const { task, repository } = await seedTaskWithRepository(t);
     // 同一 (task, repository, type, externalRef) の GitLink を2件用意し、
     // upsertGitLink の .unique() を実際の経路で失敗させる（データ不整合の注入）
     await seedGitLink(
@@ -414,7 +399,7 @@ describe("POST /webhooks/github の重複配信", () => {
 describe("POST /webhooks/github のイベントディスパッチ", () => {
   it("create(branch) イベントでタスクが todo → in_progress に自動遷移する", async () => {
     const t = setup();
-    const { as, task } = await seedScenario(t);
+    const { as, task } = await seedTaskWithRepository(t);
     await toTodo(as, task);
 
     const res = await postWebhook(t, {
@@ -428,7 +413,7 @@ describe("POST /webhooks/github のイベントディスパッチ", () => {
 
   it("create イベントでも ref_type が branch 以外（tag）は無視する", async () => {
     const t = setup();
-    const { as, task } = await seedScenario(t);
+    const { as, task } = await seedTaskWithRepository(t);
     await toTodo(as, task);
 
     const res = await postWebhook(t, {
@@ -442,7 +427,7 @@ describe("POST /webhooks/github のイベントディスパッチ", () => {
 
   it("pull_request イベントで GitLink(pull_request) と自動遷移を反映する", async () => {
     const t = setup();
-    const { as, task } = await seedScenario(t);
+    const { as, task } = await seedTaskWithRepository(t);
     await toTodo(as, task);
 
     const res = await postWebhook(t, {
@@ -459,7 +444,7 @@ describe("POST /webhooks/github のイベントディスパッチ", () => {
 
   it("未対応イベント（issues 等）は 200 で受理し、何も反映しない", async () => {
     const t = setup();
-    const { task } = await seedScenario(t);
+    const { task } = await seedTaskWithRepository(t);
 
     const res = await postWebhook(t, {
       event: "issues",

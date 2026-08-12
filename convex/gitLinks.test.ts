@@ -5,12 +5,10 @@ import type { Id } from "./_generated/dataModel";
 import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   listTaskGitLinks,
-  seedAuthedMember,
   seedGitLink,
-  seedProject,
   seedRepository,
+  seedTaskWithRepository,
   setup,
-  type T,
 } from "../test/convexSupport";
 
 /**
@@ -28,19 +26,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllEnvs();
 });
-
-/** Project / 認証済み Member / Issue+Task / Repository 一式を用意する。 */
-const seedScenario = async (t: T) => {
-  const { as, memberId: member } = await seedAuthedMember(t);
-  const project = await seedProject(t);
-  const { issue, task } = await as.mutation(api.issues.create, {
-    project,
-    title: "課題",
-    firstTask: { title: "最初のタスク" },
-  });
-  const repository = await seedRepository(t, project);
-  return { as, project, member, issue, task, repository };
-};
 
 /** link ミューテーション引数のファクトリ（既定は PR #5 の open リンク）。 */
 const createLinkArgs = (
@@ -63,7 +48,7 @@ const createLinkArgs = (
 describe("gitLinks.link（冪等 upsert）", () => {
   it("新規の (task, repository, type, externalRef) は GitLink を insert する", async () => {
     const t = setup();
-    const { as, task, repository } = await seedScenario(t);
+    const { as, task, repository } = await seedTaskWithRepository(t);
 
     const id = await as.mutation(
       api.gitLinks.link,
@@ -85,7 +70,7 @@ describe("gitLinks.link（冪等 upsert）", () => {
 
   it("同一キーの再実行は既存リンクを patch し、件数を増やさず同じ id を返す", async () => {
     const t = setup();
-    const { as, task, repository } = await seedScenario(t);
+    const { as, task, repository } = await seedTaskWithRepository(t);
     const first = await as.mutation(
       api.gitLinks.link,
       createLinkArgs({ task, repository }),
@@ -115,7 +100,7 @@ describe("gitLinks.link（冪等 upsert）", () => {
     "$name 場合は別リンクとして insert する",
     async ({ overrides }) => {
       const t = setup();
-      const { as, task, repository } = await seedScenario(t);
+      const { as, task, repository } = await seedTaskWithRepository(t);
       await as.mutation(
         api.gitLinks.link,
         createLinkArgs({ task, repository }),
@@ -132,7 +117,7 @@ describe("gitLinks.link（冪等 upsert）", () => {
 
   it("repository が異なれば同じ type/externalRef でも別リンクになる", async () => {
     const t = setup();
-    const { as, project, task, repository } = await seedScenario(t);
+    const { as, project, task, repository } = await seedTaskWithRepository(t);
     const otherRepo = await seedRepository(t, project, {
       remoteUrl: "https://github.com/acme/other",
     });
@@ -150,7 +135,7 @@ describe("gitLinks.link（冪等 upsert）", () => {
     // 同定キーに task を含むため、同じ Git アーティファクトを
     // 複数タスクへ独立にリンクできる（既存リンクの task は付け替わらない）。
     const t = setup();
-    const { as, issue, task, repository } = await seedScenario(t);
+    const { as, issue, task, repository } = await seedTaskWithRepository(t);
     const second = await as.mutation(api.tasks.create, {
       issue,
       title: "2つ目",
@@ -178,7 +163,7 @@ describe("gitLinks.link（冪等 upsert）", () => {
 describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
   it("存在しないタスクを指定すると拒否し、リンクを作らない", async () => {
     const t = setup();
-    const { as, issue, task, repository } = await seedScenario(t);
+    const { as, issue, task, repository } = await seedTaskWithRepository(t);
     // Issue ごと削除して task の実体を消す（参照だけ残す）
     await as.mutation(api.issues.remove, { id: issue, expectedRevision: 0 });
 
@@ -193,7 +178,7 @@ describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
 
   it("存在しないリポジトリを指定すると拒否し、リンクを作らない", async () => {
     const t = setup();
-    const { as, task, repository } = await seedScenario(t);
+    const { as, task, repository } = await seedTaskWithRepository(t);
     await t.run((ctx) => ctx.db.delete(repository));
 
     await expect(
@@ -207,7 +192,7 @@ describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
 describe("gitLinks.listByTask", () => {
   it("指定タスクのリンクのみ返す（他タスクのリンクは含まない）", async () => {
     const t = setup();
-    const { as, issue, task, repository } = await seedScenario(t);
+    const { as, issue, task, repository } = await seedTaskWithRepository(t);
     const second = await as.mutation(api.tasks.create, {
       issue,
       title: "2つ目",
@@ -226,7 +211,7 @@ describe("gitLinks.listByTask", () => {
 
   it("リンクのないタスクは空配列を返す", async () => {
     const t = setup();
-    const { as, task } = await seedScenario(t);
+    const { as, task } = await seedTaskWithRepository(t);
 
     expect(await as.query(api.gitLinks.listByTask, { task })).toEqual([]);
   });

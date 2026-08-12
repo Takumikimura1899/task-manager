@@ -11,6 +11,7 @@ import type {
 } from "@dnd-kit/core";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ConvexError } from "convex/values";
 import {
   createMemoryRouter,
   MemoryRouter,
@@ -531,13 +532,13 @@ describe("Board のフィルタ中の D&D（Issue #92）", () => {
       } as DragEndEvent);
     });
 
-    // task3 を可視先頭（task1 の前）へ挿入する。フル列（未フィルタ）で task1 の
-    // 直前には何も無いため before=null。after=task1.rank（フル列で task1 の
-    // 直後は非表示 hidden だが、挿入位置は task1 の"前"なので登場しない）。
+    // task3 を可視先頭（task1 の前）へ挿入する。可視 next（task1）はあるが
+    // visiblePrev が無いため、position は beforeTask（task1 の直前）になる。
+    // フル列における実隣接（間に非表示 hidden がいないか等）の解決はサーバー
+    // 側（rankForInsert）の責務であり、クライアントはアンカー id を渡すだけ。
     expect(mutate).toHaveBeenCalledWith({
       id: "task_3",
-      before: null,
-      after: "a0",
+      position: { beforeTask: "task_1" },
       expectedRevision: task3.revision,
     });
   });
@@ -601,16 +602,14 @@ describe("Board のフィルタ中の D&D（Issue #92）", () => {
     });
 
     // 可視配列では [targetVisible, source] の末尾（targetVisible の直後）へ
-    // 挿入するが、フル列（未フィルタ）では targetVisible の直後に非表示
-    // targetHidden がいる。可視隣接だけ（before=targetVisible.rank,
-    // after=null）で rankBetween を呼ぶと targetHidden と同一 rank を
-    // 重複発行しうるため、before=targetVisible.rank, after=targetHidden.rank
-    // としてその間へ挿入する。
+    // 挿入するため、position は afterTask（targetVisible の直後）になる。
+    // フル列では targetVisible の直後に非表示 targetHidden がいるが、実隣接の
+    // 解決（targetHidden との rank 重複回避）はサーバー側（rankForInsert）の
+    // 責務であり、クライアントは可視アンカーの id を渡すだけでよい。
     expect(mutate).toHaveBeenCalledWith({
       id: "task_1",
       to: "in_progress",
-      before: "b0",
-      after: "b1",
+      position: { afterTask: "task_2" },
       expectedRevision: source.revision,
     });
   });
@@ -696,10 +695,9 @@ describe("Board のドロップ直後・mutation 未解決中のフィルタ変�
 /**
  * ドラッグの直列化（Issue #92 4周目レビュー指摘1・2）。
  * moveTask/transitionStatus の await 中（pendingMutationsRef > 0）に次の
- * ドラッグが始まると、(1) neighborRanksInFullColumn へ渡す fullColumn
- * （columns スナップショット）が stale 化して rank を誤配置し、(2) その
- * 状態の onDragCancel が進行中の楽観更新を巻き戻し、(3) catch の
- * resyncFromServer が別ドラッグの結果を clobber しうる。
+ * ドラッグが始まると、(1) その状態の onDragCancel が進行中の楽観更新を
+ * 巻き戻し、(2) catch の resyncFromServer が別ドラッグの結果を clobber
+ * しうる。
  *
  * 以前は Board の React state だけでドラッグを抑止していたが、dnd-kit 自体の
  * ドラッグライフサイクルは止められず、DragOverlay 無しでカードがポインタへ
@@ -957,7 +955,11 @@ describe("Board のドラッグ直列化（Issue #92 4周目レビュー指摘1�
       } as DragStartEvent);
     });
     await act(async () => {
-      rejectMutation(new Error("リビジョンが古いため反映できませんでした"));
+      // 実運用の競合エラーは ConvexError（assertRevision）で投げられる。
+      // errorMessage は ConvexError のみ data をそのまま表示する。
+      rejectMutation(
+        new ConvexError("リビジョンが古いため反映できませんでした"),
+      );
     });
     expect(
       screen.getByText("リビジョンが古いため反映できませんでした"),

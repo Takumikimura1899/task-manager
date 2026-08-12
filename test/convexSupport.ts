@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
 import { vi } from "vitest";
+import { api } from "../convex/_generated/api";
 import type { Doc, Id } from "../convex/_generated/dataModel";
 import { encryptSecret } from "../convex/lib/crypto";
 import schema from "../convex/schema";
@@ -147,6 +148,19 @@ export const seedGhostMember = async (
   return id;
 };
 
+/**
+ * Issue と最初の Task を Core API 経由で作成する（INVARIANT-5 を尊重）。
+ * 複数の結合テストファイル（tasks.test.ts / migrations.test.ts 等）が
+ * 同じ最小フィクスチャを個別に再定義していたため、二重管理を避けてここへ
+ * 一元化する。
+ */
+export const seedIssueWithTask = (as: As, project: Id<"projects">) =>
+  as.mutation(api.issues.create, {
+    project,
+    title: "課題",
+    firstTask: { title: "最初のタスク" },
+  });
+
 // --- MCP 経路（accessToken）のテスト用ヘルパ ---------------------------------
 
 /** requireAgentToken / requireActor の MCP 経路が期待する固定テストトークン。 */
@@ -230,6 +244,23 @@ export const seedRepository = async (
       webhookSecret: encrypted,
     }),
   );
+};
+
+/**
+ * Git 連携（webhook/reconcile）の結合テストが共通で使う最小フィクスチャ:
+ * 認証済み member・project・Issue+Task・repository（remoteUrl は
+ * TEST_REPO_REMOTE_URL=acme/repo）を一括で用意する。gitLinks.test.ts /
+ * http.test.ts / reconcile.test.ts / webhooks.test.ts が同一の
+ * `seedScenario` を個別に再定義していたため一元化する。
+ * 呼び出し前に WEBHOOK_ENCRYPTION_KEY の注入（vi.stubEnv）が必要
+ * （seedRepository の前提条件と同じ）。
+ */
+export const seedTaskWithRepository = async (t: T) => {
+  const { as, memberId: member } = await seedAuthedMember(t);
+  const project = await seedProject(t);
+  const { issue, task } = await seedIssueWithTask(as, project);
+  const repository = await seedRepository(t, project);
+  return { as, project, member, issue, task, repository };
 };
 
 /** gitLinks を1件 seed する（upsert 検証などで既存リンクを用意する用途）。 */
