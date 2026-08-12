@@ -151,6 +151,22 @@ describe("issues.list（派生ステータス）", () => {
       doneCount: 0,
     });
   });
+
+  // doneCount 集計（active.filter(status === "done").length）は issues.ts の
+  // list に直書きされたインラインロジックで、lib 層（issueStatus.ts）に
+  // 保証元を持たない。done の Task を含むケースを1本、実際に doneCount が
+  // 非0で加算されることまで固定する。
+  it("done の Task を含む Issue では doneCount に加算する", async () => {
+    const t = setup();
+    const { as, project, task } = await arrange(t);
+    await driveTo(as, task, "done");
+
+    expect(await statusOf(as, project)).toMatchObject({
+      status: "done",
+      taskCount: 1,
+      doneCount: 1,
+    });
+  });
 });
 
 // --- priority（未指定は "none" に正規化・作成時指定・更新） -------------------

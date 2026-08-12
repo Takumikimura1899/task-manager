@@ -10,6 +10,7 @@ import {
   getTask,
   listTaskGitLinks,
   listWebhookDeliveries,
+  seedGitLink,
   seedTaskWithRepository,
   setup,
   type T,
@@ -284,6 +285,48 @@ describe("POST /webhooks/github のリポジトリ解決失敗", () => {
 
     expect(res.status).toBe(500);
     expect(await listTaskGitLinks(t, task)).toHaveLength(0);
+  });
+});
+
+// --- イベント処理失敗（processEvent の throw、Issue #12） -----------------------
+
+describe("POST /webhooks/github の processEvent 失敗", () => {
+  // 検証対象は HTTP 層の try/catch（runMutation(processEvent) が throw した場合に
+  // 500 を返す写像）のみ。冪等マーカーごとロールバックされ再送で再処理できる
+  // ことの網羅は、processEvent を直接呼ぶ webhooks.test.ts に委ねる（ここでの
+  // 再検証はしない）。
+  it("processEvent が throw すると 500 を返す", async () => {
+    const t = setup();
+    const { task, repository } = await seedTaskWithRepository(t);
+    // 同一 (task, repository, type, externalRef) の GitLink を2件用意し、
+    // processEvent 内の upsertGitLink の .unique() を実際の経路で失敗させる
+    // （webhooks.test.ts の「イベント処理が失敗するとマーカーごとロールバック
+    // する」テストと同じデータ不整合の注入方法）。
+    await seedGitLink(
+      t,
+      { task, repository },
+      {
+        type: "commit",
+        externalRef: "abc123",
+        url: "https://old-1.example.com",
+      },
+    );
+    await seedGitLink(
+      t,
+      { task, repository },
+      {
+        type: "commit",
+        externalRef: "abc123",
+        url: "https://old-2.example.com",
+      },
+    );
+
+    const res = await postWebhook(t, {
+      event: "push",
+      payload: createPushPayload(),
+    });
+
+    expect(res.status).toBe(500);
   });
 });
 
