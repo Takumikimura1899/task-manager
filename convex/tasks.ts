@@ -89,6 +89,75 @@ export async function lastRankInColumn(
   return last === null ? null : last.rank;
 }
 
+/** move / transitionStatus の挿入位置引数（アンカー taskId 契約）。 */
+type InsertPosition = { afterTask: Id<"tasks"> } | { beforeTask: Id<"tasks"> };
+
+const positionValidator = v.union(
+  v.object({ afterTask: v.id("tasks") }),
+  v.object({ beforeTask: v.id("tasks") }),
+);
+
+/**
+ * 挿入位置（アンカー taskId）から実際に挿入すべき rank を発行する共有ヘルパー
+ * （move / transitionStatus で共有）。
+ *
+ * (a) この関数の役割はアンカー解決の一箇所化であり、読み取り形の統一ではない。
+ *     position 省略時（末尾挿入）は引き続き lastRankInColumn を使う――
+ *     max だけ必要な経路のために列全体を読むのは read amplification であり、
+ *     ここへ統合しない。
+ * (b) アンカーの rank をクライアントからヒントとして受け取り列の read を
+ *     省く最適化は禁止する。列全体を read set に含めることが、他クライアントが
+ *     同じ隙間へ同時に挿入した場合の OCC 競合検出（rank 重複防止）の唯一の
+ *     保証であり、アンカー1行だけを読んでも競合を検出できない。
+ */
+export async function rankForInsert(
+  ctx: MutationCtx,
+  project: Id<"projects">,
+  status: Doc<"tasks">["status"],
+  movingId: Id<"tasks">,
+  position: InsertPosition | undefined,
+): Promise<string> {
+  if (position === undefined) {
+    return rankBetween(await lastRankInColumn(ctx, project, status), null);
+  }
+
+  // index 末尾が rank のため既に昇順（board クエリと同じ前提）。
+  const others = (
+    await ctx.db
+      .query("tasks")
+      .withIndex("by_project_and_status", (q) =>
+        q.eq("project", project).eq("status", status),
+      )
+      .collect()
+  ).filter((t) => t._id !== movingId);
+
+  const anchorId =
+    "afterTask" in position ? position.afterTask : position.beforeTask;
+  const anchorIndex = others.findIndex((t) => t._id === anchorId);
+  if (anchorIndex === -1) {
+    // 列違い・削除済み・自分自身・別プロジェクトのいずれか。クライアントが
+    // アンカーを計算した時点から webhook 自動遷移・30分毎の reconcile による
+    // 並行更新でアンカーの列が変わることは珍しくないため、再試行を促す。
+    throw new ConvexError(
+      "挿入位置の基準 Task が見つかりませんでした。もう一度お試しください。",
+    );
+  }
+
+  const [before, after] =
+    "afterTask" in position
+      ? [others[anchorIndex].rank, others[anchorIndex + 1]?.rank ?? null]
+      : [others[anchorIndex - 1]?.rank ?? null, others[anchorIndex].rank];
+
+  if (before !== null && after !== null && before >= after) {
+    // 既存データに重複 rank がある（migrations.repairDuplicateRanks の対象）。
+    throw new ConvexError(
+      "並び順のデータが壊れています。管理者に repairDuplicateRanks の実行を依頼してください。",
+    );
+  }
+
+  return rankBetween(before, after);
+}
+
 /**
  * Task を採番して backlog 列の末尾に挿入する内部ヘルパー。
  * 公開 create と issues.create（最初の Task 生成）から共有し、
@@ -236,9 +305,13 @@ export const updateFields = mutation({
 
 /**
  * ステータス遷移（§5 状態機械）。遷移先列へ再配置する。
- * - before/after を指定すると、その隣接 rank の間へ挿入する（列をまたぐ D&D の
- *   ドロップ位置を尊重する）。同一列並べ替え（move）と同じ OrderedRank 方式。
- * - 未指定なら遷移先列の末尾に置く（MCP/自動化など位置を持たない呼び出し向け）。
+ * - position（{afterTask} または {beforeTask}、アンカーとなる taskId）を
+ *   指定すると、遷移先列でそのアンカーに実際に隣接する rank の間へ挿入する
+ *   （列をまたぐ D&D のドロップ位置を尊重する）。同一列並べ替え（move）と
+ *   同じ OrderedRank 方式で、アンカーの実隣接はサーバーがトランザクション内で
+ *   遷移先列（project × to）を読み直して解決する（rankForInsert）。
+ * - 未指定なら遷移先列の末尾に置く（MCP/自動化など位置を持たない呼び出し向け。
+ *   既存の lastRankInColumn 経路へ委譲する）。
  *
  * 破壊的遷移（done/canceled）の Human-in-the-Loop 承認はホスト（MCP/UI）の責務で、
  * ここでは遷移の妥当性のみを強制する。
@@ -248,8 +321,7 @@ export const transitionStatus = mutation({
     id: v.id("tasks"),
     to: taskStatus,
     expectedRevision: v.number(),
-    before: v.optional(v.union(v.string(), v.null())),
-    after: v.optional(v.union(v.string(), v.null())),
+    position: v.optional(positionValidator),
     accessToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -262,12 +334,13 @@ export const transitionStatus = mutation({
       throw new ConvexError(`状態遷移できません: ${task.status} → ${args.to}`);
     }
 
-    // 位置指定（before/after のいずれか）があればその間へ、なければ列の末尾へ。
-    // 列ごとに rank 空間は独立する。
-    const positioned = args.before !== undefined || args.after !== undefined;
-    const rank = positioned
-      ? rankBetween(args.before ?? null, args.after ?? null)
-      : rankBetween(await lastRankInColumn(ctx, task.project, args.to), null);
+    const rank = await rankForInsert(
+      ctx,
+      task.project,
+      args.to,
+      task._id,
+      args.position,
+    );
 
     await ctx.db.patch(task._id, {
       status: args.to,
@@ -302,15 +375,17 @@ export const assign = mutation({
 });
 
 /**
- * 同一列内の D&D 並べ替え。before/after は移動先の隣接タスクの rank
- * （先頭は before=null、末尾は after=null）。隣接の rank を書き換えずに
- * 間へ挿入する（基本設計書 §3 OrderedRank）。
+ * 同一列内の D&D 並べ替え。position（{afterTask} または {beforeTask}、
+ * アンカーとなる taskId）で移動先を指定する。アンカーに実際に隣接する rank の
+ * 間へ挿入し、隣接タスクの rank 自体は書き換えない（基本設計書 §3
+ * OrderedRank）。アンカーの実隣接はサーバーがトランザクション内で対象列
+ * （project × status）を読み直して解決する（rankForInsert）。呼び出し元は
+ * Board のみのため position は必須（省略を末尾扱いで黙認しない）。
  */
 export const move = mutation({
   args: {
     id: v.id("tasks"),
-    before: v.union(v.string(), v.null()),
-    after: v.union(v.string(), v.null()),
+    position: positionValidator,
     expectedRevision: v.number(),
     accessToken: v.optional(v.string()),
   },
@@ -320,8 +395,16 @@ export const move = mutation({
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
 
+    const rank = await rankForInsert(
+      ctx,
+      task.project,
+      task.status,
+      task._id,
+      args.position,
+    );
+
     await ctx.db.patch(task._id, {
-      rank: rankBetween(args.before, args.after),
+      rank,
       ...nextMeta(task),
     });
   },

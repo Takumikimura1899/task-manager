@@ -24,11 +24,12 @@ import {
   applyBoardFilter,
   type BoardColumn,
   type BoardTask,
-  neighborRanksInFullColumn,
+  insertAnchor,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
+import { convexErrorMessage } from "../../lib/convexErrorMessage";
 import {
   EMPTY_FILTER,
   type FilterState,
@@ -62,10 +63,19 @@ function columnIndexOf(board: BoardColumn[], id: string): number {
 const DRAG_LOCKED_MESSAGE =
   "直前の操作を反映しています。少し待ってからもう一度お試しください";
 
+/**
+ * ConvexError（サーバーが意図して投げたバリデーション/競合エラー）は data を
+ * そのまま表示し、それ以外（旧タブの ArgumentValidationError 等、英語の
+ * 複数行ダンプになりうる予期しない例外）は規約準拠の日本語へフォールバックする
+ * （convexErrorMessage.ts と同方針）。フォールバック時は生エラーを
+ * console.error に残す（サイレント失敗の回避）。
+ */
 function errorMessage(e: unknown): string {
-  if (e instanceof ConvexError) return String(e.data);
-  if (e instanceof Error) return e.message;
-  return "操作に失敗しました";
+  if (!(e instanceof ConvexError)) console.error(e);
+  return convexErrorMessage(
+    e,
+    "操作に失敗しました。ページを再読み込みしてください。",
+  );
 }
 
 export function Board({
@@ -110,10 +120,8 @@ export function Board({
   // DragOverlay 無しでのポインタ追従、ドロップ時の汎用エラー残留）を止め
   // られず、見た目が壊れたまま操作できてしまっていた。ドラッグの発生源
   // （dnd-kit の useSortable）側で止めることで、in-flight mutation を常に
-  // 高々1つに保ち、(1) neighborRanksInFullColumn へ渡す fullColumn（columns
-  // スナップショット）が新しいドラッグの間に stale化する、(2) handleDragCancel
-  // が進行中の楽観更新を巻き戻す、(3) catch の resyncFromServer が別ドラッグを
-  // clobber する、も合わせて防ぐ。
+  // 高々1つに保ち、(1) handleDragCancel が進行中の楽観更新を巻き戻す、
+  // (2) catch の resyncFromServer が別ドラッグを clobber する、も合わせて防ぐ。
   const [dragLocked, setDragLocked] = useState(false);
   // dragLocked（state）が useSortable の disabled に反映されるのは再レンダー後の
   // ため、反映前のごく短い競合ウィンドウでは dnd-kit がドラッグを開始できて
@@ -282,13 +290,11 @@ export function Board({
   }
 
   // rank 不変条件（Issue #92）: board はフィルタ適用後（可視カードのみ）の配列
-  // のため、可視カードの前後だけから rank を発行すると、間に隠れたカードと
-  // 同一 rank を重複発行しうる（rankBetween は決定的関数のため、同じ
-  // before/after からは常に同じ rank が生成される。重複すると rank 昇順の
-  // board クエリの順序が不定になり、後続の rankBetween(x, x) は例外を投げる）。
-  // そのため neighborRanksInFullColumn で「フル列（未フィルタの server
-  // snapshot）における可視アンカーの直近実隣接」を求め、その間へ挿入する。
-  // 挿入位置は常にフル列で本当に隣接する2枚の間になるため、rank は一意になる。
+  // のため、可視カードの前後だけからクライアントが rank 文字列を計算すると、
+  // 間に隠れたカードと同一 rank を重複発行しうる。この解決はサーバー側
+  // （convex/tasks.ts の rankForInsert）がトランザクション内で対象列を
+  // フルで読み直して行うため、ここではドロップ位置の可視アンカー（直前/直後の
+  // 可視カード）から position（アンカー taskId）を求めて渡すだけでよい。
   async function handleDragEnd({ active, over }: DragEndEvent) {
     // 幽霊ドラッグのドロップは黙って捨てず、拒否した理由をユーザーへ伝える
     // （サイレント失敗の回避）。ただし案内を出すのはドロップ時点でまだ
@@ -315,8 +321,6 @@ export function Board({
     let columnTasks = current[toCol].tasks;
     const oldIndex = columnTasks.findIndex((t) => t._id === activeId);
     const overIndex = columnTasks.findIndex((t) => t._id === overId);
-    const fullColumn =
-      columns?.find((c) => c.status === targetStatus)?.tasks ?? [];
 
     try {
       let mutationPromise: Promise<unknown>;
@@ -338,34 +342,33 @@ export function Board({
                 i === toCol ? { ...c, tasks: columnTasks } : c,
               ),
         );
-        const { before, after } = neighborRanksInFullColumn(
-          fullColumn,
-          dragged._id,
+        const position = insertAnchor(
           columnTasks[targetIndex - 1] ?? null,
           columnTasks[targetIndex + 1] ?? null,
         );
+        // targetIndex !== oldIndex（resolveSameColumnTargetIndex が null を
+        // 返さなかった）ということは、同一列に少なくとももう1枚タスクが
+        // あるため、insertAnchor は必ずアンカーを返す（tasks.move の
+        // position は必須）。undefined になることは実際には無い到達不能分岐。
+        if (position === undefined) return;
         mutationPromise = moveTask({
           id: dragged._id,
-          before: before ?? null,
-          after: after ?? null,
+          position,
           expectedRevision: dragged.revision,
         });
       } else {
         // 列をまたぐ移動は状態遷移（状態機械で検証）。
         // handleDragOver でカードは既に遷移先列のドロップ位置へ配置済みなので、
-        // その近傍 rank を渡して末尾固定ではなく任意位置へ挿入する。
+        // そのアンカーを渡して末尾固定ではなく任意位置へ挿入する。
         const movedIndex = columnTasks.findIndex((t) => t._id === activeId);
-        const { before, after } = neighborRanksInFullColumn(
-          fullColumn,
-          dragged._id,
+        const position = insertAnchor(
           columnTasks[movedIndex - 1] ?? null,
           columnTasks[movedIndex + 1] ?? null,
         );
         mutationPromise = transitionStatus({
           id: dragged._id,
           to: targetStatus,
-          before,
-          after,
+          position,
           expectedRevision: dragged.revision,
         });
       }

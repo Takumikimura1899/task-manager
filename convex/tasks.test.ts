@@ -1,6 +1,6 @@
 // @vitest-environment edge-runtime
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
   type As,
@@ -292,6 +292,20 @@ describe("tasks.transitionStatus", () => {
 
 // --- move / 位置指定遷移（D&D 並べ替え・OrderedRank, §3） --------------------
 
+/**
+ * move/transitionStatus の position 契約（アンカー taskId・rank-issue-from-
+ * full-column の修正）。以前は「可視カードの隣接 rank 文字列」をクライアントが
+ * 計算して渡しており、フィルタで隠れたカードの間に挿入すると同一 rank を
+ * 重複発行しうった（Issue #92 監査で発覚）。現在は「アンカーとなる taskId」を
+ * クライアントから受け取り、サーバーがトランザクション内で対象列
+ * （project × status）をフルで読み直して実隣接を再導出する
+ * （convex/tasks.ts の rankForInsert）。
+ *
+ * convex-test はトランザクションをグローバルロックで直列化するため OCC の
+ * retry は再現できない。ここでの検証は「直列に呼んでも壊れない」ことの
+ * 確認までで、真の並行安全性はこの設計（列全体を read set に含める）に
+ * 依拠する。
+ */
 describe("tasks の並べ替え（rank・D&D スコープ）", () => {
   /** backlog に Task を3件並べ、それぞれの id を作成順（rank 昇順）で返す。 */
   const seedThreeBacklogTasks = async (t: T) => {
@@ -306,10 +320,10 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
       issue,
       title: "C",
     });
-    return { as, project, a, b, c };
+    return { as, project, issue, a, b, c };
   };
 
-  it("move は before/after の間へ rank を割り当て、列の並びを入れ替える", async () => {
+  it("move は afterTask の直後へ rank を割り当て、列の並びを入れ替える", async () => {
     const t = setup();
     const { as, project, a, b, c } = await seedThreeBacklogTasks(t);
 
@@ -319,11 +333,10 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     const aRank = (await loadTask(t, a)).rank;
     const bRank = (await loadTask(t, b)).rank;
 
-    // c を a と b の間へ移動（before=a, after=b）
+    // c を a の直後（a と b の間）へ移動
     await as.mutation(api.tasks.move, {
       id: c,
-      before: aRank,
-      after: bRank,
+      position: { afterTask: a },
       expectedRevision: 0,
     });
 
@@ -334,17 +347,14 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     expect(moved.revision).toBe(1);
   });
 
-  it("move は先頭（before=null）へ移動でき、列の先頭に来る", async () => {
+  it("move は先頭（beforeTask）へ移動でき、列の先頭に来る", async () => {
     const t = setup();
     const { as, project, a, c } = await seedThreeBacklogTasks(t);
 
-    // c を先頭へ移動。先頭に来るには「現在の先頭（a）の前」= after に a の rank を渡す。
-    // before=null は先頭より前（左端）を意味し、rankBetween(null, aRank) で a より前の rank になる。
-    const aRank = (await loadTask(t, a)).rank;
+    // c を現在の先頭（a）の直前へ移動 = 列の先頭に来る。
     await as.mutation(api.tasks.move, {
       id: c,
-      before: null,
-      after: aRank,
+      position: { beforeTask: a },
       expectedRevision: 0,
     });
 
@@ -354,7 +364,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     expect(order).toEqual([3, 1, 2]);
   });
 
-  it("transitionStatus は列をまたいで before/after の間へ挿入する（D&D ドロップ位置・#8）", async () => {
+  it("transitionStatus は列をまたいで position（afterTask/beforeTask）の間へ挿入する（D&D ドロップ位置・#8）", async () => {
     const t = setup();
     const { as, project, a, b, c } = await seedThreeBacklogTasks(t);
 
@@ -371,16 +381,12 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     });
     expect(await columnNumbers(as, project, "todo")).toEqual([1, 2]);
 
-    const aRank = (await loadTask(t, a)).rank;
-    const bRank = (await loadTask(t, b)).rank;
-
-    // c を backlog から todo の a・b の間へドロップ
+    // c を backlog から todo の a の直後（a・b の間）へドロップ
     await as.mutation(api.tasks.transitionStatus, {
       id: c,
       to: "todo",
       expectedRevision: 0,
-      before: aRank,
-      after: bRank,
+      position: { afterTask: a },
     });
 
     // todo は [a, c, b] = [1, 3, 2]、c は todo へ移り backlog から消える
@@ -389,7 +395,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     expect((await loadTask(t, c)).status).toBe("todo");
   });
 
-  it("位置指定なしの transitionStatus は遷移先列の末尾に置く", async () => {
+  it("position 未指定の transitionStatus を同一列へ2連発すると両方末尾に積み上がり、rank が相異なる", async () => {
     const t = setup();
     const { as, project, a, b } = await seedThreeBacklogTasks(t);
 
@@ -406,6 +412,200 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
     });
 
     expect(await columnNumbers(as, project, "todo")).toEqual([1, 2]);
+    const aRank = (await loadTask(t, a)).rank;
+    const bRank = (await loadTask(t, b)).rank;
+    expect(aRank).not.toBe(bRank);
+    expect(aRank < bRank).toBe(true);
+  });
+
+  it("同一アンカー（afterTask）への連続 move は毎回フル列を再読込し、rank が一意なまま積み上がる", async () => {
+    const t = setup();
+    const { as, project, a, b, c } = await seedThreeBacklogTasks(t);
+    // 初期 [a, b, c]
+
+    // c を a の直後へ（1番目の move）→ [a, c, b]
+    await as.mutation(api.tasks.move, {
+      id: c,
+      position: { afterTask: a },
+      expectedRevision: 0,
+    });
+    expect(await columnNumbers(as, project, "backlog")).toEqual([1, 3, 2]);
+
+    // 同じアンカー a の直後へ b を移動（2番目の move）。rankForInsert が
+    // 毎回フル列を読み直すため、c の新しい rank を踏まえた狭間が発行される
+    // （クライアントが計算した古い隣接 rank をそのまま使う実装なら、ここで
+    // c と同一 rank を再発行してしまう）。
+    await as.mutation(api.tasks.move, {
+      id: b,
+      position: { afterTask: a },
+      expectedRevision: 0,
+    });
+
+    // 2番目に移動した b が a の直後に来て、1番目の c は3番目へ押し出される
+    // → [a, b, c] = [1, 2, 3]
+    expect(await columnNumbers(as, project, "backlog")).toEqual([1, 2, 3]);
+
+    const ranks = [
+      (await loadTask(t, a)).rank,
+      (await loadTask(t, b)).rank,
+      (await loadTask(t, c)).rank,
+    ];
+    expect(new Set(ranks).size).toBe(3);
+    expect(ranks[0] < ranks[1] && ranks[1] < ranks[2]).toBe(true);
+  });
+
+  it("重複 rank の隙間への move は破損データとして ConvexError になるが、repairDuplicateRanks 実行後は同じ move が成功する", async () => {
+    const t = setup();
+    const { as, project, a, b, c } = await seedThreeBacklogTasks(t);
+
+    // b・c の rank を意図的に重複させる（実運用で発生していた重複発行を模す）。
+    const bRank = (await loadTask(t, b)).rank;
+    await t.run((ctx) => ctx.db.patch(c, { rank: bRank }));
+
+    // a を b の直後（= b・c の間、重複した隙間）へ挿入しようとすると破損検出。
+    await expect(
+      as.mutation(api.tasks.move, {
+        id: a,
+        position: { afterTask: b },
+        expectedRevision: 0,
+      }),
+    ).rejects.toThrowError("並び順のデータが壊れています");
+
+    await t.mutation(internal.migrations.repairDuplicateRanks, {});
+
+    // 修復後は同じ move が成功する。
+    await as.mutation(api.tasks.move, {
+      id: a,
+      position: { afterTask: b },
+      expectedRevision: 0,
+    });
+    const order = await columnNumbers(as, project, "backlog");
+    expect(new Set(order).size).toBe(3);
+  });
+
+  /**
+   * フィルタで隠れたカードの回帰ネット移送テスト（episode: rank-issue-from-
+   * full-column）。以前はこの「フル列内の実隣接を求める」計算をクライアント側
+   * （src/lib/board.ts）が可視アンカーから行っていたが、position 契約への
+   * 移行でこの責務はサーバー側（rankForInsert）へ完全に移った。ここでは
+   * その移設後の挙動として、遷移先列に非表示カード（UI ではフィルタで
+   * 隠れる想定）が挟まっていても、可視アンカー指定の挿入が実隣接の狭間へ
+   * 収まることを検証する。
+   */
+  it("遷移先列に非表示カードが挟まっていても、可視アンカー指定の挿入は実隣接の狭間へ収まる（rank-issue-from-full-column）", async () => {
+    const t = setup();
+    const { as, project } = await seedThreeBacklogTasks(t);
+    const { issue, task: v1 } = await seedIssueWithTask(as, project);
+    const hidden = await as.mutation(api.tasks.create, {
+      issue,
+      title: "hidden",
+    });
+    const v2 = await as.mutation(api.tasks.create, { issue, title: "v2" });
+    const source = await as.mutation(api.tasks.create, {
+      issue,
+      title: "source",
+    });
+
+    // in_progress 列へ v1 → hidden → v2 の順に末尾追加して並べる。
+    const advanceToInProgress = async (id: Id<"tasks">) => {
+      await as.mutation(api.tasks.transitionStatus, {
+        id,
+        to: "todo",
+        expectedRevision: 0,
+      });
+      await as.mutation(api.tasks.transitionStatus, {
+        id,
+        to: "in_progress",
+        expectedRevision: 1,
+      });
+    };
+    await advanceToInProgress(v1);
+    await advanceToInProgress(hidden);
+    await advanceToInProgress(v2);
+
+    const v1Rank = (await loadTask(t, v1)).rank;
+    const hiddenRank = (await loadTask(t, hidden)).rank;
+
+    // source を、可視アンカー v1 の直後（クライアントは hidden の存在を
+    // 意識しない）を指定して in_progress へ遷移する。
+    await as.mutation(api.tasks.transitionStatus, {
+      id: source,
+      to: "todo",
+      expectedRevision: 0,
+    });
+    await as.mutation(api.tasks.transitionStatus, {
+      id: source,
+      to: "in_progress",
+      expectedRevision: 1,
+      position: { afterTask: v1 },
+    });
+
+    // v1 → source → hidden → v2 の順になる（source は v1 と hidden の
+    // 実隣接の間に収まる）。
+    const board = await as.query(api.tasks.board, { project });
+    const inProgress = board.find((c) => c.status === "in_progress")!;
+    expect(inProgress.tasks.map((task) => task._id)).toEqual([
+      v1,
+      source,
+      hidden,
+      v2,
+    ]);
+
+    const sourceRank = (await loadTask(t, source)).rank;
+    expect(v1Rank < sourceRank && sourceRank < hiddenRank).toBe(true);
+
+    const allRanks = await Promise.all(
+      [v1, hidden, v2, source].map(async (id) => (await loadTask(t, id)).rank),
+    );
+    expect(new Set(allRanks).size).toBe(4);
+  });
+
+  describe("rankForInsert のアンカー異常系（move / transitionStatus 共通）", () => {
+    it("列違いのアンカー（アンカーが対象列にいない）は ConvexError（再試行を促す文言）", async () => {
+      const t = setup();
+      const { as, a, b } = await seedThreeBacklogTasks(t);
+      // b を todo へ移し、backlog 列から出す
+      await as.mutation(api.tasks.transitionStatus, {
+        id: b,
+        to: "todo",
+        expectedRevision: 0,
+      });
+
+      await expect(
+        as.mutation(api.tasks.move, {
+          id: a,
+          position: { afterTask: b }, // b は backlog 列にいない
+          expectedRevision: 0,
+        }),
+      ).rejects.toThrowError("見つかりませんでした");
+    });
+
+    it("削除済みのアンカーは ConvexError", async () => {
+      const t = setup();
+      const { as, a, b } = await seedThreeBacklogTasks(t);
+      await t.run((ctx) => ctx.db.delete(b));
+
+      await expect(
+        as.mutation(api.tasks.move, {
+          id: a,
+          position: { afterTask: b },
+          expectedRevision: 0,
+        }),
+      ).rejects.toThrowError("見つかりませんでした");
+    });
+
+    it("自分自身をアンカーに指定すると ConvexError（除外後に見つからない）", async () => {
+      const t = setup();
+      const { as, a } = await seedThreeBacklogTasks(t);
+
+      await expect(
+        as.mutation(api.tasks.move, {
+          id: a,
+          position: { afterTask: a },
+          expectedRevision: 0,
+        }),
+      ).rejects.toThrowError("見つかりませんでした");
+    });
   });
 });
 

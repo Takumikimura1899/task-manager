@@ -1,4 +1,4 @@
-import type { Doc } from "../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { FilterState } from "./filterParams";
 import type { TaskStatus } from "./taskMeta";
 
@@ -6,7 +6,12 @@ import type { TaskStatus } from "./taskMeta";
  * カンバンD&Dの純粋ロジック（DB・React非依存・テスト容易）。
  *
  * 並べ替え後の列（rank昇順を維持したタスク列）における、移動カードの
- * 挿入位置から tasks.move へ渡す before / after の近傍 rank を導く。
+ * 挿入位置から tasks.move / tasks.transitionStatus へ渡すアンカー taskId
+ * （position 引数）を導く。実際の rank 計算・フル列における実隣接の解決は
+ * サーバー側（convex/tasks.ts の rankForInsert）が行う――フィルタで隠れた
+ * カードとの rank 重複を避けるにはトランザクション内でフル列を読み直す必要が
+ * あり、クライアントの手元データだけでは保証できないため（rank-issue-from-
+ * full-column の教訓・過去はここで rank 文字列を直接計算していた）。
  */
 
 /**
@@ -44,54 +49,31 @@ export function applyBoardFilter(
   }));
 }
 
+/** move / transitionStatus へ渡す position 引数（アンカー taskId 契約）。 */
+export type InsertPosition =
+  | { afterTask: Id<"tasks"> }
+  | { beforeTask: Id<"tasks"> }
+  | undefined;
+
 /**
- * ドロップ位置の可視アンカー（直前/直後の可視カード）から、フル列順における
- * 実際の隣接 rank ペアを求める。可視隣接だけで計算すると、間に隠れたカードと
- * 同一 rank を重複発行しうる（rankBetween は決定的）ため、必ず「フル列で
- * 本当に隣接している2枚の間」を返す。
- * - visiblePrev があれば「visiblePrev の直後」に挿入（before=visiblePrev.rank、
- *   after=フル列で visiblePrev の次のカードの rank）
+ * ドロップ位置の可視アンカー（直前/直後の可視カード）から、move /
+ * transitionStatus へ渡す position（アンカー taskId）を導く。
+ * - visiblePrev があれば「visiblePrev の直後」に挿入
  * - visiblePrev が無く visibleNext があれば「visibleNext の直前」に挿入
- *   （after=visibleNext.rank、before=フル列で visibleNext の前のカードの rank）
- * - どちらも無ければフル列の末尾へ（before=フル列末尾の rank、after=undefined）
- * fullColumn にドラッグ中カードが含まれる場合は除外して計算する。
+ * - どちらも無ければ末尾へ（undefined。サーバーが lastRankInColumn へ委譲する）
+ *
+ * prev を next より優先する（両方あるとき prev を採る）のは、D&D のドロップは
+ * 常に「このカードの直後に置く」という直感的な操作だから。next 優先に反転すると
+ * 「次のカードの前に置く」意味になり、prev が存在する通常ケース（隙間へのドロップ）
+ * で挙動が変わってしまう非対称な仕様のため、分岐順序は固定する。
  */
-export function neighborRanksInFullColumn(
-  fullColumn: readonly BoardTask[],
-  draggedId: string,
+export function insertAnchor(
   visiblePrev: BoardTask | null,
   visibleNext: BoardTask | null,
-): { before: string | undefined; after: string | undefined } {
-  const others = fullColumn.filter((t) => t._id !== draggedId);
-
-  if (visiblePrev) {
-    const prevIndex = others.findIndex((t) => t._id === visiblePrev._id);
-    // アンカー未検出はサイレント失敗させず警告する（プロジェクト規約）。
-    // fullColumn（server snapshot）と可視アンカー（board 由来）の取得元が
-    // ずれた場合に起きうる想定外ケースのため、原因調査の手がかりを残す。
-    // 挙動自体は従来どおり after を undefined にフォールバックする。
-    if (prevIndex === -1) {
-      console.warn(
-        `neighborRanksInFullColumn: visiblePrev（taskId=${visiblePrev._id}）がフル列に見つかりません`,
-      );
-    }
-    const next = prevIndex === -1 ? undefined : others[prevIndex + 1];
-    return { before: visiblePrev.rank, after: next?.rank };
-  }
-
-  if (visibleNext) {
-    const nextIndex = others.findIndex((t) => t._id === visibleNext._id);
-    if (nextIndex === -1) {
-      console.warn(
-        `neighborRanksInFullColumn: visibleNext（taskId=${visibleNext._id}）がフル列に見つかりません`,
-      );
-    }
-    const prev = nextIndex <= 0 ? undefined : others[nextIndex - 1];
-    return { before: prev?.rank, after: visibleNext.rank };
-  }
-
-  const last = others[others.length - 1];
-  return { before: last?.rank, after: undefined };
+): InsertPosition {
+  if (visiblePrev) return { afterTask: visiblePrev._id };
+  if (visibleNext) return { beforeTask: visibleNext._id };
+  return undefined;
 }
 
 /**

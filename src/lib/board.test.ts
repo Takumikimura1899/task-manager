@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   applyBoardFilter,
   type BoardColumn,
   type BoardTask,
-  neighborRanksInFullColumn,
+  insertAnchor,
   pickCardFirstCollisions,
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
@@ -47,121 +47,30 @@ const columnOfCard = (id: string) =>
   id === "task9" ? "in_review" : id.startsWith("task") ? "in_progress" : null;
 
 /**
- * フィルタ中の rank 重複バグ（Issue #92 修正1）の回帰テスト。
- * 可視カードの隣接だけから rank を発行すると、間に隠れたカードと同一 rank を
- * 重複発行しうる（rankBetween は決定的）。neighborRanksInFullColumn は
- * 可視アンカーから「フル列（未フィルタの server snapshot）における
- * 直近の実隣接」を求めることでこれを防ぐ。
+ * ドロップ位置の可視アンカーから move / transitionStatus へ渡す position
+ * （アンカー taskId）を導く。実際の rank 計算・フル列における実隣接の解決は
+ * サーバー側（convex/tasks.ts の rankForInsert）が担うため、ここでは
+ * 「どちらのアンカーを・どちらのキーで返すか」の分岐だけを検証する
+ * （フル列との重複防止テストは convex/tasks.test.ts へ移設済み）。
  */
-describe("neighborRanksInFullColumn", () => {
-  const a = createTask({ _id: "a" as Id<"tasks">, rank: "a" });
-  const m = createTask({ _id: "m" as Id<"tasks">, rank: "m" });
-  const z = createTask({ _id: "z" as Id<"tasks">, rank: "z" });
+describe("insertAnchor", () => {
+  const prev = createTask({ _id: "prev" as Id<"tasks"> });
+  const next = createTask({ _id: "next" as Id<"tasks"> });
 
-  it.each([
-    // [ケース, draggedId, visiblePrev, visibleNext, before, after]
-    ["先頭へ移動", "a", null, m, undefined, "m"],
-    ["中間へ移動", "m", a, z, "a", "z"],
-    ["末尾へ移動", "z", m, null, "m", undefined],
-  ] as const)(
-    "フィルタ無し（可視=フル）では素直な前後隣接の rank になる: %s",
-    (_case, draggedId, visiblePrev, visibleNext, before, after) => {
-      const fullColumn = [a, m, z];
-      expect(
-        neighborRanksInFullColumn(
-          fullColumn,
-          draggedId,
-          visiblePrev,
-          visibleNext,
-        ),
-      ).toEqual({ before, after });
-    },
-  );
-
-  it("非表示カードが可視アンカーの間にある場合、フル列の実隣接 rank を返す（重複防止の再現）", () => {
-    // 隠れた b は可視の a/c の間で rankBetween(a0, a2) 相当の rank を既に
-    // 持っている。可視隣接（a0, a2）だけで計算すると同一 rank を再発行し
-    // 重複してしまうため、a の直後（フル列で実際に隣接する b の手前）へ
-    // 挿入されることを確認する。
-    const visibleA = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
-    const hiddenB = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
-    const visibleC = createTask({ _id: "c" as Id<"tasks">, rank: "a2" });
-    const fullColumn = [visibleA, hiddenB, visibleC];
-
-    expect(
-      neighborRanksInFullColumn(fullColumn, "dragged", visibleA, visibleC),
-    ).toEqual({ before: "a0", after: "a1" });
+  it("visiblePrev があれば afterTask（prev の直後）を返す", () => {
+    expect(insertAnchor(prev, null)).toEqual({ afterTask: "prev" });
   });
 
-  it("先頭挿入: visiblePrev が無い場合はフル列で visibleNext の直前へ挿入する", () => {
-    const first = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
-    const second = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
-    const fullColumn = [first, second];
-
-    expect(
-      neighborRanksInFullColumn(fullColumn, "dragged", null, first),
-    ).toEqual({ before: undefined, after: "a0" });
+  it("visiblePrev が無く visibleNext があれば beforeTask（next の直前）を返す", () => {
+    expect(insertAnchor(null, next)).toEqual({ beforeTask: "next" });
   });
 
-  it("可視0枚で末尾追加: 可視アンカーが無ければフル列末尾の rank を before にする", () => {
-    const hiddenA = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
-    const hiddenB = createTask({ _id: "b" as Id<"tasks">, rank: "a1" });
-    const fullColumn = [hiddenA, hiddenB];
-
-    expect(
-      neighborRanksInFullColumn(fullColumn, "dragged", null, null),
-    ).toEqual({ before: "a1", after: undefined });
+  it("どちらも無ければ undefined（末尾。サーバーが lastRankInColumn へ委譲する）", () => {
+    expect(insertAnchor(null, null)).toBeUndefined();
   });
 
-  it("ドラッグ中カードの除外: fullColumn に自身が含まれていても除外して隣接を計算する", () => {
-    const before = createTask({ _id: "a" as Id<"tasks">, rank: "a0" });
-    const dragged = createTask({ _id: "dragged" as Id<"tasks">, rank: "a1" });
-    const after = createTask({ _id: "b" as Id<"tasks">, rank: "a2" });
-    // fullColumn は移動前の server snapshot なので dragged 自身も含む
-    const fullColumn = [before, dragged, after];
-
-    expect(
-      neighborRanksInFullColumn(fullColumn, "dragged", before, null),
-    ).toEqual({ before: "a0", after: "a2" });
-  });
-
-  /**
-   * アンカー未検出時の警告（再レビュー指摘5）。visiblePrev/visibleNext が
-   * fullColumn に見つからない（board 側のデータと server snapshot がずれた
-   * 想定外ケース）場合、サイレント失敗させず console.warn で taskId を残す
-   * （プロジェクト規約「サイレント失敗の回避」）。フォールバック挙動自体は
-   * 変えない。
-   */
-  it("visiblePrev がフル列に見つからない場合は console.warn し、after を undefined にフォールバックする", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const missingPrev = createTask({
-      _id: "missing" as Id<"tasks">,
-      rank: "x",
-    });
-    const fullColumn = [a, m, z]; // missing は含まれない
-
-    expect(
-      neighborRanksInFullColumn(fullColumn, "dragged", missingPrev, null),
-    ).toEqual({ before: "x", after: undefined });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("missing"));
-
-    warnSpy.mockRestore();
-  });
-
-  it("visibleNext がフル列に見つからない場合は console.warn し、before を undefined にフォールバックする", () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const missingNext = createTask({
-      _id: "missing" as Id<"tasks">,
-      rank: "x",
-    });
-    const fullColumn = [a, m, z]; // missing は含まれない
-
-    expect(
-      neighborRanksInFullColumn(fullColumn, "dragged", null, missingNext),
-    ).toEqual({ before: undefined, after: "x" });
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("missing"));
-
-    warnSpy.mockRestore();
+  it("prev と next 両方あるときは prev を優先する（非対称仕様の固定）", () => {
+    expect(insertAnchor(prev, next)).toEqual({ afterTask: "prev" });
   });
 });
 
