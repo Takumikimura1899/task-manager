@@ -134,10 +134,15 @@ export function useBoardSnapshot({
   // effect だけが古い snapshot と新 filter の混線を避ける。
   useEffect(() => {
     if (recoverEpoch === 0) return;
+    // mutation 解決直後の窓で次のドラッグが既に始まっている場合は回収を
+    // 見送る（ドラッグ中の board を丸ごと置換するとカードがテレポートする）。
+    // 見送った分は、ドラッグ終了時に主同期 effect（deps に dragging を含む）
+    // が syncedRef との差分で回収する。
+    if (dragging) return;
     if (pendingRef.current) return;
     const cols = columnsRef.current;
     if (cols !== undefined && syncedRef.current !== cols) resyncFromServer();
-  }, [recoverEpoch, resyncFromServer]);
+  }, [recoverEpoch, dragging, resyncFromServer]);
 
   // board の派生元スナップショット（syncedRef.current）から計算する。pending
   // 中は live な columns だけが進んでも board は据え置かれるため、ここも

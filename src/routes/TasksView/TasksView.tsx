@@ -10,9 +10,11 @@ import s from "./TasksView.module.css";
  * priority/assignee のみに閉じる（status フィルタは提供しない。Issue #92）。
  *
  * FilterBar は Board 側の早期 return（board === null）の影響を受けないよう
- * ここで独立に設置する。value/onChange は useFilterParams（URL 外在化）
- * 経由で、Board 内部でも同じ URL を購読する useFilterParams が動くため
- * 両者は常に同じフィルタ状態を見る。
+ * ここで独立に設置する。フィルタ状態の所有者は TasksView のみ（URL 外在化の
+ * useFilterParams をここでだけ購読し、Board へは filter/onClearFilter を
+ * props で渡す）。FilterBar と Board が同じフィルタ状態を見るのは同一の
+ * filter を配っているからであり、Board に useFilterParams を再導入して
+ * 二重購読へ戻さないこと。
  */
 export function TasksView() {
   const { selected, members } = useSelectedProject();
