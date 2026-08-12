@@ -115,6 +115,15 @@ export function Board({
   // ローカル board を書き換えないよう、開始時に印を付けて over/end/cancel を
   // 一貫して無効化するバックストップ（Issue #92 5周目レビュー指摘）。
   const lockedDragRef = useRef(false);
+  // 反例A対策: handleDragOver が列をまたいでローカル board を書き換えた
+  // （from !== to が成立した）ことがあるかを記録する。列またぎ→元列復帰の
+  // 往復後、handleDragEnd が同一列 no-op（over===active 等）へ落ちると、
+  // mutation を呼ばずに早期 return し、その後の同期 effect も発火しない
+  // ため、往復で生じたローカル順序のずれが server の真実へ永久に復元
+  // されない（既存バグ）。dirty のときだけ、その早期 return の直前で
+  // resyncFromServer して復元する。新しいドラッグ開始時（handleDragStart）
+  // にリセットする。
+  const crossColumnDirtyRef = useRef(false);
 
   /** syncedRef/appliedFilterRef を更新しつつ、server snapshot から board を再構築する。 */
   const resyncFromServer = useCallback(
@@ -225,6 +234,7 @@ export function Board({
       lockedDragRef.current = true;
       return;
     }
+    crossColumnDirtyRef.current = false;
     setError(null);
     setActiveTask(findTask(active.id as string));
   }
@@ -244,6 +254,9 @@ export function Board({
 
       const movingIdx = prev[from].tasks.findIndex((t) => t._id === activeId);
       if (movingIdx === -1) return prev;
+
+      // 列またぎの局所適用が実際に発生した（反例A対策・上記コメント参照）。
+      crossColumnDirtyRef.current = true;
 
       // 変化した from / to の2列だけ複製し、他列は同一参照を保つ（#80）。
       // ポインタ移動のたびに呼ばれるため、全列複製だと memo 化した
@@ -325,7 +338,14 @@ export function Board({
           overIndex,
           columnTasks.length,
         );
-        if (targetIndex === null) return;
+        if (targetIndex === null) {
+          // 反例A対策: 列またぎ dragOver で一度でも局所適用していれば、この
+          // 同一列 no-op（over===active 等）は mutation を呼ばないため、
+          // このまま return するとローカル board が server の真実と
+          // 恒久的に desync する（往復で生じた並び順のずれが残る）。
+          if (crossColumnDirtyRef.current && columns) resyncFromServer(columns);
+          return;
+        }
         columnTasks = arrayMove(columnTasks, oldIndex, targetIndex);
         const position = insertAnchor(
           columnTasks[targetIndex - 1] ?? null,
@@ -337,7 +357,11 @@ export function Board({
         // position は必須）。undefined になることは実際には無い到達不能分岐。
         // L-2: この確定を setBoard より前に置き、position が undefined の
         // ときに楽観更新だけ適用して mutation を呼ばない矛盾状態を防ぐ。
-        if (position === undefined) return;
+        if (position === undefined) {
+          // 反例A対策（上記 targetIndex === null 分岐と同様）。
+          if (crossColumnDirtyRef.current && columns) resyncFromServer(columns);
+          return;
+        }
         setBoard((prev) =>
           prev === null
             ? prev

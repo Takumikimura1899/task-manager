@@ -309,6 +309,69 @@ describe("Board のドラッグキャンセル（Issue #78）", () => {
   });
 });
 
+/**
+ * 反例A（既存バグ）: 列またぎ dragOver で一度でもローカル board を書き換えた
+ * 後、元の列へ復帰してから同位置（over===active）でドロップすると、
+ * handleDragEnd の同一列 no-op 早期 return（targetIndex === null）は
+ * mutation を呼ばないため、その後の同期 effect も発火しない。列またぎの
+ * 往復で局所配列の並びが server 順とずれていても resync されず、ローカル
+ * board が恒久的に desync していた。dirty（列またぎ適用の実績）を ref で
+ * 記録し、この早期 return の直前で dirty のときだけ resyncFromServer する
+ * ことで、server 順へ確実に復元する。
+ */
+describe("Board の列またぎ dragOver → 元列復帰 → 同位置ドロップ（反例A）", () => {
+  it("列またぎ→元列復帰→同位置ドロップで mutation を呼ばず表示が server 順へ戻る", () => {
+    const a = createTask({ _id: "task_1" as Id<"tasks">, number: 1 });
+    const b = createTask({ _id: "task_2" as Id<"tasks">, number: 2 });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+    renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+      // 列またぎ: task_1 を in_progress へ
+      handlers.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "in_progress" },
+      } as DragOverEvent);
+    });
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).getByRole("link", {
+        name: "TASK-1",
+      }),
+    ).toBeInTheDocument();
+
+    const afterFirstOver = dndHandlers.current;
+    if (!afterFirstOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 元列（todo）へ復帰。task_2 の後ろへ挿入されるため、server 順
+      // （task_1, task_2）とローカル順（task_2, task_1）がずれる。
+      afterFirstOver.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "todo" },
+      } as DragOverEvent);
+    });
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    const afterSecondOver = dndHandlers.current;
+    if (!afterSecondOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 同位置ドロップ（over===active）。resolveSameColumnTargetIndex が
+      // null を返す no-op 早期 return に到達する。
+      afterSecondOver.onDragEnd?.({
+        active: { id: "task_1" },
+        over: { id: "task_1" },
+      } as DragEndEvent);
+    });
+
+    expect(mutate).not.toHaveBeenCalled();
+    // dirty だったため resync され、server 順（task_1, task_2）へ戻る。
+    expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
+  });
+});
+
 describe("Board のドラッグ中アニメーション抑止（Issue #79）", () => {
   const startDrag = () => {
     const handlers = dndHandlers.current;
