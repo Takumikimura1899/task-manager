@@ -192,7 +192,9 @@ export async function requireAuthedMember(
 
 /** query 用ビルダー: requireAuthed を結線した query() のラッパー。 */
 export function authedQuery<A extends PropertyValidators, R>(
-  argDefs: A,
+  // accessToken はビルダーが付与する予約キー。呼び出し側の同名定義は
+  // spread で無警告に上書きされるため、型レベルで衝突を拒否する
+  argDefs: A & { accessToken?: never },
   handler: (
     ctx: QueryCtx,
     args: ObjectType<A> & { accessToken?: string },
@@ -213,7 +215,8 @@ export function authedQuery<A extends PropertyValidators, R>(
  * await requireActor(...)` を置き換える）。
  */
 export function actorMutation<A extends PropertyValidators, R>(
-  argDefs: A,
+  // 予約キー衝突の拒否は authedQuery と同旨
+  argDefs: A & { accessToken?: never },
   handler: (
     ctx: MutationCtx,
     args: ObjectType<A> & { accessToken?: string },
