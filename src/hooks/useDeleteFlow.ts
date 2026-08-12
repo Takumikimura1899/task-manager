@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { convexErrorMessage } from "../lib/convexErrorMessage";
+import { reportConvexError } from "../lib/convexErrorMessage";
 
 /**
  * 詳細画面（Issue / Task）共通の削除確認フロー状態管理フック。
@@ -52,7 +52,7 @@ export function useDeleteFlow({
       // 済み）に古い削除対象の失敗が紛れ込むのを防ぐ（成功パスの
       // numberRef.current === target ガードと対称・レビュー指摘・Issue #104）。
       if (numberRef.current === target) {
-        setError(convexErrorMessage(err, "削除に失敗しました"));
+        setError(reportConvexError(err, "削除に失敗しました"));
       }
       setDeletingNumber(null);
       return; // confirming は維持し、開いたパネルにエラーを表示する

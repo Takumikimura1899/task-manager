@@ -15,7 +15,6 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useMutation, useQuery } from "convex/react";
-import { ConvexError } from "convex/values";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
@@ -29,7 +28,7 @@ import {
   pickPointerScopedCollisions,
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
-import { convexErrorMessage } from "../../lib/convexErrorMessage";
+import { reportConvexError } from "../../lib/convexErrorMessage";
 import {
   EMPTY_FILTER,
   type FilterState,
@@ -62,21 +61,6 @@ function columnIndexOf(board: BoardColumn[], id: string): number {
 /** mutation 反映待ち中に開始されたドラッグを拒否したときの案内。 */
 const DRAG_LOCKED_MESSAGE =
   "直前の操作を反映しています。少し待ってからもう一度お試しください";
-
-/**
- * ConvexError（サーバーが意図して投げたバリデーション/競合エラー）は data を
- * そのまま表示し、それ以外（旧タブの ArgumentValidationError 等、英語の
- * 複数行ダンプになりうる予期しない例外）は規約準拠の日本語へフォールバックする
- * （convexErrorMessage.ts と同方針）。フォールバック時は生エラーを
- * console.error に残す（サイレント失敗の回避）。
- */
-function errorMessage(e: unknown): string {
-  if (!(e instanceof ConvexError)) console.error(e);
-  return convexErrorMessage(
-    e,
-    "操作に失敗しました。ページを再読み込みしてください。",
-  );
-}
 
 export function Board({
   project,
@@ -388,7 +372,12 @@ export function Board({
       // 成功した時点で用済みなので残さない（失敗時は catch が上書きする）。
       setError((prev) => (prev === DRAG_LOCKED_MESSAGE ? null : prev));
     } catch (e) {
-      setError(errorMessage(e));
+      setError(
+        reportConvexError(
+          e,
+          "操作に失敗しました。ページを再読み込みしてください。",
+        ),
+      );
       // 失敗時は server の真実へ戻す。
       if (columns) resyncFromServer(columns);
     }
