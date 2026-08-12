@@ -93,26 +93,28 @@ export function resolveSameColumnTargetIndex(
 }
 
 /**
- * 複数段階の衝突検出結果から「カード」を「列コンテナ」より優先して選ぶ。
+ * 衝突検出結果から「カード」を「列コンテナ」より優先して選ぶ。
  *
  * over が列コンテナに解決されると同一列ドロップは末尾へフォールバックする
- * （resolveSameColumnTargetIndex）ため、いずれかの段階でカードに当たっていれば
- * 必ずカード側を over にする。列 body は列の全高を占めており、ポインタが盤面内に
- * ある限り先頭段階（pointerWithin）は列を返す——そこで打ち切らず後続段階から
- * カードを探すことで、カード間の隙間へのドロップが「末尾へ移動」と誤判定される
- * のを防ぐ。どの段階にもカードが無ければ、最初に衝突があった段階の結果
- * （列コンテナ＝本当に余白へのドロップ）を返す。
+ * （resolveSameColumnTargetIndex）ため、カードに当たっていれば必ずカード側を
+ * over にする。カードが無ければ入力をそのまま返す（列コンテナ＝余白への
+ * ドロップ、または空）。
+ *
+ * 呼び出し経路は2つ（Board.tsx の collisionDetection 参照）:
+ * - ポインタあり: pickPointerScopedCollisions が #65 の列スコープ解決を担う
+ *   （こちらは呼ばれない）
+ * - ポインタなし（KeyboardSensor）: rectIntersection → 本関数 →
+ *   closestCorners の順でフォールバックする。closestCorners は距離ベースで
+ *   交差していなくても必ず候補を返すため、カード優先の段階に含めると
+ *   空列へのドロップが最寄りカード（ドラッグ中の自分自身など）に吸われて
+ *   no-op になる——最終手段に限定し、本関数には渡さないこと。
  */
 export function pickCardFirstCollisions<T extends { id: string | number }>(
-  stages: readonly (readonly T[])[],
+  hits: readonly T[],
   columnIds: ReadonlySet<string>,
 ): T[] {
-  for (const stage of stages) {
-    const cards = stage.filter((c) => !columnIds.has(String(c.id)));
-    if (cards.length > 0) return cards;
-  }
-  const fallback = stages.find((stage) => stage.length > 0);
-  return fallback ? [...fallback] : [];
+  const cards = hits.filter((c) => !columnIds.has(String(c.id)));
+  return cards.length > 0 ? cards : [...hits];
 }
 
 /**

@@ -166,7 +166,7 @@ export function Board({
       },
     );
     if (scoped) return scoped;
-    const overlapping = pickCardFirstCollisions([rectHits], COLUMN_IDS);
+    const overlapping = pickCardFirstCollisions(rectHits, COLUMN_IDS);
     return overlapping.length > 0 ? overlapping : closestCorners(args);
   }, []);
 
