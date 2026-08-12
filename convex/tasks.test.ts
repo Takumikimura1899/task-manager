@@ -11,6 +11,7 @@ import {
   seedAuthedMember,
   seedGhostMember,
   seedGitLink,
+  seedIssueWithTask,
   seedMember,
   seedProject,
   seedRepository,
@@ -26,7 +27,8 @@ import {
  * ここでは「ミューテーションが不変条件を正しく結線しているか」を、
  * 観測可能な最終状態（DB のドキュメント）で検証する（古典学派・結合テスト層）。
  * DB は convex-test のインメモリ実装で、Core ロジックを実物で通す。
- * seedProject / seedMember / getTask は test/convexSupport.ts に一元化。
+ * seedProject / seedMember / getTask / seedIssueWithTask は
+ * test/convexSupport.ts に一元化。
  *
  * 全公開関数は認証ゲート（Issue #1 PR2）配下のため、呼び出しは
  * seedAuthedMember が返す `as`（認証済み identity）で行う。createdBy 引数は
@@ -44,14 +46,6 @@ const loadTask = async (t: T, id: Id<"tasks">) => {
   expect(task).not.toBeNull();
   return task!;
 };
-
-/** Issue と最初の Task を Core API 経由で作成する（INVARIANT-5 を尊重）。 */
-const seedIssueWithTask = (as: As, project: Id<"projects">) =>
-  as.mutation(api.issues.create, {
-    project,
-    title: "課題",
-    firstTask: { title: "最初のタスク" },
-  });
 
 /** issue 配下に startDate/dueDate 付きの Task を作り、id を返す（precondition 構築用）。 */
 const seedDatedTask = (
@@ -469,7 +463,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
         position: { afterTask: b },
         expectedRevision: 0,
       }),
-    ).rejects.toThrowError("並び順のデータが壊れています");
+    ).rejects.toThrowError("並び順のデータに問題が発生しています");
 
     await t.mutation(internal.migrations.repairDuplicateRanks, {});
 

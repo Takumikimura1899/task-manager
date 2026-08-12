@@ -149,9 +149,16 @@ export async function rankForInsert(
       : [others[anchorIndex - 1]?.rank ?? null, others[anchorIndex].rank];
 
   if (before !== null && after !== null && before >= after) {
-    // 既存データに重複 rank がある（migrations.repairDuplicateRanks の対象）。
+    // 既存データに重複 rank がある（convex/migrations.ts の
+    // repairDuplicateRanks で修復可能）。ただし修復は internalMutation で
+    // アプリ内の admin ロールから実行する手段が無い（CLI/dashboard を持つ
+    // 開発者のみ実行可能）ため、UI 文言では実行不能な手順・内部関数名を
+    // 案内しない。開発者向けの詳細（再現に必要な情報）はここに残す。
+    console.error(
+      `rankForInsert: 重複 rank を検出しました project=${project} status=${status} anchor=${anchorId}`,
+    );
     throw new ConvexError(
-      "並び順のデータが壊れています。管理者に repairDuplicateRanks の実行を依頼してください。",
+      "並び順のデータに問題が発生しています。管理者にお問い合わせください。",
     );
   }
 
