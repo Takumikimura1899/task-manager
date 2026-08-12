@@ -20,6 +20,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import type { BoardTask } from "../../lib/board";
+import { EMPTY_FILTER, useFilterParams } from "../../lib/filterParams";
 import {
   type TaskStatus,
   TASK_STATUS_LABELS,
@@ -88,10 +89,31 @@ const createColumns = (
     tasks: tasksByStatus[status] ?? [],
   }));
 
+/**
+ * Board は L-6 で filter/onClearFilter を props 化し、useFilterParams（URL）
+ * の所有権は呼び出し元（TasksView）に移った。URL 駆動のフィルタテストを
+ * 生かすため、TasksView の実結線（useFilterParams → Board props）を再現する
+ * 薄いラッパ。
+ */
+function BoardHarness({
+  project = "project_1" as Id<"projects">,
+  projectKey = "TASK",
+}: { project?: Id<"projects">; projectKey?: string } = {}) {
+  const [filter, setFilter] = useFilterParams();
+  return (
+    <Board
+      filter={filter}
+      onClearFilter={() => setFilter(EMPTY_FILTER)}
+      project={project}
+      projectKey={projectKey}
+    />
+  );
+}
+
 const renderBoard = (initialEntries: string[] = ["/"]) =>
   render(
     <MemoryRouter initialEntries={initialEntries}>
-      <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
+      <BoardHarness />
     </MemoryRouter>,
   );
 
@@ -106,9 +128,7 @@ const renderBoardWithRouter = (initialEntries: string[] = ["/"]) => {
     [
       {
         path: "/",
-        element: (
-          <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
-        ),
+        element: <BoardHarness />,
       },
     ],
     { initialEntries },
@@ -1017,7 +1037,7 @@ describe("Board の空状態メッセージの基準（Issue #92 再レビュー
     act(() => {
       rerender(
         <MemoryRouter>
-          <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
+          <BoardHarness />
         </MemoryRouter>,
       );
     });

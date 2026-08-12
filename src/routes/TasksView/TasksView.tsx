@@ -2,7 +2,7 @@ import { ActiveIssueStrip } from "../../components/ActiveIssueStrip/ActiveIssueS
 import { useSelectedProject } from "../../components/AppLayout/AppLayout";
 import { Board } from "../../components/Board/Board";
 import { FilterBar } from "../../components/FilterBar/FilterBar";
-import { useFilterParams } from "../../lib/filterParams";
+import { EMPTY_FILTER, useFilterParams } from "../../lib/filterParams";
 import s from "./TasksView.module.css";
 
 /**
@@ -32,6 +32,8 @@ export function TasksView() {
           のカードが新しい projectKey で表示され、不正な URL へ遷移する（Issue #74）。 */}
       <Board
         key={selected._id}
+        filter={filter}
+        onClearFilter={() => setFilter(EMPTY_FILTER)}
         project={selected._id}
         projectKey={selected.key}
       />

@@ -29,11 +29,7 @@ import {
   resolveSameColumnTargetIndex,
 } from "../../lib/board";
 import { reportConvexError } from "../../lib/convexErrorMessage";
-import {
-  EMPTY_FILTER,
-  type FilterState,
-  useFilterParams,
-} from "../../lib/filterParams";
+import type { FilterState } from "../../lib/filterParams";
 import { TASK_STATUS_LABELS, TASK_STATUS_ORDER } from "../../lib/taskMeta";
 import { FilterClearButton } from "../FilterBar/FilterClearButton";
 import { Skeleton } from "../Skeleton/Skeleton";
@@ -65,14 +61,17 @@ const DRAG_LOCKED_MESSAGE =
 export function Board({
   project,
   projectKey,
+  filter,
+  onClearFilter,
 }: {
   project: Id<"projects">;
   projectKey: string;
+  filter: FilterState;
+  onClearFilter: () => void;
 }) {
   const columns = useQuery(api.tasks.board, { project });
   const moveTask = useMutation(api.tasks.move);
   const transitionStatus = useMutation(api.tasks.transitionStatus);
-  const [filter, setFilter] = useFilterParams();
 
   const [board, setBoard] = useState<BoardColumn[] | null>(null);
   const [activeTask, setActiveTask] = useState<BoardTask | null>(null);
@@ -422,10 +421,7 @@ export function Board({
       {!serverIsEmpty && boardIsEmpty && (
         <p className={s.empty}>
           フィルタに一致するタスクがありません。
-          <FilterClearButton
-            onClick={() => setFilter(EMPTY_FILTER)}
-            variant="inline"
-          >
+          <FilterClearButton onClick={onClearFilter} variant="inline">
             フィルタをクリア
           </FilterClearButton>
         </p>
