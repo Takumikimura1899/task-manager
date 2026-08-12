@@ -55,6 +55,10 @@ export const repairDuplicateRanks = internalMutation({
         columnsRepaired++;
         for (let i = violationIndex; i < tasks.length; i++) {
           const nextRank = rankBetween(lastRank, null);
+          // nextMeta は使わない: これはユーザー操作ではなく system 起因の
+          // データ訂正のため、対象 Task の updatedAt（「最終更新」表示・
+          // 更新日時ソートに使われる）を実行時刻で汚さない。OCC の対象には
+          // 含めたいので revision だけは進める。
           await ctx.db.patch(tasks[i]._id, {
             rank: nextRank,
             revision: tasks[i].revision + 1,
