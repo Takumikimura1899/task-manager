@@ -77,7 +77,10 @@ export function Board({
   const [activeTask, setActiveTask] = useState<BoardTask | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // onDragEnd から最新の board を参照するための ref。
+  // collisionDetection（deps []）専用の最新 board 参照（L-1）。それ以外
+  // （findTask/handleDragEnd 等）は board のクロージャを直接使うこと——ref
+  // は useEffect 経由の更新のため、反映が1レンダー遅れる可能性がある。
+  // このタイミング（板書き換え後の useEffect で同期）自体は変えない。
   const boardRef = useRef<BoardColumn[] | null>(null);
   useEffect(() => {
     boardRef.current = board;
@@ -200,13 +203,18 @@ export function Board({
     (column) => column.tasks.length === 0,
   );
 
-  function findTask(id: string): BoardTask | null {
-    for (const column of boardRef.current ?? []) {
+  // L-1: board のクロージャを直接使う（アロー関数として、board === null の
+  // 早期 return の後に定義する——巻き上げられる function 宣言だと、上の
+  // 早期 return による narrowing がボディへ伝播しない。boardRef ではなく
+  // ここで board を直接参照するのは、ref の更新が useEffect 経由で1レンダー
+  // 遅れうるため、同一レンダー内の最新値を確実に掴むため）。
+  const findTask = (id: string): BoardTask | null => {
+    for (const column of board) {
       const found = column.tasks.find((t) => t._id === id);
       if (found) return found;
     }
     return null;
-  }
+  };
 
   function handleDragStart({ active }: DragStartEvent) {
     // dragLocked（useSortable の disabled）が効いていれば dnd-kit がそもそも
@@ -278,7 +286,9 @@ export function Board({
   // （convex/tasks.ts の rankForInsert）がトランザクション内で対象列を
   // フルで読み直して行うため、ここではドロップ位置の可視アンカー（直前/直後の
   // 可視カード）から position（アンカー taskId）を求めて渡すだけでよい。
-  async function handleDragEnd({ active, over }: DragEndEvent) {
+  // L-1: findTask 同様、board のクロージャを直接使うアロー関数として
+  // board === null の早期 return の後に定義する（narrowing 伝播のため）。
+  const handleDragEnd = async ({ active, over }: DragEndEvent) => {
     // 幽霊ドラッグのドロップは黙って捨てず、拒否した理由をユーザーへ伝える
     // （サイレント失敗の回避）。ただし案内を出すのはドロップ時点でまだ
     // mutation が未解決のときだけ。既に解決済みなら (1) 成功時: ロックは
@@ -292,16 +302,15 @@ export function Board({
     }
     const dragged = activeTask;
     setActiveTask(null);
-    const current = boardRef.current;
-    if (!over || !dragged || !current) return;
+    if (!over || !dragged) return; // L-1: boardRef.current → board closure
 
     const activeId = active.id as string;
     const overId = over.id as string;
-    const toCol = columnIndexOf(current, overId);
+    const toCol = columnIndexOf(board, overId);
     if (toCol === -1) return;
 
-    const targetStatus = current[toCol].status;
-    let columnTasks = current[toCol].tasks;
+    const targetStatus = board[toCol].status;
+    let columnTasks = board[toCol].tasks;
     const oldIndex = columnTasks.findIndex((t) => t._id === activeId);
     const overIndex = columnTasks.findIndex((t) => t._id === overId);
 
@@ -382,7 +391,7 @@ export function Board({
       // 失敗時は server の真実へ戻す。
       if (columns) resyncFromServer(columns);
     }
-  }
+  };
 
   return (
     <DndContext
