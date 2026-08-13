@@ -9,6 +9,7 @@ import { rankBetween } from "./lib/rank";
  */
 
 const TABLES = [
+  "projectMembers",
   "gitLinks",
   "tasks",
   "issues",

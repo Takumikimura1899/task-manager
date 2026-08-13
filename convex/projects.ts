@@ -15,7 +15,7 @@ export const create = actorMutation(
     name: v.string(),
     description: v.optional(v.string()),
   },
-  async (ctx, args) => {
+  async (ctx, args, actor) => {
     if (!isValidProjectKey(args.key)) {
       throw new ConvexError(
         `プロジェクトキーが不正です: "${args.key}"（大文字英字2〜10文字）`,
@@ -29,7 +29,7 @@ export const create = actorMutation(
       );
     }
 
-    return await ctx.db.insert("projects", {
+    const projectId = await ctx.db.insert("projects", {
       key: args.key,
       name: args.name,
       description: args.description,
@@ -37,6 +37,17 @@ export const create = actorMutation(
       nextTaskNumber: 1,
       nextIssueNumber: 1,
     });
+
+    // 作成者を owner として同一トランザクション内で原子的に membership 化する
+    // （ADR-11。owner 不在プロジェクトを生まないための唯一のシード経路。
+    // Convex の mutation は単一トランザクションのため原子性は自動で満たされる）。
+    await ctx.db.insert("projectMembers", {
+      project: projectId,
+      member: actor._id,
+      role: "owner",
+    });
+
+    return projectId;
   },
 );
 

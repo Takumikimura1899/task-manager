@@ -12,6 +12,7 @@ import {
   mutation,
   query,
 } from "../_generated/server";
+import { hasProjectPermission, type ProjectPermission } from "./authz";
 import { timingSafeTokenEqual } from "./crypto";
 import { isValidEmail, normalizeEmail } from "./validators";
 
@@ -130,6 +131,30 @@ export async function requireAuthed(
 }
 
 /**
+ * MCP 経路（accessToken）の member 解決（requireActor / requireViewer の
+ * 共有ヘルパ。トークン照合 + MCP_AGENT_EMAIL の member 解決を一箇所に集約し、
+ * 両ゲートで重複させない）。
+ */
+async function resolveAgentMember(
+  ctx: QueryCtx,
+  accessToken: string,
+): Promise<Doc<"members">> {
+  await requireAgentToken(accessToken);
+
+  const agentEmail = requireAgentEmail();
+  const member = await ctx.db
+    .query("members")
+    .withIndex("by_email", (q) => q.eq("email", agentEmail))
+    .unique();
+  if (member === null) {
+    throw new ConvexError(
+      "エージェント Member が未登録です。MCP サーバを再起動して ensureAgent を実行してください",
+    );
+  }
+  return member;
+}
+
+/**
  * mutation 用ゲート: 呼び出し元（actor）の member を解決する。書き込みは
  * 行わない（エージェント member の初回登録は members.ensureAgent の責務）。
  */
@@ -138,19 +163,7 @@ export async function requireActor(
   accessToken?: string,
 ): Promise<Doc<"members">> {
   if (accessToken !== undefined) {
-    await requireAgentToken(accessToken);
-
-    const agentEmail = requireAgentEmail();
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", agentEmail))
-      .unique();
-    if (member === null) {
-      throw new ConvexError(
-        "エージェント Member が未登録です。MCP サーバを再起動して ensureAgent を実行してください",
-      );
-    }
-    return member;
+    return await resolveAgentMember(ctx, accessToken);
   }
 
   const userId = await requireAuthUserId(ctx);
@@ -174,6 +187,40 @@ export async function requireAuthedMember(
 ): Promise<Doc<"members"> | null> {
   const userId = await requireAuthUserId(ctx);
   return await findMemberByAuthUserId(ctx, userId);
+}
+
+/**
+ * query 用の主体解決（ADR-11 §3.4/§3.5 の projectQuery/projectMutation が使う
+ * viewer 解決）。
+ * - MCP 経路（accessToken あり）: requireActor と同一（resolveAgentMember を
+ *   共有。トークン照合 + エージェント Member 解決。未登録は throw）。
+ * - ブラウザ経路: requireAuthedMember と同一（認証必須。Member 未リンクは
+ *   null を返す。throw しない＝「未リンクは NoMembersNotice へ落とす」既存
+ *   方針の踏襲。未リンクは membership を持ち得ないため、projectQuery からは
+ *   全プロジェクトが不可視になるだけで整合する）。
+ */
+export async function requireViewer(
+  ctx: QueryCtx,
+  accessToken?: string,
+): Promise<Doc<"members"> | null> {
+  if (accessToken !== undefined) {
+    return await resolveAgentMember(ctx, accessToken);
+  }
+  return await requireAuthedMember(ctx);
+}
+
+/** (project, member) の membership を引く（ProjectMember の一意性が前提）。 */
+export async function findMembership(
+  ctx: QueryCtx,
+  project: Id<"projects">,
+  member: Id<"members">,
+): Promise<Doc<"projectMembers"> | null> {
+  return await ctx.db
+    .query("projectMembers")
+    .withIndex("by_project_and_member", (q) =>
+      q.eq("project", project).eq("member", member),
+    )
+    .unique();
 }
 
 /**
@@ -228,6 +275,109 @@ export function actorMutation<A extends PropertyValidators, R>(
     handler: async (ctx, args) => {
       const actor = await requireActor(ctx, args.accessToken);
       return await handler(ctx, args, actor);
+    },
+  });
+}
+
+/**
+ * プロジェクト単位ロールのゲート・ビルダー（ADR-11 §3.4/§3.5）。
+ * authedQuery/actorMutation とは独立の新設ビルダーで、既存の2つは変更しない
+ * （PR① 時点では既存公開関数に適用しない。適用は PR②）。
+ *
+ * query に permission 引数は無い: §3.1 の表に読み取り permission は存在せず、
+ * 可視性 = membership の有無そのものだから（membership があればロール不問で
+ * 閲覧可）。
+ *
+ * トレードオフ: membership なしを ConvexError にすると「key は存在するが
+ * 非参加」を非参加者が観測できる（存在オラクル）。単一テナント・招待済み
+ * メンバーのみの環境でありリスクを許容し、「認可拒否は ConvexError で明示」
+ * （CLAUDE.md）を優先する（設計書 §10 で確定）。
+ */
+
+/**
+ * query 用ビルダー: viewer 解決 → resolveProject → membership 確認、の順で
+ * ゲートし、viewer/membership を handler の第3引数として渡す。
+ * - viewer が未認証: throw（requireViewer）。ブラウザ未リンク: null を返し終了。
+ * - resolveProject が null（参照先が存在しない）: null を返し終了
+ *   （getByKey 等の既存「見つからなければ null」契約の踏襲）。
+ * - membership が無い: ConvexError（認可拒否の明示）。
+ */
+export function projectQuery<A extends PropertyValidators, R>(
+  argDefs: A & { accessToken?: never },
+  resolveProject: (
+    ctx: QueryCtx,
+    args: ObjectType<A>,
+  ) => Promise<Id<"projects"> | null>,
+  handler: (
+    ctx: QueryCtx,
+    args: ObjectType<A> & { accessToken?: string },
+    scope: { viewer: Doc<"members">; membership: Doc<"projectMembers"> },
+  ) => Promise<R>,
+) {
+  return query({
+    args: { ...argDefs, accessToken: v.optional(v.string()) },
+    handler: async (ctx, args) => {
+      const viewer = await requireViewer(ctx, args.accessToken);
+      if (viewer === null) return null;
+
+      const projectId = await resolveProject(ctx, args);
+      if (projectId === null) return null;
+
+      const membership = await findMembership(ctx, projectId, viewer._id);
+      if (membership === null) {
+        throw new ConvexError("このプロジェクトに参加していません");
+      }
+
+      return await handler(ctx, args, { viewer, membership });
+    },
+  });
+}
+
+/**
+ * mutation 用ビルダー: actor 解決 → opts.project → membership 確認 →
+ * permission 判定、の順でゲートし、actor/membership を handler の第3引数
+ * として渡す。
+ * - actor 未リンク: throw（requireActor、既存挙動）。
+ * - opts.project が null（対象が存在しない）: ConvexError
+ *   （query と異なり mutation は書き込み対象の実在を要求する）。
+ * - membership が無い: ConvexError。
+ * - permission を持たない: ConvexError。
+ */
+export function projectMutation<A extends PropertyValidators, R>(
+  argDefs: A & { accessToken?: never },
+  opts: {
+    permission: ProjectPermission;
+    project: (
+      ctx: QueryCtx,
+      args: ObjectType<A>,
+    ) => Promise<Id<"projects"> | null>;
+  },
+  handler: (
+    ctx: MutationCtx,
+    args: ObjectType<A> & { accessToken?: string },
+    scope: { actor: Doc<"members">; membership: Doc<"projectMembers"> },
+  ) => Promise<R>,
+) {
+  return mutation({
+    args: { ...argDefs, accessToken: v.optional(v.string()) },
+    handler: async (ctx, args) => {
+      const actor = await requireActor(ctx, args.accessToken);
+
+      const projectId = await opts.project(ctx, args);
+      if (projectId === null) {
+        throw new ConvexError("指定された対象が存在しません");
+      }
+
+      const membership = await findMembership(ctx, projectId, actor._id);
+      if (membership === null) {
+        throw new ConvexError("このプロジェクトに参加していません");
+      }
+
+      if (!hasProjectPermission(membership.role, opts.permission)) {
+        throw new ConvexError("この操作を行う権限がありません");
+      }
+
+      return await handler(ctx, args, { actor, membership });
     },
   });
 }

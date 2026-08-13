@@ -1,6 +1,7 @@
 import { internalMutation } from "./_generated/server";
 import { TASK_STATUSES } from "./lib/taskStatus";
 import { rankBetween } from "./lib/rank";
+import { normalizeEmail } from "./lib/validators";
 
 /**
  * 既存データの修復用ワンオフ migration（rank 重複バグ修正）。
@@ -70,5 +71,68 @@ export const repairDuplicateRanks = internalMutation({
     }
 
     return { scanned, columnsRepaired, tasksRepatched };
+  },
+});
+
+/**
+ * ADR-11 バックフィル（§3.1 移行）。冪等・再実行可能。
+ *
+ * projectMembers 導入以前は「認証済み Member なら誰でも全プロジェクトを
+ * 操作可能」だったため、既存データにはロール境界が存在しない。
+ * 全 projects × 全 members について membership が無ければ挿入し、その動作を
+ * 保存する:
+ * - 人間 Member → owner（現状の「全員が全プロジェクト操作可」を保存）
+ * - エージェント Member（email === MCP_AGENT_EMAIL）→ member
+ *   （MCP_AGENT_EMAIL 未設定ならエージェント無しとして全員 owner。
+ *   requireAgentEmail は未設定・不正形式を throw するため使わず、
+ *   normalizeEmail のみを流用する＝バックフィルは env 未設定で失敗させない）
+ *
+ * 実行後にプロジェクトが増減しても、新規プロジェクトは projects.create が
+ * 作成者を owner として同時挿入するため隙間は生じない（設計書 §6）。
+ */
+export const backfillProjectMembers = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const projects = await ctx.db.query("projects").collect();
+    const members = await ctx.db.query("members").collect();
+
+    const rawAgentEmail = process.env.MCP_AGENT_EMAIL;
+    const agentEmail =
+      rawAgentEmail === undefined || rawAgentEmail === ""
+        ? null
+        : normalizeEmail(rawAgentEmail);
+
+    let inserted = 0;
+    let skipped = 0;
+
+    for (const project of projects) {
+      for (const member of members) {
+        const existing = await ctx.db
+          .query("projectMembers")
+          .withIndex("by_project_and_member", (q) =>
+            q.eq("project", project._id).eq("member", member._id),
+          )
+          .unique();
+        if (existing !== null) {
+          skipped++;
+          continue;
+        }
+
+        const role = member.email === agentEmail ? "member" : "owner";
+        await ctx.db.insert("projectMembers", {
+          project: project._id,
+          member: member._id,
+          role,
+        });
+        inserted++;
+      }
+    }
+
+    return {
+      projects: projects.length,
+      members: members.length,
+      inserted,
+      skipped,
+    };
   },
 });
