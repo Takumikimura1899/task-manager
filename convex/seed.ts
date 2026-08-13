@@ -1,5 +1,6 @@
 import { internalMutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { generateInviteToken, sha256Hex } from "./lib/crypto";
 import { rankBetween } from "./lib/rank";
 
 /**
@@ -46,7 +47,11 @@ export const demo = internalMutation({
   args: {},
   handler: async (
     ctx,
-  ): Promise<{ status: "created" | "skipped"; message: string }> => {
+  ): Promise<{
+    status: "created" | "skipped";
+    message: string;
+    inviteToken?: string;
+  }> => {
     // .unique() は（過去の重複により）2件以上あると throw するため .first() で確認する
     const existing = await ctx.db
       .query("projects")
@@ -58,10 +63,15 @@ export const demo = internalMutation({
       return { status: "skipped", message };
     }
 
+    // members.create と同じ招待トークン方式（convex/lib/memberLink.ts の照合が
+    // inviteTokenHash の存在を必須にするため、未設定だとサインアップ不能で詰む）。
+    // 平文は返り値で一度だけ返す（dev 専用 seed のため CLI 出力で確認する運用）。
+    const inviteToken = generateInviteToken();
     const member = await ctx.db.insert("members", {
       name: "テスト太郎",
       email: "taro@example.com",
       role: "admin",
+      inviteTokenHash: await sha256Hex(inviteToken),
     });
     const project = await ctx.db.insert("projects", {
       key: DEMO_PROJECT_KEY,
@@ -126,6 +136,7 @@ export const demo = internalMutation({
     return {
       status: "created",
       message: `プロジェクト "${DEMO_PROJECT_KEY}" とデモデータ（Issue ${issueNo - 1}件 / Task ${taskNo - 1}件）を投入しました`,
+      inviteToken, // taro@example.com のサインアップ用招待コード（dev 専用）
     };
   },
 });
