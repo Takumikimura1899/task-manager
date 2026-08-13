@@ -20,6 +20,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
 import type { BoardTask } from "../../lib/board";
+import { EMPTY_FILTER, useFilterParams } from "../../lib/filterParams";
 import {
   type TaskStatus,
   TASK_STATUS_LABELS,
@@ -88,10 +89,31 @@ const createColumns = (
     tasks: tasksByStatus[status] ?? [],
   }));
 
+/**
+ * Board は L-6 で filter/onClearFilter を props 化し、useFilterParams（URL）
+ * の所有権は呼び出し元（TasksView）に移った。URL 駆動のフィルタテストを
+ * 生かすため、TasksView の実結線（useFilterParams → Board props）を再現する
+ * 薄いラッパ。
+ */
+function BoardHarness({
+  project = "project_1" as Id<"projects">,
+  projectKey = "TASK",
+}: { project?: Id<"projects">; projectKey?: string } = {}) {
+  const [filter, setFilter] = useFilterParams();
+  return (
+    <Board
+      filter={filter}
+      onClearFilter={() => setFilter(EMPTY_FILTER)}
+      project={project}
+      projectKey={projectKey}
+    />
+  );
+}
+
 const renderBoard = (initialEntries: string[] = ["/"]) =>
   render(
     <MemoryRouter initialEntries={initialEntries}>
-      <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
+      <BoardHarness />
     </MemoryRouter>,
   );
 
@@ -106,9 +128,7 @@ const renderBoardWithRouter = (initialEntries: string[] = ["/"]) => {
     [
       {
         path: "/",
-        element: (
-          <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
-        ),
+        element: <BoardHarness />,
       },
     ],
     { initialEntries },
@@ -286,6 +306,127 @@ describe("Board のドラッグキャンセル（Issue #78）", () => {
     ).not.toBeInTheDocument();
     // キャンセルなので move / transitionStatus はどちらも呼ばれない
     expect(mutate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 反例A（既存バグ）: 列またぎ dragOver で一度でもローカル board を書き換えた
+ * 後、元の列へ復帰してから同位置（over===active）でドロップすると、
+ * handleDragEnd の同一列 no-op 早期 return（targetIndex === null）は
+ * mutation を呼ばないため、その後の同期 effect も発火しない。列またぎの
+ * 往復で局所配列の並びが server 順とずれていても resync されず、ローカル
+ * board が恒久的に desync していた。dirty（列またぎ適用の実績）を ref で
+ * 記録し、この早期 return の直前で dirty のときだけ resyncFromServer する
+ * ことで、server 順へ確実に復元する。
+ */
+describe("Board の列またぎ dragOver → 元列復帰 → 同位置ドロップ（反例A）", () => {
+  it("列またぎ→元列復帰→同位置ドロップで mutation を呼ばず表示が server 順へ戻る", () => {
+    const a = createTask({ _id: "task_1" as Id<"tasks">, number: 1 });
+    const b = createTask({ _id: "task_2" as Id<"tasks">, number: 2 });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+    renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+      // 列またぎ: task_1 を in_progress へ
+      handlers.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "in_progress" },
+      } as DragOverEvent);
+    });
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).getByRole("link", {
+        name: "TASK-1",
+      }),
+    ).toBeInTheDocument();
+
+    const afterFirstOver = dndHandlers.current;
+    if (!afterFirstOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 元列（todo）へ復帰。task_2 の後ろへ挿入されるため、server 順
+      // （task_1, task_2）とローカル順（task_2, task_1）がずれる。
+      afterFirstOver.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "todo" },
+      } as DragOverEvent);
+    });
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    const afterSecondOver = dndHandlers.current;
+    if (!afterSecondOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 同位置ドロップ（over===active）。resolveSameColumnTargetIndex が
+      // null を返す no-op 早期 return に到達する。
+      afterSecondOver.onDragEnd?.({
+        active: { id: "task_1" },
+        over: { id: "task_1" },
+      } as DragEndEvent);
+    });
+
+    expect(mutate).not.toHaveBeenCalled();
+    // dirty だったため resync され、server 順（task_1, task_2）へ戻る。
+    expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
+  });
+
+  it("列またぎ dragOver 後に盤面外（over: null）でドロップしても mutation を呼ばず表示が server 順へ戻る", () => {
+    const a = createTask({ _id: "task_1" as Id<"tasks">, number: 1 });
+    const b = createTask({ _id: "task_2" as Id<"tasks">, number: 2 });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+    renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+      // 列またぎ: task_1 を in_progress へ
+      handlers.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "in_progress" },
+      } as DragOverEvent);
+    });
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).getByRole("link", {
+        name: "TASK-1",
+      }),
+    ).toBeInTheDocument();
+
+    const afterFirstOver = dndHandlers.current;
+    if (!afterFirstOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 元列（todo）へ復帰。task_2 の後ろへ挿入されるため、server 順
+      // （task_1, task_2）とローカル順（task_2, task_1）がずれる。
+      afterFirstOver.onDragOver?.({
+        active: { id: "task_1" },
+        over: { id: "todo" },
+      } as DragOverEvent);
+    });
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    const afterSecondOver = dndHandlers.current;
+    if (!afterSecondOver) throw new Error("DndContext が描画されていません");
+    act(() => {
+      // 盤面外ドロップ（over: null）。!over || !dragged の早期 return に
+      // 到達する（Board.test.tsx の「ドラッグ中アニメーション抑止」テストが
+      // 実在経路として扱っている挙動と同じ入力）。
+      afterSecondOver.onDragEnd?.({
+        active: { id: "task_1" },
+        over: null,
+      } as DragEndEvent);
+    });
+
+    expect(mutate).not.toHaveBeenCalled();
+    // dirty だったため resync され、server 順（task_1, task_2）へ戻り、
+    // in_progress へ残留しない。
+    expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).queryByRole("link", {
+        name: "TASK-1",
+      }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -680,6 +821,195 @@ describe("Board のドロップ直後・mutation 未解決中のフィルタ変�
 });
 
 /**
+ * H-2 安全網テスト（useBoardSnapshot 化に先立ち、現行 Board.tsx で赤を実測
+ * してから導入する）。mutation（moveTask/transitionStatus）が未解決の間、
+ * 自分のドラッグとは無関係な書き込み（foreign snapshot）で columns が新しい
+ * オブジェクトへ変わっても、同期 effect が pending を無視して resync して
+ * しまうと楽観更新が巻き戻る。H-2 はこれを「pending 中は columnsChanged
+ * でも同期を全面停止し、取りこぼした snapshot は mutation 解決後に回収する」
+ * 形へ直す。
+ */
+describe("Board の H-2 安全網（mutation 未解決中の foreign snapshot）", () => {
+  it("mutation 未解決中に columns が新オブジェクト（foreign snapshot）に変わっても cardOrder が巻き戻らず、解決後に新 snapshot へ収束する", async () => {
+    const a = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      rank: "a0",
+    });
+    const b = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      rank: "a1",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+
+    let resolveMutate: (() => void) | undefined;
+    mutate.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMutate = resolve;
+        }),
+    );
+
+    const { rerender } = renderBoard();
+    expect(cardOrder()).toEqual(["TASK-1", "TASK-2"]);
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+    });
+    const afterStart = dndHandlers.current;
+    if (!afterStart) throw new Error("DndContext が描画されていません");
+    act(() => {
+      afterStart.onDragEnd?.({
+        active: { id: "task_1" },
+        over: { id: "task_2" },
+      } as DragEndEvent);
+    });
+
+    // 楽観更新で並び順が入れ替わる。mutation はまだ未解決。
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    // mutation 未解決中に、自分のドラッグとは無関係な書き込み（他ユーザーの
+    // 操作・別タブでの編集等）で columns が新オブジェクトへ変わったとする。
+    // todo 列の並びはドロップ前のまま（自分の書き込みは含まない）、
+    // in_progress 列に無関係なタスクが増える形で「別の書き込み」を表現する。
+    const c = createTask({
+      _id: "task_3" as Id<"tasks">,
+      number: 3,
+      status: "in_progress" as Doc<"tasks">["status"],
+    });
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [a, b], in_progress: [c] }),
+    );
+    act(() => {
+      rerender(
+        <MemoryRouter>
+          <BoardHarness />
+        </MemoryRouter>,
+      );
+    });
+
+    // H-2: pending 中は foreign snapshot が届いても resync せず、楽観更新が
+    // 巻き戻らない。
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    // mutation を解決する。この時点ではまだ自分の書き込みを反映した新しい
+    // snapshot は届いていない（上の foreign snapshot のまま）。
+    await act(async () => {
+      resolveMutate?.();
+      await Promise.resolve();
+    });
+
+    // 解決後、自分の書き込みを反映した新しい snapshot が届く。
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [b, a], in_progress: [c] }),
+    );
+    act(() => {
+      rerender(
+        <MemoryRouter>
+          <BoardHarness />
+        </MemoryRouter>,
+      );
+    });
+
+    // 新しい snapshot（自分の書き込み＋foreign 変更の両方）へ収束する。
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).getByRole("link", {
+        name: "TASK-3",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("解決後の中間レンダーで board が foreign 由来（自分の書き込みを含まない snapshot）にならない", async () => {
+    const a = createTask({
+      _id: "task_1" as Id<"tasks">,
+      number: 1,
+      rank: "a0",
+    });
+    const b = createTask({
+      _id: "task_2" as Id<"tasks">,
+      number: 2,
+      rank: "a1",
+    });
+    boardQuery.mockReturnValue(createColumns({ todo: [a, b] }));
+
+    let resolveMutate: (() => void) | undefined;
+    mutate.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMutate = resolve;
+        }),
+    );
+
+    const { rerender } = renderBoard();
+
+    const handlers = dndHandlers.current;
+    if (!handlers) throw new Error("DndContext が描画されていません");
+    act(() => {
+      handlers.onDragStart?.({ active: { id: "task_1" } } as DragStartEvent);
+    });
+    const afterStart = dndHandlers.current;
+    if (!afterStart) throw new Error("DndContext が描画されていません");
+    act(() => {
+      afterStart.onDragEnd?.({
+        active: { id: "task_1" },
+        over: { id: "task_2" },
+      } as DragEndEvent);
+    });
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    // pending 中に、自分の書き込みを含まない foreign snapshot が届く
+    // （columns の参照が変わる）。
+    const c = createTask({
+      _id: "task_3" as Id<"tasks">,
+      number: 3,
+      status: "in_progress" as Doc<"tasks">["status"],
+    });
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [a, b], in_progress: [c] }),
+    );
+    act(() => {
+      rerender(
+        <MemoryRouter>
+          <BoardHarness />
+        </MemoryRouter>,
+      );
+    });
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+
+    // mutation が解決される時点で、sync client 層には既に自分の書き込みを
+    // 含む最新 snapshot が ingest 済み（read-your-writes は sync client 層で
+    // guaranteed）。resolve と同時に、その最新（自分の書き込み＋foreign
+    // 変更の両方を含む）snapshot が queryable になる。
+    boardQuery.mockReturnValue(
+      createColumns({ todo: [b, a], in_progress: [c] }),
+    );
+    await act(async () => {
+      resolveMutate?.();
+      await Promise.resolve();
+      rerender(
+        <MemoryRouter>
+          <BoardHarness />
+        </MemoryRouter>,
+      );
+    });
+
+    // 解決後、中間レンダーで自分の書き込みを含まない snapshot（todo:[a,b]
+    // のまま）が一度でも表示されてはならない。最終的に表示される board は
+    // 常に「自分の書き込みを含む」最新 snapshot 由来でなければならない。
+    expect(cardOrder()).toEqual(["TASK-2", "TASK-1"]);
+    expect(
+      within(getColumn(TASK_STATUS_LABELS.in_progress)).getByRole("link", {
+        name: "TASK-3",
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
  * ドラッグの直列化（Issue #92 4周目レビュー指摘1・2）。
  * moveTask/transitionStatus の await 中（pendingMutationsRef > 0）に次の
  * ドラッグが始まると、(1) その状態の onDragCancel が進行中の楽観更新を
@@ -1017,7 +1347,7 @@ describe("Board の空状態メッセージの基準（Issue #92 再レビュー
     act(() => {
       rerender(
         <MemoryRouter>
-          <Board project={"project_1" as Id<"projects">} projectKey="TASK" />
+          <BoardHarness />
         </MemoryRouter>,
       );
     });

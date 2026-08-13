@@ -96,37 +96,30 @@ describe("resolveSameColumnTargetIndex", () => {
 });
 
 /**
- * 衝突検出のカード優先選択を検証する。
- * over が列コンテナに解決されると末尾フォールバックが誤発動するため、
- * どこかの段階でカードに当たっていれば必ずカードが選ばれること、
- * 特に「先頭段階が列のみでも後続段階のカードを採用する」
- * （＝カード間の隙間へのドロップの誤判定防止）を確認する。
+ * 衝突検出のカード優先選択を検証する。over が列コンテナに解決されると
+ * 末尾フォールバックが誤発動するため、カードが混在していれば必ずカードが
+ * 選ばれることを確認する。
+ *
+ * 呼び出し経路はキーボード操作（KeyboardSensor・pointerWithin 不使用）の
+ * rectIntersection 単段のみで、複数段階にまたがるカード探索（カード間の
+ * 隙間）の保証は pickPointerScopedCollisions 側（#53 ケース、下記
+ * describe）が担う（M-6・単一配列化に伴い整理）。
  */
 describe("pickCardFirstCollisions", () => {
   const columnIds: ReadonlySet<string> = new Set(["backlog", "todo"]);
 
   it.each([
-    // [ケース, 段階ごとの衝突id列, 期待する出力id列]
+    // [ケース, 衝突id列, 期待する出力id列]
     [
-      "先頭段階にカードと列が混在したらカードのみ返す",
-      [["backlog", "task1", "task2"]],
+      "カードと列が混在したらカードのみ返す",
+      ["backlog", "task1", "task2"],
       ["task1", "task2"],
     ],
-    [
-      "先頭段階が列のみでも後続段階のカードを採用する（カード間の隙間）",
-      [["backlog"], ["task1", "backlog"], ["task2"]],
-      ["task1"],
-    ],
-    [
-      "全段階にカードが無ければ最初に衝突があった段階の列を返す（余白へのドロップ）",
-      [[], ["backlog"], ["todo"]],
-      ["backlog"],
-    ],
-    ["全段階が空なら空を返す", [[], [], []], []],
-  ])("%s", (_case, stageIds, expected) => {
-    const stages = stageIds.map((ids) => ids.map((id) => ({ id })));
-    expect(pickCardFirstCollisions(stages, columnIds)).toEqual(
-      expected.map((id) => ({ id })),
+    ["カードが無ければ列を返す（余白へのドロップ）", ["backlog"], ["backlog"]],
+    ["空なら空を返す", [], []],
+  ])("%s", (_case, hitIds, expected) => {
+    expect(pickCardFirstCollisions(wrap(hitIds), columnIds)).toEqual(
+      wrap(expected),
     );
   });
 });
