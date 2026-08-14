@@ -6,6 +6,7 @@ import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   seedAuthedMember,
   seedProject,
+  seedProjectMember,
   seedRepository,
   setup,
   type T,
@@ -34,8 +35,9 @@ const listRepositories = (t: T) =>
 describe("repositories.create", () => {
   it("webhookSecret を暗号化して保存する（平文は残らず、鍵で復号すると元に戻る）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const plaintext = "ghs_supersecret_webhook_token";
 
     const id = await as.mutation(api.repositories.create, {
@@ -61,17 +63,20 @@ describe("repositories.create", () => {
 
   it("存在しないプロジェクトを指定すると拒否する（参照整合性）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     await t.run((ctx) => ctx.db.delete(project));
 
+    // projectMutation が resolveProject の段階で拒否するため汎用メッセージになる
+    // （ADR-11 設計書 §3.5 手順2。個別メッセージより前段の判定）。
     await expect(
       as.mutation(api.repositories.create, {
         project,
         remoteUrl: "https://github.com/acme/repo",
         webhookSecret: "s",
       }),
-    ).rejects.toThrowError("指定されたプロジェクトが存在しません");
+    ).rejects.toThrowError("指定された対象が存在しません");
   });
 
   it.each([
@@ -81,8 +86,9 @@ describe("repositories.create", () => {
     "WEBHOOK_ENCRYPTION_KEY が $name の場合はエラーになり、保存しない",
     async ({ value }) => {
       const t = setup();
-      const { as } = await seedAuthedMember(t);
+      const { as, memberId } = await seedAuthedMember(t);
       const project = await seedProject(t);
+      await seedProjectMember(t, project, memberId, "owner");
       vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", value);
 
       await expect(
@@ -102,13 +108,14 @@ describe("repositories.create", () => {
 describe("repositories.listByProject", () => {
   it("webhookSecret を除外して返す（PII/機密のクライアント露出防止）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const id = await seedRepository(t, project);
 
-    const listed = await as.query(api.repositories.listByProject, {
+    const listed = (await as.query(api.repositories.listByProject, {
       project,
-    });
+    }))!;
 
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
@@ -121,17 +128,18 @@ describe("repositories.listByProject", () => {
 
   it("指定プロジェクトのリポジトリのみ返す", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, memberId, "owner");
     const other = await seedProject(t, { key: "OTHER" });
     const mine = await seedRepository(t, project);
     await seedRepository(t, other, {
       remoteUrl: "https://github.com/acme/other",
     });
 
-    const listed = await as.query(api.repositories.listByProject, {
+    const listed = (await as.query(api.repositories.listByProject, {
       project,
-    });
+    }))!;
 
     expect(listed.map((r) => r._id)).toEqual([mine]);
   });

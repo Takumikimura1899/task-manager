@@ -153,6 +153,12 @@ async function resolveRepositoryId(
     api.repositories.listByProject,
     withToken({ project: projectId }),
   );
+  // resolveProject/resolveTask が呼び出し前に project の実在を確認済みのため、
+  // ここでの null は理論上到達しない（ADR-11 projectQuery の型契約に合わせた
+  // ナローイング。convex/lib/auth.ts の projectQuery 参照）。
+  if (repos === null) {
+    throw new Error("このプロジェクトが見つかりません");
+  }
   if (repos.length === 0) {
     throw new Error("このプロジェクトにはリポジトリが登録されていません");
   }
@@ -198,6 +204,11 @@ async function main() {
         convex.query(api.members.list, withToken({})),
         convex.query(api.issues.list, withToken({ project: project._id })),
       ]);
+      // resolveProject が project の実在を確認済みのため、ここでの null は
+      // 理論上到達しない（ADR-11 projectQuery の型契約に合わせたナローイング）。
+      if (issues === null) {
+        throw new Error(`プロジェクトが見つかりません: ${key}`);
+      }
       return {
         contents: [
           {
@@ -299,6 +310,11 @@ async function main() {
         api.tasks.listFiltered,
         withToken({ project: project._id, assignee: agentMemberId }),
       );
+      // resolveProject が project の実在を確認済みのため、ここでの null は
+      // 理論上到達しない（ADR-11 projectQuery の型契約に合わせたナローイング）。
+      if (tasks === null) {
+        throw new Error(`プロジェクトが見つかりません: ${key}`);
+      }
       const mine = tasks.filter((t) => isActiveStatus(t.status));
       return {
         contents: [
@@ -383,6 +399,11 @@ async function main() {
           api.issues.list,
           withToken({ project: project._id }),
         );
+        // resolveProject が project の実在を確認済みのため、ここでの null は
+        // 理論上到達しない（ADR-11 projectQuery の型契約に合わせたナローイング）。
+        if (issues === null) {
+          throw new Error(`プロジェクトが見つかりません: ${project_key}`);
+        }
         // Issue ステータスは子 Task 群からの派生値（§5.1）で索引を張れないため、
         // issues.list が返す派生済みステータスに対してここで絞り込む。
         return ok(

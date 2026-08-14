@@ -37,7 +37,10 @@ export function IssuesView() {
   const [{ filter, sort }, setListParams] = useIssueListParams();
 
   const filteredIssues = useMemo(() => {
-    if (issues === undefined) return undefined;
+    // null は非参加プロジェクトへのアクセス（ADR-11 projectQuery の型契約）。
+    // filteredIssues/sortedIssues の型は変えず、下記の JSX で issues 自体を
+    // 別分岐する（PR② では最低限のガードに留め、文言整備は PR③ で行う）。
+    if (issues === undefined || issues === null) return undefined;
     return issues.filter((issue) => {
       if (filter.status !== null && issue.status !== filter.status) {
         return false;
@@ -101,6 +104,8 @@ export function IssuesView() {
           <Skeleton className={s.skeletonStats} />
           <Skeleton className={s.skeletonPanel} />
         </output>
+      ) : issues === null ? (
+        <p className={s.empty}>プロジェクトが見つかりません。</p>
       ) : (
         <>
           <IssueStats issues={issues} />

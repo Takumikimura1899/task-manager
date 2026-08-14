@@ -1,5 +1,10 @@
 import { ConvexError, v } from "convex/values";
-import { actorMutation, authedQuery } from "./lib/auth";
+import {
+  actorMutation,
+  authedQuery,
+  projectQuery,
+  requireViewer,
+} from "./lib/auth";
 import { findProjectByKey } from "./lib/projects";
 import { isValidProjectKey } from "./lib/validators";
 
@@ -51,10 +56,40 @@ export const create = actorMutation(
   },
 );
 
-export const getByKey = authedQuery({ key: v.string() }, async (ctx, args) => {
-  return await findProjectByKey(ctx, args.key);
-});
+export const getByKey = projectQuery(
+  { key: v.string() },
+  async (ctx, args) => (await findProjectByKey(ctx, args.key))?._id ?? null,
+  async (ctx, args) => await findProjectByKey(ctx, args.key),
+);
 
-export const list = authedQuery({}, async (ctx) => {
-  return await ctx.db.query("projects").collect();
+/**
+ * 参加プロジェクトのみを返す(ADR-11 §3.1「参加のみ可視」)。「参加のみ」は
+ * 認可ゲートではなく list の検索条件そのものなので、単一使用箇所のために
+ * viewerQuery ビルダーは新設しない(設計書 §3.6)。
+ */
+export const list = authedQuery({}, async (ctx, args) => {
+  const viewer = await requireViewer(ctx, args.accessToken);
+  if (viewer === null) return [];
+
+  const memberships = await ctx.db
+    .query("projectMembers")
+    .withIndex("by_member", (q) => q.eq("member", viewer._id))
+    .collect();
+
+  const projects = await Promise.all(
+    memberships.map((m) => ctx.db.get(m.project)),
+  );
+
+  return projects.flatMap((project, i) => {
+    if (project === null) {
+      // 参照整合性の異常(project が削除されているのに membership が残る)。
+      // 握り潰さず、ログに残した上で当該行だけスキップする
+      // (convex/tasks.ts:701-719 の既存パターン踏襲・設計書 §10 D4)。
+      console.warn(
+        `projects.list: Project ${memberships[i].project} が見つかりません`,
+      );
+      return [];
+    }
+    return [project];
+  });
 });

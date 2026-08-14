@@ -1,7 +1,8 @@
 import { ConvexError, v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { actorMutation, authedQuery } from "./lib/auth";
+import { projectMutation, projectQuery } from "./lib/auth";
+import { projectOfTask } from "./lib/projectScope";
 import { gitLinkType, prState } from "./schema";
 
 /**
@@ -52,7 +53,7 @@ export async function upsertGitLink(
   });
 }
 
-export const link = actorMutation(
+export const link = projectMutation(
   {
     task: v.id("tasks"),
     repository: v.id("repositories"),
@@ -61,20 +62,34 @@ export const link = actorMutation(
     url: v.string(),
     prState: v.optional(prState),
   },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfTask(ctx, args.task),
+  },
   async (ctx, args) => {
     // 参照整合性（INVARIANT-3）
-    if ((await ctx.db.get(args.task)) === null) {
+    const task = await ctx.db.get(args.task);
+    if (task === null) {
       throw new ConvexError("指定されたタスクが存在しません");
     }
-    if ((await ctx.db.get(args.repository)) === null) {
+    const repository = await ctx.db.get(args.repository);
+    if (repository === null) {
       throw new ConvexError("指定されたリポジトリが存在しません");
+    }
+    // クロスプロジェクトリンクの防止（設計書 §4 の厳格化: 現行は未チェックだったため
+    // PR② で追加）。
+    if (repository.project !== task.project) {
+      throw new ConvexError(
+        "指定されたリポジトリは対象タスクのプロジェクトに属していません",
+      );
     }
     return await upsertGitLink(ctx, args);
   },
 );
 
-export const listByTask = authedQuery(
+export const listByTask = projectQuery(
   { task: v.id("tasks") },
+  (ctx, args) => projectOfTask(ctx, args.task),
   async (ctx, args) => {
     return await ctx.db
       .query("gitLinks")

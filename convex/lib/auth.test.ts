@@ -8,6 +8,7 @@ import {
   seedAuthedMember,
   seedMember,
   seedProject,
+  seedProjectMember,
   seedUser,
   setup,
   stubAgentTokenEnv,
@@ -43,7 +44,7 @@ describe("requireActor（ブラウザ経路）", () => {
     ).rejects.toThrowError("認証が必要です");
   });
 
-  it("認証済みだが Member 未リンクでも query は閲覧できる（requireAuthed。全画面クラッシュにせず NoMembersNotice の案内へ落とすため）", async () => {
+  it("認証済みだが Member 未リンクでも query は ConvexError を投げず null を返す（requireViewer。全画面クラッシュにせず NoMembersNotice の案内へ落とすため。ADR-11: 未リンクは membership を持ち得ないため null=不可視）", async () => {
     const t = setup();
     const project = await seedProject(t);
     const userId = await seedUser(t, { email: "nobody@example.com" });
@@ -51,7 +52,7 @@ describe("requireActor（ブラウザ経路）", () => {
 
     await expect(
       asUnlinked.query(api.tasks.listFiltered, { project }),
-    ).resolves.toEqual([]);
+    ).resolves.toBeNull();
   });
 
   it("認証済みでも Member 未リンクなら mutation（actor が必要）は ConvexError で拒否する", async () => {
@@ -83,8 +84,9 @@ describe("requireActor（ブラウザ経路）", () => {
 describe("createdBy の actor 強制（tasks.create / issues.create）", () => {
   it("createdBy を引数で指定する手段がない（スキーマにない余分な引数はバリデータが拒否する）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const impostor = await seedMember(t, {
       name: "Impostor",
       email: "impostor@example.com",
@@ -109,6 +111,7 @@ describe("createdBy の actor 強制（tasks.create / issues.create）", () => {
     const t = setup();
     const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
 
     const { issue, task } = await as.mutation(api.issues.create, {
       project,
