@@ -3,6 +3,10 @@ import { convexAuth } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 import { linkAuthUserToMember } from "./lib/memberLink";
 import {
+  isPasswordLengthValid,
+  MIN_PASSWORD_LENGTH,
+} from "./lib/passwordPolicy";
+import {
   extractInviteCodeParam,
   isValidEmail,
   normalizeEmail,
@@ -11,6 +15,16 @@ import {
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
     Password({
+      // ライブラリのデフォルト実装（8文字未満を拒否）と同一の要件を、
+      // convex/lib/passwordPolicy.ts（UI の minLength・seed:demoAuth と共有）
+      // から明示的に設定する（挙動は変えず、要件の定義箇所だけを一元化する）。
+      validatePasswordRequirements(password) {
+        if (!isPasswordLengthValid(password)) {
+          throw new Error(
+            `パスワードは${MIN_PASSWORD_LENGTH}文字以上にしてください`,
+          );
+        }
+      },
       profile(params) {
         const email = normalizeEmail(String(params.email ?? ""));
         if (!isValidEmail(email)) {
