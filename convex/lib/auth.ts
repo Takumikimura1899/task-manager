@@ -308,6 +308,14 @@ export function actorMutation<A extends PropertyValidators, R>(
  */
 
 /**
+ * projectQuery/projectMutation が membership 不在時に投げる ConvexError の
+ * メッセージ。フロントの DetailErrorBoundary（IssueDetail/TaskDetail/
+ * ProjectMembers 共通）がこの文字列と照合して DetailForbidden へ縮退させる
+ * ため、投げる側と照合する側で文言を別々に持たないようここへ一元化する。
+ */
+export const NOT_A_MEMBER_MESSAGE = "このプロジェクトに参加していません";
+
+/**
  * query 用ビルダー: viewer 解決 → resolveProject → membership 確認、の順で
  * ゲートし、viewer/membership を handler の第3引数として渡す。
  * - viewer が未認証: throw（requireViewer）。ブラウザ未リンク: null を返し終了。
@@ -338,7 +346,7 @@ export function projectQuery<A extends PropertyValidators, R>(
 
       const membership = await findMembership(ctx, projectId, viewer._id);
       if (membership === null) {
-        throw new ConvexError("このプロジェクトに参加していません");
+        throw new ConvexError(NOT_A_MEMBER_MESSAGE);
       }
 
       return await handler(ctx, args, { viewer, membership });
@@ -383,7 +391,7 @@ export function projectMutation<A extends PropertyValidators, R>(
 
       const membership = await findMembership(ctx, projectId, actor._id);
       if (membership === null) {
-        throw new ConvexError("このプロジェクトに参加していません");
+        throw new ConvexError(NOT_A_MEMBER_MESSAGE);
       }
 
       if (!hasProjectPermission(membership.role, opts.permission)) {

@@ -329,10 +329,9 @@ describe("ProjectMembers の owner としての表示（表示仕様: 非対称�
       ),
     ).toBeVisible();
 
-    // ConfirmPanel 内の確定ボタンも同じ「除名する」ラベルのため、
-    // 直近にマウントされた要素（パネル側）を取る。
-    const confirmButtons = screen.getAllByRole("button", { name: "除名する" });
-    await user.click(confirmButtons[confirmButtons.length - 1]);
+    // ConfirmPanel 内の確定ボタンはトリガーと同じ視覚ラベル（除名する）だが、
+    // accessible name は対象名を含めて区別している（監査指摘）。
+    await user.click(screen.getByRole("button", { name: "「Bob」を除名する" }));
 
     expect(mocks.removeMutate).toHaveBeenCalledWith({
       project: "project_1",
@@ -351,8 +350,7 @@ describe("ProjectMembers の owner としての表示（表示仕様: 非対称�
     renderProjectMembers();
 
     await user.click(screen.getByRole("button", { name: "除名する" }));
-    const confirmButtons = screen.getAllByRole("button", { name: "除名する" });
-    await user.click(confirmButtons[confirmButtons.length - 1]);
+    await user.click(screen.getByRole("button", { name: "「Bob」を除名する" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "最後の owner は降格・除名・脱退できません",
@@ -370,8 +368,11 @@ describe("ProjectMembers の owner としての表示（表示仕様: 非対称�
       screen.getByText("このプロジェクトから脱退します。取り消せません。"),
     ).toBeVisible();
 
-    const confirmButtons = screen.getAllByRole("button", { name: "脱退する" });
-    await user.click(confirmButtons[confirmButtons.length - 1]);
+    // ConfirmPanel 内の確定ボタンはトリガーと同じ視覚ラベル（脱退する）だが、
+    // accessible name で区別している（監査指摘）。
+    await user.click(
+      screen.getByRole("button", { name: "このプロジェクトから脱退する" }),
+    );
 
     expect(mocks.leaveMutate).toHaveBeenCalledWith({ project: "project_1" });
     expect(await screen.findByText("一覧画面")).toBeVisible();
@@ -388,8 +389,9 @@ describe("ProjectMembers の owner としての表示（表示仕様: 非対称�
     renderProjectMembers();
 
     await user.click(screen.getByRole("button", { name: "脱退する" }));
-    const confirmButtons = screen.getAllByRole("button", { name: "脱退する" });
-    await user.click(confirmButtons[confirmButtons.length - 1]);
+    await user.click(
+      screen.getByRole("button", { name: "このプロジェクトから脱退する" }),
+    );
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "最後の owner は降格・除名・脱退できません",

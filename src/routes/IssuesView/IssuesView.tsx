@@ -10,6 +10,7 @@ import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { SortBar } from "../../components/SortBar/SortBar";
 import { useIssueListParams } from "../../lib/filterParams";
 import type { IssueSummary } from "../../lib/issueMeta";
+import { PROJECT_NOT_FOUND_MESSAGE } from "../../lib/projectNotFoundMessage";
 import { PRIORITY_WEIGHT } from "../../lib/taskMeta";
 import s from "./IssuesView.module.css";
 
@@ -102,9 +103,7 @@ export function IssuesView() {
         />
       </div>
       {issues === null ? (
-        <p className={s.empty}>
-          プロジェクトが見つかりませんでした。ヘッダーの「プロジェクト」から選び直してください。
-        </p>
+        <p className={s.empty}>{PROJECT_NOT_FOUND_MESSAGE}</p>
       ) : issues === undefined || sortedIssues === undefined ? (
         <output aria-label="Issue を読み込み中" className={s.loading}>
           <Skeleton className={s.skeletonStats} />
