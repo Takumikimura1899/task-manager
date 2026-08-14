@@ -67,11 +67,10 @@ export const link = projectMutation(
     project: (ctx, args) => projectOfTask(ctx, args.task),
   },
   async (ctx, args) => {
-    // 参照整合性（INVARIANT-3）
-    const task = await ctx.db.get(args.task);
-    if (task === null) {
-      throw new ConvexError("指定されたタスクが存在しません");
-    }
+    // 参照整合性（INVARIANT-3）。task は projectMutation が同一トランザクション
+    // 内で実在を既に確認済み（projectOfTask）のため null は到達しない。
+    // クロスプロジェクト検証（task.project）に使うため取得は維持する。
+    const task = (await ctx.db.get(args.task))!;
     const repository = await ctx.db.get(args.repository);
     if (repository === null) {
       throw new ConvexError("指定されたリポジトリが存在しません");

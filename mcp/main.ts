@@ -356,6 +356,11 @@ async function main() {
           api.tasks.listFiltered,
           withToken({ project: project._id, status, assignee, priority }),
         );
+        // resolveProject が project の実在を確認済みのため、ここでの null は
+        // 理論上到達しない（ADR-11 projectQuery の型契約に合わせたナローイング）。
+        if (tasks === null) {
+          throw new Error(`プロジェクトが見つかりません: ${project_key}`);
+        }
         return ok(tasks);
       } catch (e) {
         return fail(e);

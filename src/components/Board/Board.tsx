@@ -83,9 +83,11 @@ export function Board({
     runExclusive,
     resyncFromServer,
   } = useBoardSnapshot({
-    // null（非参加プロジェクトへのアクセス。ADR-11 projectQuery の型契約）は
-    // 下記の early return で別扱いするため、hook へは undefined として渡し
-    // 通常のロード中と同じ「同期しない」状態に留める。
+    // null（「未リンク viewer」または「project 自体が存在しない」場合。
+    // ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+    // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照）は下記の
+    // early return で別扱いするため、hook へは undefined として渡し通常の
+    // ロード中と同じ「同期しない」状態に留める。
     columns: columns ?? undefined,
     filter,
     dragging: activeTask !== null,
@@ -151,8 +153,10 @@ export function Board({
     [boardRef],
   );
 
-  // null は非参加プロジェクトへのアクセス（ADR-11 projectQuery の型契約。
-  // 詳細な案内は PR③ で整備し、PR② では最低限のガードに留める）。
+  // null は「未リンク viewer」または「project 自体が存在しない」場合
+  // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+  // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照。詳細な案内は
+  // PR③ で整備し、PR② では最低限のガードに留める）。
   if (columns === null) {
     return <p className={s.empty}>プロジェクトが見つかりません。</p>;
   }

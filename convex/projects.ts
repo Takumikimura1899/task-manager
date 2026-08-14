@@ -2,9 +2,11 @@ import { ConvexError, v } from "convex/values";
 import {
   actorMutation,
   authedQuery,
+  membershipsOfMember,
   projectQuery,
   requireViewer,
 } from "./lib/auth";
+import { projectOfKey } from "./lib/projectScope";
 import { findProjectByKey } from "./lib/projects";
 import { isValidProjectKey } from "./lib/validators";
 
@@ -58,7 +60,7 @@ export const create = actorMutation(
 
 export const getByKey = projectQuery(
   { key: v.string() },
-  async (ctx, args) => (await findProjectByKey(ctx, args.key))?._id ?? null,
+  (ctx, args) => projectOfKey(ctx, args.key),
   async (ctx, args) => await findProjectByKey(ctx, args.key),
 );
 
@@ -71,10 +73,7 @@ export const list = authedQuery({}, async (ctx, args) => {
   const viewer = await requireViewer(ctx, args.accessToken);
   if (viewer === null) return [];
 
-  const memberships = await ctx.db
-    .query("projectMembers")
-    .withIndex("by_member", (q) => q.eq("member", viewer._id))
-    .collect();
+  const memberships = await membershipsOfMember(ctx, viewer._id);
 
   const projects = await Promise.all(
     memberships.map((m) => ctx.db.get(m.project)),

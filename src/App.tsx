@@ -1,6 +1,7 @@
 import { AuthLoading, Authenticated, Unauthenticated } from "convex/react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "./components/AppLayout/AppLayout";
+import { DetailErrorBoundary } from "./components/ErrorBoundary/DetailErrorBoundary";
 import { ErrorBoundary } from "./components/ErrorBoundary/ErrorBoundary";
 import { GanttView } from "./routes/GanttView/GanttView";
 import { IssueDetail } from "./routes/IssueDetail/IssueDetail";
@@ -84,7 +85,9 @@ function AppRoutes() {
       <Route
         element={
           <ErrorBoundary>
-            <IssueDetail />
+            <DetailErrorBoundary backTo="/issues" entity="Issue">
+              <IssueDetail />
+            </DetailErrorBoundary>
           </ErrorBoundary>
         }
         path="/:projectKey/issues/:number"
@@ -92,7 +95,9 @@ function AppRoutes() {
       <Route
         element={
           <ErrorBoundary>
-            <TaskDetail />
+            <DetailErrorBoundary backTo="/" entity="Task">
+              <TaskDetail />
+            </DetailErrorBoundary>
           </ErrorBoundary>
         }
         path="/:projectKey/tasks/:number"
