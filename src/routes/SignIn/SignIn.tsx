@@ -1,6 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { type FormEvent, useId, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
+import { MIN_PASSWORD_LENGTH } from "../../../convex/lib/passwordPolicy";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { reportConvexError } from "../../lib/convexErrorMessage";
 import s from "./SignIn.module.css";
@@ -115,12 +116,14 @@ export function SignIn() {
             }
             className={s.input}
             id={passwordId}
-            minLength={8}
+            minLength={MIN_PASSWORD_LENGTH}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
             value={password}
           />
-          <p className={s.hint}>パスワードは 8 文字以上です。</p>
+          <p className={s.hint}>
+            パスワードは {MIN_PASSWORD_LENGTH} 文字以上です。
+          </p>
           {flow === "signUp" && (
             <>
               <label className={s.label} htmlFor={inviteCodeId}>

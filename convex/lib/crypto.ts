@@ -121,6 +121,21 @@ export function generateInviteToken(): string {
 }
 
 /**
+ * 招待トークンの発行を1回で完結させるヘルパ（generateInviteToken +
+ * sha256Hex のペア呼び出しが members.ts の create / reissueInviteToken・
+ * seed.ts の demo / prepareDemoAuth の4箇所で重複していたため一元化する）。
+ * 平文（呼び出し元が一度だけ返す用）とハッシュ（DB 保存用）の両方を返す。
+ */
+export async function issueInviteToken(): Promise<{
+  inviteToken: string;
+  inviteTokenHash: string;
+}> {
+  const inviteToken = generateInviteToken();
+  const inviteTokenHash = await sha256Hex(inviteToken);
+  return { inviteToken, inviteTokenHash };
+}
+
+/**
  * トークンを SHA-256 でハッシュしてから一定時間比較する（MCP アクセストークン検証用）。
  *
  * timingSafeEqual は長さが異なると即座に false を返すため、比較対象の長さの

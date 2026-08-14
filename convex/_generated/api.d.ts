@@ -23,6 +23,7 @@ import type * as lib_githubReconcile from "../lib/githubReconcile.js";
 import type * as lib_issueStatus from "../lib/issueStatus.js";
 import type * as lib_memberLink from "../lib/memberLink.js";
 import type * as lib_members from "../lib/members.js";
+import type * as lib_passwordPolicy from "../lib/passwordPolicy.js";
 import type * as lib_projectScope from "../lib/projectScope.js";
 import type * as lib_projects from "../lib/projects.js";
 import type * as lib_rank from "../lib/rank.js";
@@ -62,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   "lib/issueStatus": typeof lib_issueStatus;
   "lib/memberLink": typeof lib_memberLink;
   "lib/members": typeof lib_members;
+  "lib/passwordPolicy": typeof lib_passwordPolicy;
   "lib/projectScope": typeof lib_projectScope;
   "lib/projects": typeof lib_projects;
   "lib/rank": typeof lib_rank;
