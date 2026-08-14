@@ -7,6 +7,7 @@ import { GanttChart } from "../../components/GanttChart/GanttChart";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useTodayIso } from "../../hooks/useTodayIso";
 import { buildGanttModel } from "../../lib/gantt";
+import { PROJECT_NOT_FOUND_MESSAGE } from "../../lib/projectNotFoundMessage";
 import s from "./GanttView.module.css";
 
 /**
@@ -35,9 +36,7 @@ export function GanttView() {
           <Skeleton className={s.skeletonPanel} />
         </output>
       ) : model === null ? (
-        <p className={s.empty}>
-          プロジェクトが見つかりませんでした。ヘッダーの「プロジェクト」から選び直してください。
-        </p>
+        <p className={s.empty}>{PROJECT_NOT_FOUND_MESSAGE}</p>
       ) : model.rows.length === 0 ? (
         <p className={s.empty}>
           開始日・期限日が設定された Task がありません。Issue 一覧から Issue

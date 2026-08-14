@@ -1,14 +1,7 @@
 import { ConvexError } from "convex/values";
 import { Component, type ReactNode } from "react";
+import { NOT_A_MEMBER_MESSAGE } from "../../../convex/lib/auth";
 import { DetailForbidden } from "../DetailPage/DetailForbidden";
-
-/**
- * projectQuery（convex/lib/auth.ts）が非参加 linked Member に対して投げる
- * ConvexError のメッセージ。IssueDetail/TaskDetail/ProjectMembers は selected
- * project のメンバー一覧を経由せず projectKey（+ number）の deep link で
- * 直接 useQuery するため、非参加者がこの URL を踏むと当該 query が throw する。
- */
-const NOT_A_MEMBER_MESSAGE = "このプロジェクトに参加していません";
 
 type Props = {
   backTo: string;

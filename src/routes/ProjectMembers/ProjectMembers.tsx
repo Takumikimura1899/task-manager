@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -42,23 +42,70 @@ export function ProjectMembers() {
       : "skip",
   );
   const me = useQuery(api.members.me);
-  const allMembers = useQuery(api.members.list, {});
+  // 追加フォームを開いている間だけ全社名簿を購読する（監査指摘: 常時購読）。
+  const [addOpen, setAddOpen] = useState(false);
+  const allMembers = useQuery(api.members.list, addOpen ? {} : "skip");
 
   const addMemberMutation = useMutation(api.projectMembers.add);
   const changeRoleMutation = useMutation(api.projectMembers.changeRole);
   const removeMutation = useMutation(api.projectMembers.remove);
   const leaveMutation = useMutation(api.projectMembers.leave);
 
-  const [roleError, setRoleError] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<{
+    member: Id<"members">;
+    message: string;
+  } | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [pendingBusy, setPendingBusy] = useState(false);
   const [pendingError, setPendingError] = useState<string | null>(null);
 
-  const [addOpen, setAddOpen] = useState(false);
   const [addMemberId, setAddMemberId] = useState<Id<"members"> | null>(null);
   const [addRole, setAddRole] = useState<ProjectRole>("member");
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+
+  const roleErrorId = useId();
+  const addToggleRef = useRef<HTMLButtonElement | null>(null);
+  const addMemberSelectRef = useRef<HTMLSelectElement | null>(null);
+  const wasAddOpenRef = useRef(false);
+
+  // memberships/allMembers はここではまだガード（後段の early return）を
+  // 通っていないため "?? []" の安全側フォールバックを使う。追加トグル
+  // フォーカス管理・stale 判定のどちらもガード前のフックから参照するため、
+  // candidateMembers はガード前に1箇所だけで計算する（後段で再計算しない）。
+  const candidateMembers = (allMembers ?? []).filter(
+    (m) => !(memberships ?? []).some((row) => row.member._id === m._id),
+  );
+  const addFormReady = addOpen && allMembers !== undefined;
+
+  // 追加フォームを開いたら候補読み込み後に最初の select へフォーカスする
+  // （監査指摘: トグルの unmount で focus が body に落ちる）。
+  useEffect(() => {
+    if (addFormReady) {
+      addMemberSelectRef.current?.focus();
+    }
+  }, [addFormReady]);
+
+  // 追加フォームを閉じた（キャンセル／追加成功のいずれか）ときはトグルへ
+  // フォーカスを戻す。初回マウント時（addOpen が最初から false）には発火
+  // しないよう、直前が open だったかを wasAddOpenRef で判定する。
+  useEffect(() => {
+    if (!addOpen && wasAddOpenRef.current) {
+      addToggleRef.current?.focus();
+    }
+    wasAddOpenRef.current = addOpen;
+  }, [addOpen]);
+
+  // 選択中の候補が表示中に外れた（別 owner が先に追加した等）場合、
+  // stale な選択を残さずリセットする（監査指摘: addMemberId の stale 化）。
+  useEffect(() => {
+    if (
+      addMemberId !== null &&
+      !candidateMembers.some((m) => m._id === addMemberId)
+    ) {
+      setAddMemberId(null);
+    }
+  }, [addMemberId, candidateMembers]);
 
   if (project === undefined || memberships === undefined || me === undefined) {
     return (
@@ -89,10 +136,6 @@ export function ProjectMembers() {
       : memberships.find((row) => row.member._id === me._id);
   const isOwner = myMembership?.role === "owner";
 
-  const candidateMembers = (allMembers ?? []).filter(
-    (m) => !memberships.some((row) => row.member._id === m._id),
-  );
-
   const closeAddForm = () => {
     setAddOpen(false);
     setAddMemberId(null);
@@ -119,12 +162,22 @@ export function ProjectMembers() {
     }
   };
 
-  const handleRoleChange = async (member: Id<"members">, role: ProjectRole) => {
+  const handleRoleChange = async (
+    member: Id<"members">,
+    name: string,
+    role: ProjectRole,
+  ) => {
     setRoleError(null);
     try {
       await changeRoleMutation({ project: project._id, member, role });
     } catch (err) {
-      setRoleError(reportConvexError(err, "ロール変更に失敗しました"));
+      setRoleError({
+        member,
+        message: `「${name}」のロール変更に失敗しました: ${reportConvexError(
+          err,
+          "ロール変更に失敗しました",
+        )}`,
+      });
     }
   };
 
@@ -188,6 +241,7 @@ export function ProjectMembers() {
             <button
               className={s.addToggle}
               onClick={() => setAddOpen(true)}
+              ref={addToggleRef}
               type="button"
             >
               ＋ メンバーを追加
@@ -197,42 +251,55 @@ export function ProjectMembers() {
 
         {isOwner && addOpen && (
           <form className={s.addForm} onSubmit={handleAddSubmit}>
-            <label className={s.addField}>
-              メンバー
-              <select
-                className={s.select}
-                onChange={(e) =>
-                  setAddMemberId(
-                    e.target.value === ""
-                      ? null
-                      : (e.target.value as Id<"members">),
-                  )
-                }
-                value={addMemberId ?? ""}
-              >
-                <option value="">選択してください</option>
-                {candidateMembers.map((m) => (
-                  <option key={m._id} value={m._id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={s.addField}>
-              ロール
-              <select
-                className={s.select}
-                onChange={(e) => setAddRole(e.target.value as ProjectRole)}
-                value={addRole}
-              >
-                <option value="member">{PROJECT_ROLE_LABELS.member}</option>
-                <option value="owner">{PROJECT_ROLE_LABELS.owner}</option>
-              </select>
-            </label>
+            {allMembers === undefined ? (
+              <output aria-label="候補を読み込み中" className="hintSm">
+                候補を読み込み中…
+              </output>
+            ) : (
+              <>
+                <label className={s.addField}>
+                  メンバー
+                  <select
+                    className={s.select}
+                    onChange={(e) =>
+                      setAddMemberId(
+                        e.target.value === ""
+                          ? null
+                          : (e.target.value as Id<"members">),
+                      )
+                    }
+                    ref={addMemberSelectRef}
+                    value={addMemberId ?? ""}
+                  >
+                    <option value="">選択してください</option>
+                    {candidateMembers.map((m) => (
+                      <option key={m._id} value={m._id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className={s.addField}>
+                  ロール
+                  <select
+                    className={s.select}
+                    onChange={(e) => setAddRole(e.target.value as ProjectRole)}
+                    value={addRole}
+                  >
+                    <option value="member">{PROJECT_ROLE_LABELS.member}</option>
+                    <option value="owner">{PROJECT_ROLE_LABELS.owner}</option>
+                  </select>
+                </label>
+              </>
+            )}
             <div className={s.addActions}>
               <button
                 className={s.submit}
-                disabled={addMemberId === null || addSubmitting}
+                disabled={
+                  addMemberId === null ||
+                  addSubmitting ||
+                  allMembers === undefined
+                }
                 type="submit"
               >
                 追加
@@ -272,6 +339,8 @@ export function ProjectMembers() {
               <tbody>
                 {memberships.map((row) => {
                   const isMe = me !== null && row.member._id === me._id;
+                  const hasRoleError =
+                    roleError !== null && roleError.member === row.member._id;
                   return (
                     <tr key={row._id}>
                       <td className={s.td}>{row.member.name}</td>
@@ -297,11 +366,16 @@ export function ProjectMembers() {
                           ) : (
                             <div className={s.rowActions}>
                               <select
+                                aria-describedby={
+                                  hasRoleError ? roleErrorId : undefined
+                                }
+                                aria-invalid={hasRoleError ? true : undefined}
                                 aria-label={`${row.member.name} のロール`}
                                 className={s.select}
                                 onChange={(e) =>
                                   void handleRoleChange(
                                     row.member._id,
+                                    row.member.name,
                                     e.target.value as ProjectRole,
                                   )
                                 }
@@ -325,6 +399,16 @@ export function ProjectMembers() {
                               </button>
                             </div>
                           )}
+                          {roleError !== null &&
+                            roleError.member === row.member._id && (
+                              <p
+                                className="actionError"
+                                id={roleErrorId}
+                                role="alert"
+                              >
+                                {roleError.message}
+                              </p>
+                            )}
                         </td>
                       )}
                     </tr>
@@ -333,11 +417,6 @@ export function ProjectMembers() {
               </tbody>
             </table>
           </div>
-        )}
-        {roleError !== null && (
-          <p className="actionError" role="alert">
-            {roleError}
-          </p>
         )}
       </section>
 
@@ -357,6 +436,11 @@ export function ProjectMembers() {
       {pending !== null && (
         <ConfirmPanel
           busy={pendingBusy}
+          confirmAriaLabel={
+            pending.type === "remove"
+              ? `「${pending.name}」を除名する`
+              : "このプロジェクトから脱退する"
+          }
           confirmLabel={pending.type === "remove" ? "除名する" : "脱退する"}
           error={pendingError}
           message={

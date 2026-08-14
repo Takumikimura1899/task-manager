@@ -179,7 +179,9 @@
   }
 
   .roleBadge {
-    padding: 2px var(--space-2);
+    /* トークンに 2px 相当が無いため、直書きせず --space-1 から派生させる
+       （フロントエンドCSS規約.md §2「値の直書きを禁止」）。 */
+    padding: calc(var(--space-1) / 2) var(--space-2);
     font-size: var(--font-size-xs);
     font-weight: 600;
     border-radius: var(--radius-pill);

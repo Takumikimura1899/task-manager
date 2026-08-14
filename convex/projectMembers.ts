@@ -14,6 +14,7 @@ import {
 import { findMemberByEmail } from "./lib/members";
 import { projectOfProjectId } from "./lib/projectScope";
 import { findProjectByKey } from "./lib/projects";
+import { nextMeta } from "./lib/revision";
 import { normalizeEmail } from "./lib/validators";
 import { projectRole } from "./schema";
 
@@ -60,6 +61,37 @@ async function assertNotLastOwner(
   if (ownerCount <= 1) {
     throw new ConvexError("最後の owner は降格・除名・脱退できません");
   }
+}
+
+/**
+ * 除名・脱退した member が当該プロジェクトで担当していた Task の担当を
+ * 一括解除する（監査指摘: assignee は参加 Member のみ、の不変条件を
+ * remove/leave でも一貫させる。放置すると除名済み member が担当のまま
+ * 残り、Task 詳細の担当者 select がその member を候補に含められず
+ * 空表示になる）。
+ *
+ * by_assignee インデックスは assignee 単一キーのため、member が参加する
+ * 全プロジェクト横断の担当 Task が read set に入る（project 側の絞り込みは
+ * 事後フィルタ）。convex/lib/auth.ts の listProjectMembers と同じトレード
+ * オフで、単一テナント規模を前提に許容する。
+ */
+async function unassignMemberTasks(
+  ctx: MutationCtx,
+  project: Id<"projects">,
+  member: Id<"members">,
+): Promise<void> {
+  const assignedTasks = await ctx.db
+    .query("tasks")
+    .withIndex("by_assignee", (q) => q.eq("assignee", member))
+    .collect();
+
+  await Promise.all(
+    assignedTasks
+      .filter((task) => task.project === project)
+      .map((task) =>
+        ctx.db.patch(task._id, { assignee: undefined, ...nextMeta(task) }),
+      ),
+  );
 }
 
 /** メンバー追加（owner 専用・既存 members から直接追加・§3.1 の2段階方式）。 */
@@ -127,6 +159,7 @@ export const remove = projectMutation(
     }
 
     await assertNotLastOwner(ctx, args.project, target);
+    await unassignMemberTasks(ctx, args.project, args.member);
     await ctx.db.delete(target._id);
   },
 );
@@ -146,6 +179,7 @@ export const leave = actorMutation(
     }
 
     await assertNotLastOwner(ctx, args.project, membership);
+    await unassignMemberTasks(ctx, args.project, actor._id);
     await ctx.db.delete(membership._id);
   },
 );
