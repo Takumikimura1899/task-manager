@@ -198,6 +198,31 @@ export const seedAgentMember = async (
 export const getTask = (t: T, id: Id<"tasks">) =>
   t.run((ctx) => ctx.db.get(id));
 
+// --- ProjectMember（ADR-11 プロジェクト単位ロール） ---------------------------
+
+/** projectMembers を1件 seed する（ADR-11 の membership ゲートを前提とするテスト用）。 */
+export const seedProjectMember = (
+  t: T,
+  project: Id<"projects">,
+  member: Id<"members">,
+  role: Doc<"projectMembers">["role"] = "owner",
+) => t.run((ctx) => ctx.db.insert("projectMembers", { project, member, role }));
+
+/** (project, member) の membership を取得する（最終状態の検証用）。 */
+export const getProjectMember = (
+  t: T,
+  project: Id<"projects">,
+  member: Id<"members">,
+) =>
+  t.run((ctx) =>
+    ctx.db
+      .query("projectMembers")
+      .withIndex("by_project_and_member", (q) =>
+        q.eq("project", project).eq("member", member),
+      )
+      .unique(),
+  );
+
 // --- Git 連携（repositories / gitLinks, §7） ---------------------------------
 
 /**

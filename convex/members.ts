@@ -11,6 +11,7 @@ import {
   requireAgentToken,
 } from "./lib/auth";
 import { generateInviteToken, sha256Hex } from "./lib/crypto";
+import { findMemberByEmail } from "./lib/members";
 import { isValidEmail, normalizeEmail } from "./lib/validators";
 
 /**
@@ -47,10 +48,7 @@ export const create = actorMutation(
       throw new ConvexError(`メールアドレスが不正です: "${args.email}"`);
     }
 
-    const existing = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .unique();
+    const existing = await findMemberByEmail(ctx, email);
     if (existing !== null) {
       throw new ConvexError(`メールアドレス "${email}" は既に登録されています`);
     }
@@ -117,10 +115,7 @@ export const reissueInviteToken = actorMutation(
 export const getByEmail = authedQuery(
   { email: v.string() },
   async (ctx, args) => {
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", normalizeEmail(args.email)))
-      .unique();
+    const member = await findMemberByEmail(ctx, args.email);
     if (member === null) return null;
 
     return toMemberSummary(member);
@@ -177,10 +172,7 @@ export const ensureAgent = mutation({
     // 壊れた email の Member をサイレントに作らない）。
     const email = requireAgentEmail();
 
-    const existing = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .unique();
+    const existing = await findMemberByEmail(ctx, email);
     if (existing !== null) {
       if (args.name !== undefined) {
         await ctx.db.patch(existing._id, { name: args.name });

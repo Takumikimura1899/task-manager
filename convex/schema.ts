@@ -53,6 +53,10 @@ export const prState = v.union(
 
 export const memberRole = v.union(v.literal("admin"), v.literal("member"));
 
+// ProjectMember のプロジェクト内ロール(ADR-11)。Member.role(admin/member)とは
+// 別軸(システム軸 vs プロジェクト軸・基本設計書 §3.1)。
+export const projectRole = v.union(v.literal("owner"), v.literal("member"));
+
 export default defineSchema({
   // Convex Auth 用テーブル（users / authAccounts / authSessions 等）
   ...authTables,
@@ -153,6 +157,21 @@ export default defineSchema({
     // Issue 配下の Task 一覧・派生ステータス算出・最低基数チェック用
     .index("by_issue", ["issue"])
     .index("by_assignee", ["assignee"]),
+
+  // ProjectMember — Member のプロジェクト参加とプロジェクト内ロール(ADR-11)。
+  // (project, member) の一意性は projects.key / members.email と同一機構
+  // (挿入前に by_project_and_member を .unique() で確認 + Convex の OCC が
+  // 同時挿入の重複を検出)で保証する。
+  projectMembers: defineTable({
+    project: v.id("projects"),
+    member: v.id("members"),
+    role: projectRole,
+    // createdAt は _creationTime で代替(既存慣習)
+  })
+    // (project, member) 一意性チェック + project → メンバー列挙(前方一致)兼用
+    .index("by_project_and_member", ["project", "member"])
+    // member → 参加プロジェクト列挙(projects.list / tasks.listMine のフィルタ用)
+    .index("by_member", ["member"]),
 
   // Repository — Git 連携先
   repositories: defineTable({

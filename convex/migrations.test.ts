@@ -1,13 +1,16 @@
 // @vitest-environment edge-runtime
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   type As,
+  getProjectMember,
   getTask,
   seedAuthedMember,
   seedIssueWithTask,
+  seedMember,
   seedProject,
+  seedProjectMember,
   setup,
 } from "../test/convexSupport";
 
@@ -97,5 +100,119 @@ describe("migrations.repairDuplicateRanks", () => {
     expect(result.columnsRepaired).toBe(0);
     expect(result.tasksRepatched).toBe(0);
     expect(result.scanned).toBeGreaterThan(0);
+  });
+});
+
+/** projectId・memberId のペアで membership の role を引く（結果の最終状態検証用）。 */
+const membershipRole = async (
+  t: ReturnType<typeof setup>,
+  project: Id<"projects">,
+  member: Id<"members">,
+) => (await getProjectMember(t, project, member))?.role ?? null;
+
+describe("migrations.backfillProjectMembers（ADR-11 §6）", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("MCP_AGENT_EMAIL 未設定なら、全ての人間 Member を owner として付与する", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const alice = await seedMember(t, {
+      name: "Alice",
+      email: "alice@example.com",
+    });
+    const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
+
+    const result = await t.mutation(
+      internal.migrations.backfillProjectMembers,
+      {},
+    );
+
+    expect(result).toEqual({
+      projects: 1,
+      members: 2,
+      inserted: 2,
+      skipped: 0,
+    });
+    expect(await membershipRole(t, project, alice)).toBe("owner");
+    expect(await membershipRole(t, project, bob)).toBe("owner");
+  });
+
+  it("MCP_AGENT_EMAIL に一致する Member は member、それ以外の人間 Member は owner として付与する", async () => {
+    const t = setup();
+    vi.stubEnv("MCP_AGENT_EMAIL", "agent@example.com");
+    const project = await seedProject(t);
+    const human = await seedMember(t, {
+      name: "Alice",
+      email: "alice@example.com",
+    });
+    const agent = await seedMember(t, {
+      name: "Agent",
+      email: "agent@example.com",
+    });
+
+    await t.mutation(internal.migrations.backfillProjectMembers, {});
+
+    expect(await membershipRole(t, project, human)).toBe("owner");
+    expect(await membershipRole(t, project, agent)).toBe("member");
+  });
+
+  it("既存の membership はスキップし、role を上書きしない", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const alice = await seedMember(t, {
+      name: "Alice",
+      email: "alice@example.com",
+    });
+    // ADR-11 以前に何らかの経路で member として作られていた既存行を模す。
+    await seedProjectMember(t, project, alice, "member");
+
+    const result = await t.mutation(
+      internal.migrations.backfillProjectMembers,
+      {},
+    );
+
+    expect(result).toEqual({
+      projects: 1,
+      members: 1,
+      inserted: 0,
+      skipped: 1,
+    });
+    expect(await membershipRole(t, project, alice)).toBe("member");
+  });
+
+  it("再実行しても membership が増えない（冪等性）", async () => {
+    const t = setup();
+    const project = await seedProject(t);
+    const alice = await seedMember(t, {
+      name: "Alice",
+      email: "alice@example.com",
+    });
+
+    const first = await t.mutation(
+      internal.migrations.backfillProjectMembers,
+      {},
+    );
+    const second = await t.mutation(
+      internal.migrations.backfillProjectMembers,
+      {},
+    );
+
+    expect(first.inserted).toBe(1);
+    expect(second).toEqual({
+      projects: 1,
+      members: 1,
+      inserted: 0,
+      skipped: 1,
+    });
+    const all = await t.run((ctx) =>
+      ctx.db
+        .query("projectMembers")
+        .withIndex("by_project_and_member", (q) => q.eq("project", project))
+        .collect(),
+    );
+    expect(all).toHaveLength(1);
+    expect(all[0].member).toBe(alice);
   });
 });

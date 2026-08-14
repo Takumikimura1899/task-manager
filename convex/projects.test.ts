@@ -1,7 +1,12 @@
 // @vitest-environment edge-runtime
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
-import { seedAuthedMember, seedProject, setup } from "../test/convexSupport";
+import {
+  getProjectMember,
+  seedAuthedMember,
+  seedProject,
+  setup,
+} from "../test/convexSupport";
 
 /**
  * Project Core API の結合テスト（基本設計書 §3 / Issue #22）。
@@ -74,6 +79,43 @@ describe("projects.create", () => {
     const id = await as.mutation(api.projects.create, { key, name: "x" });
 
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ key });
+  });
+});
+
+describe("projects.create — 作成者の owner membership（ADR-11）", () => {
+  it("作成者を owner とする ProjectMember を同一 mutation 内で挿入する", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+
+    const projectId = await as.mutation(api.projects.create, {
+      key: "TASK",
+      name: "タスク管理",
+    });
+
+    const membership = await getProjectMember(t, projectId, memberId);
+    expect(membership).toMatchObject({
+      project: projectId,
+      member: memberId,
+      role: "owner",
+    });
+  });
+
+  it("重複キーで作成が失敗した場合、owner membership も作られない（同一トランザクション）", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+    await seedProject(t, { key: "TASK" });
+
+    await expect(
+      as.mutation(api.projects.create, { key: "TASK", name: "重複" }),
+    ).rejects.toThrow();
+
+    const memberships = await t.run((ctx) =>
+      ctx.db
+        .query("projectMembers")
+        .withIndex("by_member", (q) => q.eq("member", memberId))
+        .collect(),
+    );
+    expect(memberships).toHaveLength(0);
   });
 });
 
