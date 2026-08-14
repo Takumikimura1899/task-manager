@@ -19,10 +19,13 @@ export function GanttView() {
   const issues = useQuery(api.tasks.gantt, { project: selected._id });
   const today = useTodayIso();
 
-  const model = useMemo(
-    () => (issues === undefined ? undefined : buildGanttModel(issues, today)),
-    [issues, today],
-  );
+  const model = useMemo(() => {
+    if (issues === undefined) return undefined;
+    // null は非参加プロジェクトへのアクセス（ADR-11 projectQuery の型契約。
+    // 詳細な案内は PR③ で整備し、PR② では最低限のガードに留める）。
+    if (issues === null) return null;
+    return buildGanttModel(issues, today);
+  }, [issues, today]);
 
   return (
     <main className={s.page}>
@@ -30,6 +33,8 @@ export function GanttView() {
         <output aria-label="ガントを読み込み中" className={s.loading}>
           <Skeleton className={s.skeletonPanel} />
         </output>
+      ) : model === null ? (
+        <p className={s.empty}>プロジェクトが見つかりません。</p>
       ) : model.rows.length === 0 ? (
         <p className={s.empty}>
           開始日・期限日が設定された Task がありません。Issue 一覧から Issue

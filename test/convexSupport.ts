@@ -283,6 +283,7 @@ export const seedRepository = async (
 export const seedTaskWithRepository = async (t: T) => {
   const { as, memberId: member } = await seedAuthedMember(t);
   const project = await seedProject(t);
+  await seedProjectMember(t, project, member, "owner");
   const { issue, task } = await seedIssueWithTask(as, project);
   const repository = await seedRepository(t, project);
   return { as, project, member, issue, task, repository };

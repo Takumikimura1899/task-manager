@@ -7,6 +7,7 @@ import {
   seedAuthedMember,
   seedMember,
   seedProject,
+  seedProjectMember,
   setup,
   type T,
 } from "../test/convexSupport";
@@ -54,6 +55,7 @@ describe("issues.create", () => {
     const t = setup();
     const { as, memberId: member } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, member, "owner");
 
     const { issue, task } = await as.mutation(api.issues.create, {
       project,
@@ -87,17 +89,20 @@ describe("issues.create", () => {
 
   it("存在しないプロジェクトを指定すると拒否する", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     await t.run((ctx) => ctx.db.delete(project));
 
+    // projectMutation が resolveProject（projectOfProjectId）の段階で拒否するため
+    // 汎用メッセージになる（ADR-11 設計書 §3.5 手順2）。
     await expect(
       as.mutation(api.issues.create, {
         project,
         title: "x",
         firstTask: { title: "t" },
       }),
-    ).rejects.toThrowError("プロジェクトが存在しません");
+    ).rejects.toThrowError("指定された対象が存在しません");
   });
 });
 
@@ -107,6 +112,7 @@ describe("issues.create", () => {
 const arrangeSingleIssue = async (t: T) => {
   const { as, memberId: member } = await seedAuthedMember(t);
   const project = await seedProject(t);
+  await seedProjectMember(t, project, member, "owner");
   const { issue, task } = await as.mutation(api.issues.create, {
     project,
     title: "課題",
@@ -117,7 +123,7 @@ const arrangeSingleIssue = async (t: T) => {
 
 /** list の先頭 Issue（派生ステータス付き）を返す。 */
 const statusOf = async (as: As, project: Id<"projects">) => {
-  const [issue] = await as.query(api.issues.list, { project });
+  const [issue] = (await as.query(api.issues.list, { project }))!;
   return issue;
 };
 
@@ -174,15 +180,16 @@ describe("issues.list（派生ステータス）", () => {
 describe("issues の priority", () => {
   it('priority 未指定で作成すると list / getByRef で "none" になる', async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, memberId, "owner");
     await as.mutation(api.issues.create, {
       project,
       title: "課題",
       firstTask: { title: "タスク" },
     });
 
-    const [listed] = await as.query(api.issues.list, { project });
+    const [listed] = (await as.query(api.issues.list, { project }))!;
     expect(listed).toMatchObject({ priority: "none" });
 
     const found = await as.query(api.issues.getByRef, {
@@ -194,8 +201,9 @@ describe("issues の priority", () => {
 
   it("priority を指定して作成すると反映され、update で変更できる", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, memberId, "owner");
     const { issue } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -225,8 +233,9 @@ describe("issues の priority", () => {
 describe("issues.list（estimateTotal / actualTotal）", () => {
   it("active な Task の estimate/actual を合計し、canceled は除外、未設定は0扱いにする", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const { issue, task: first } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -261,7 +270,7 @@ describe("issues.list（estimateTotal / actualTotal）", () => {
       expectedRevision: 1,
     });
 
-    const [found] = await as.query(api.issues.list, { project });
+    const [found] = (await as.query(api.issues.list, { project }))!;
 
     expect(found).toMatchObject({
       taskCount: 2, // canceled を除いた active 数
@@ -288,10 +297,14 @@ describe("issues.list（assignees）", () => {
       name: "Alice",
     });
     const project = await seedProject(t);
+    await seedProjectMember(t, project, alice, "owner");
     const bob = await seedMember(t, {
       name: "Bob",
       email: "bob@example.com",
     });
+    // 設計書 §10 D2: assignee は project の参加 Member のみ許可されるため、
+    // Bob を member として参加させる。
+    await seedProjectMember(t, project, bob, "member");
     const { issue } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -314,7 +327,7 @@ describe("issues.list（assignees）", () => {
       title: "タスク4",
     });
 
-    const [found] = await as.query(api.issues.list, { project });
+    const [found] = (await as.query(api.issues.list, { project }))!;
 
     expect(found.assignees).toHaveLength(2);
     expect(new Set(found.assignees)).toEqual(new Set([alice, bob]));
@@ -324,6 +337,7 @@ describe("issues.list（assignees）", () => {
     const t = setup();
     const { as, memberId: member } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, member, "owner");
     const { task } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -335,7 +349,7 @@ describe("issues.list（assignees）", () => {
       expectedRevision: 0,
     });
 
-    const [found] = await as.query(api.issues.list, { project });
+    const [found] = (await as.query(api.issues.list, { project }))!;
 
     expect(found.assignees).toEqual([]);
   });
@@ -346,8 +360,9 @@ describe("issues.list（assignees）", () => {
 describe("issues.listInProgress", () => {
   it("in_progress の Issue のみを返す（open/done/canceled は含まない）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
 
     // open のまま
     await as.mutation(api.issues.create, {
@@ -384,7 +399,7 @@ describe("issues.listInProgress", () => {
       expectedRevision: 0,
     });
 
-    const result = await as.query(api.issues.listInProgress, { project });
+    const result = (await as.query(api.issues.listInProgress, { project }))!;
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ title: "進行中の課題" });
@@ -395,7 +410,7 @@ describe("issues.listInProgress", () => {
     const { as, project, task } = await arrangeSingleIssue(t);
     await driveTo(as, task, "in_progress");
 
-    const [found] = await as.query(api.issues.listInProgress, { project });
+    const [found] = (await as.query(api.issues.listInProgress, { project }))!;
 
     expect(Object.keys(found).toSorted()).toEqual([
       "_id",
@@ -436,8 +451,9 @@ describe("issues.update", () => {
 
   it("未指定のフィールドは変更しない", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const { issue } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -490,13 +506,15 @@ describe("issues.update", () => {
       await ctx.db.delete(issue);
     });
 
+    // projectMutation が resolveProject（projectOfIssue）の段階で拒否するため
+    // 汎用メッセージになる（ADR-11 設計書 §3.5 手順2）。
     await expect(
       as.mutation(api.issues.update, {
         id: issue,
         expectedRevision: 0,
         title: "x",
       }),
-    ).rejects.toThrowError("Issue が見つかりません");
+    ).rejects.toThrowError("指定された対象が存在しません");
   });
 });
 
@@ -505,8 +523,9 @@ describe("issues.update", () => {
 describe("issues.remove", () => {
   it("配下の Task と GitLink を併せて削除する（参照整合性）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const { issue, task } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -539,8 +558,9 @@ describe("issues.remove", () => {
 
   it("古い revision での削除を競合として拒否する（楽観ロック）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
     const { issue } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -558,8 +578,9 @@ describe("issues.remove", () => {
 describe("issues.getIdByRef", () => {
   it("参照を解決して _id だけを返す", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, memberId, "owner");
     const { issue } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -577,12 +598,16 @@ describe("issues.getIdByRef", () => {
 describe("issues.getByRef", () => {
   it("参照を解決し、派生ステータス・作成者名・配下 Task（担当者名付き）を返す", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t, { name: "Alice" });
+    const { as, memberId } = await seedAuthedMember(t, { name: "Alice" });
     const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, memberId, "owner");
     const assignee = await seedMember(t, {
       name: "Bob",
       email: "bob@example.com",
     });
+    // 設計書 §10 D2: assignee は project の参加 Member のみ許可されるため、
+    // Bob を member として参加させる。
+    await seedProjectMember(t, project, assignee, "member");
     const { issue, task } = await as.mutation(api.issues.create, {
       project,
       title: "課題A",
@@ -621,8 +646,9 @@ describe("issues.getByRef", () => {
     "$name の場合は getByRef / getIdByRef とも null を返す",
     async ({ projectKey, number }) => {
       const t = setup();
-      const { as } = await seedAuthedMember(t);
+      const { as, memberId } = await seedAuthedMember(t);
       const project = await seedProject(t, { key: "TASK" });
+      await seedProjectMember(t, project, memberId, "owner");
       await as.mutation(api.issues.create, {
         project,
         title: "課題",

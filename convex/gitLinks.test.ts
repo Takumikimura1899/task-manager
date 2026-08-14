@@ -167,9 +167,11 @@ describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
     // Issue ごと削除して task の実体を消す（参照だけ残す）
     await as.mutation(api.issues.remove, { id: issue, expectedRevision: 0 });
 
+    // projectMutation が resolveProject（projectOfTask）の段階で拒否するため
+    // 汎用メッセージになる（ADR-11 設計書 §3.5 手順2）。
     await expect(
       as.mutation(api.gitLinks.link, createLinkArgs({ task, repository })),
-    ).rejects.toThrowError("指定されたタスクが存在しません");
+    ).rejects.toThrowError("指定された対象が存在しません");
 
     expect(await t.run((ctx) => ctx.db.query("gitLinks").collect())).toEqual(
       [],
@@ -204,7 +206,7 @@ describe("gitLinks.listByTask", () => {
       { externalRef: "feature/TASK-2" },
     );
 
-    const listed = await as.query(api.gitLinks.listByTask, { task });
+    const listed = (await as.query(api.gitLinks.listByTask, { task }))!;
 
     expect(listed.map((l) => l._id)).toEqual([mine]);
   });

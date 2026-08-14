@@ -5,6 +5,7 @@ import {
   getProjectMember,
   seedAuthedMember,
   seedProject,
+  seedProjectMember,
   setup,
 } from "../test/convexSupport";
 
@@ -48,8 +49,10 @@ describe("projects.create", () => {
       as.mutation(api.projects.create, { key: "TASK", name: "重複" }),
     ).rejects.toThrowError('プロジェクトキー "TASK" は既に使用されています');
 
-    // 失敗したトランザクションは何も書き込まない
-    expect(await as.query(api.projects.list, {})).toHaveLength(1);
+    // 失敗したトランザクションは何も書き込まない（projects.list は ADR-11 で
+    // 参加プロジェクトのみに絞られたため、DB を直接見て全体件数を検証する）。
+    const projects = await t.run((ctx) => ctx.db.query("projects").collect());
+    expect(projects).toHaveLength(1);
   });
 
   it.each([
@@ -122,8 +125,9 @@ describe("projects.create — 作成者の owner membership（ADR-11）", () => 
 describe("projects.getByKey", () => {
   it("キーに一致する Project を返す", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const id = await seedProject(t, { key: "TASK", name: "対象" });
+    await seedProjectMember(t, id, memberId, "owner");
     await seedProject(t, { key: "OTHER", name: "別物" });
 
     const found = await as.query(api.projects.getByKey, { key: "TASK" });
@@ -141,16 +145,17 @@ describe("projects.getByKey", () => {
 });
 
 describe("projects.list", () => {
-  it("登録済みの全 Project を返す（空なら空配列）", async () => {
+  it("参加している Project のみを返す（空なら空配列。ADR-11 §3.1）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     expect(await as.query(api.projects.list, {})).toEqual([]);
 
-    await seedProject(t, { key: "TASK" });
-    await seedProject(t, { key: "OTHER" });
+    const task = await seedProject(t, { key: "TASK" });
+    await seedProject(t, { key: "OTHER" }); // 未参加のため一覧に含まれない
+    await seedProjectMember(t, task, memberId, "owner");
 
     const listed = await as.query(api.projects.list, {});
-    expect(listed.map((p) => p.key).toSorted()).toEqual(["OTHER", "TASK"]);
+    expect(listed.map((p) => p.key)).toEqual(["TASK"]);
   });
 });
 

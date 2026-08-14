@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
-import { actorMutation, authedQuery } from "./lib/auth";
+import { projectMutation, projectQuery } from "./lib/auth";
 import { encryptSecret } from "./lib/crypto";
+import { projectOfProjectId } from "./lib/projectScope";
 
 /**
  * Repository の Core API（基本設計書 §3 / §7）。
@@ -18,17 +19,18 @@ function encryptionKey(): string {
   return key;
 }
 
-export const create = actorMutation(
+export const create = projectMutation(
   {
     project: v.id("projects"),
     remoteUrl: v.string(),
     webhookSecret: v.string(),
   },
+  {
+    // webhookSecret を生む操作のため owner 専用（設計書 §4）。
+    permission: "project.settings.edit",
+    project: (ctx, args) => projectOfProjectId(ctx, args.project),
+  },
   async (ctx, args) => {
-    if ((await ctx.db.get(args.project)) === null) {
-      throw new ConvexError("指定されたプロジェクトが存在しません");
-    }
-
     const encrypted = await encryptSecret(args.webhookSecret, encryptionKey());
     return await ctx.db.insert("repositories", {
       project: args.project,
@@ -39,9 +41,10 @@ export const create = actorMutation(
   },
 );
 
-/** プロジェクトのリポジトリ一覧（webhookSecret は除外して返す）。 */
-export const listByProject = authedQuery(
+/** プロジェクトのリポジトリ一覧（webhookSecret は除外して返す）。member も閲覧可。 */
+export const listByProject = projectQuery(
   { project: v.id("projects") },
+  (ctx, args) => projectOfProjectId(ctx, args.project),
   async (ctx, args) => {
     const repos = await ctx.db
       .query("repositories")

@@ -2,8 +2,14 @@ import { ConvexError, v } from "convex/values";
 import { type MutationCtx, type QueryCtx, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
-import { actorMutation, authedQuery, requireAuthedMember } from "./lib/auth";
+import { projectMutation, projectQuery, requireAuthedMember } from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
+import {
+  assertAssignableMember,
+  projectOfIssue,
+  projectOfProjectId,
+  projectOfTask,
+} from "./lib/projectScope";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { TASK_STATUSES, canTransition } from "./lib/taskStatus";
@@ -38,15 +44,6 @@ async function getTaskOrThrow(
     throw new ConvexError("タスクが見つかりません");
   }
   return task;
-}
-
-async function assertMemberExists(
-  ctx: QueryCtx,
-  memberId: Id<"members">,
-): Promise<void> {
-  if ((await ctx.db.get(memberId)) === null) {
-    throw new ConvexError("指定されたメンバーが存在しません");
-  }
 }
 
 /**
@@ -186,8 +183,9 @@ export async function insertTask(
   // createdBy は requireActor が同一トランザクション内で取得した実在 member
   // （actor._id）のみが渡るため、実在チェックは不要（Issue #1 PR2 で
   // クライアント引数を廃止済み）。assignee は引き続きクライアント由来なので検証する。
+  // 設計書 §10 D2: assignee は project の参加 Member のみ許可する。
   if (args.assignee !== undefined) {
-    await assertMemberExists(ctx, args.assignee);
+    await assertAssignableMember(ctx, args.project, args.assignee);
   }
 
   assertDateString("開始日", args.startDate);
@@ -221,7 +219,7 @@ export async function insertTask(
 
 // --- Mutations --------------------------------------------------------------
 
-export const create = actorMutation(
+export const create = projectMutation(
   {
     issue: v.id("issues"),
     title: v.string(),
@@ -231,7 +229,11 @@ export const create = actorMutation(
     startDate: v.optional(v.string()),
     dueDate: v.optional(v.string()),
   },
-  async (ctx, args, actor) => {
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfIssue(ctx, args.issue),
+  },
+  async (ctx, args, { actor }) => {
     // Task は必ず Issue に従属する（INVARIANT-5）。project は Issue から解決する。
     const issue = await ctx.db.get(args.issue);
     if (issue === null) {
@@ -253,7 +255,7 @@ export const create = actorMutation(
 );
 
 /** タイトル・説明・優先度・見積/実績工数・開始日/期限日の更新（status/assignee/rank は専用 mutation を使う）。 */
-export const updateFields = actorMutation(
+export const updateFields = projectMutation(
   {
     id: v.id("tasks"),
     expectedRevision: v.number(),
@@ -265,6 +267,10 @@ export const updateFields = actorMutation(
     actual: v.optional(v.union(v.number(), v.null())),
     startDate: v.optional(v.union(v.string(), v.null())),
     dueDate: v.optional(v.union(v.string(), v.null())),
+  },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfTask(ctx, args.id),
   },
   async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
@@ -312,12 +318,16 @@ export const updateFields = actorMutation(
  * 破壊的遷移（done/canceled）の Human-in-the-Loop 承認はホスト（MCP/UI）の責務で、
  * ここでは遷移の妥当性のみを強制する。
  */
-export const transitionStatus = actorMutation(
+export const transitionStatus = projectMutation(
   {
     id: v.id("tasks"),
     to: taskStatus,
     expectedRevision: v.number(),
     position: v.optional(positionValidator),
+  },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfTask(ctx, args.id),
   },
   async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
@@ -344,17 +354,22 @@ export const transitionStatus = actorMutation(
 );
 
 /** 担当者の割り当て・解除（null で解除）。 */
-export const assign = actorMutation(
+export const assign = projectMutation(
   {
     id: v.id("tasks"),
     assignee: v.union(v.id("members"), v.null()),
     expectedRevision: v.number(),
   },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfTask(ctx, args.id),
+  },
   async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
     assertRevision(task, args.expectedRevision);
     if (args.assignee !== null) {
-      await assertMemberExists(ctx, args.assignee);
+      // 設計書 §10 D2: assignee は project の参加 Member のみ許可する。
+      await assertAssignableMember(ctx, task.project, args.assignee);
     }
 
     await ctx.db.patch(task._id, {
@@ -372,11 +387,15 @@ export const assign = actorMutation(
  * （project × status）を読み直して解決する（rankForInsert）。呼び出し元は
  * Board のみのため position は必須（省略を末尾扱いで黙認しない）。
  */
-export const move = actorMutation(
+export const move = projectMutation(
   {
     id: v.id("tasks"),
     position: positionValidator,
     expectedRevision: v.number(),
+  },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfTask(ctx, args.id),
   },
   async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
@@ -401,10 +420,14 @@ export const move = actorMutation(
  * タスク削除（破壊的操作・§6 で Human-in-the-Loop 承認必須）。
  * 参照整合性（INVARIANT-3）維持のため、関連する GitLink も併せて削除する。
  */
-export const deleteTask = actorMutation(
+export const deleteTask = projectMutation(
   {
     id: v.id("tasks"),
     expectedRevision: v.number(),
+  },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfTask(ctx, args.id),
   },
   async (ctx, args) => {
     const task = await getTaskOrThrow(ctx, args.id);
@@ -447,13 +470,14 @@ export const deleteTask = actorMutation(
  * priority にはインデックスを追加せず、上記いずれの分岐でも読み取り後のメモリ
  * フィルタで適用する（既存の assignee×status 併用と同じ後段フィルタ方式・Issue #94）。
  */
-export const listFiltered = authedQuery(
+export const listFiltered = projectQuery(
   {
     project: v.id("projects"),
     status: v.optional(taskStatus),
     assignee: v.optional(v.id("members")),
     priority: v.optional(taskPriority),
   },
+  (ctx, args) => projectOfProjectId(ctx, args.project),
   async (ctx, args) => {
     const byPriority = (t: Doc<"tasks">) =>
       args.priority === undefined || t.priority === args.priority;
@@ -494,8 +518,9 @@ export const listFiltered = authedQuery(
  * 表示の利便のため、各 Task に所属 Issue 番号と担当者名を付与する
  * （member の email 等 PII は返さず name のみ）。
  */
-export const board = authedQuery(
+export const board = projectQuery(
   { project: v.id("projects") },
+  (ctx, args) => projectOfProjectId(ctx, args.project),
   async (ctx, args) => {
     const columnTasks = await Promise.all(
       TASK_STATUSES.map(async (status) => ({
@@ -552,11 +577,13 @@ export const board = authedQuery(
  * MCP（get_task / task:// リソース）が依存する安定した契約のため、
  * 表示用の join は付与しない（詳細画面は getDetail を使う）。
  */
-export const getByRef = authedQuery(
+export const getByRef = projectQuery(
   {
     projectKey: v.string(),
     number: v.number(),
   },
+  async (ctx, args) =>
+    (await findProjectByKey(ctx, args.projectKey))?._id ?? null,
   async (ctx, args) => {
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
@@ -578,11 +605,13 @@ export const getByRef = authedQuery(
  * - GitLink 一覧（repository.remoteUrl を join）
  * - projectKey（表示・リンク生成用）
  */
-export const getDetail = authedQuery(
+export const getDetail = projectQuery(
   {
     projectKey: v.string(),
     number: v.number(),
   },
+  async (ctx, args) =>
+    (await findProjectByKey(ctx, args.projectKey))?._id ?? null,
   async (ctx, args) => {
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
@@ -632,8 +661,9 @@ export const getDetail = authedQuery(
  * startDate/dueDate は null に正規化する（getDetail の undefined 透過とは
  * 表現が割れるが、gantt 専用 DTO のための選択であり Convex の制約ではない）。
  */
-export const gantt = authedQuery(
+export const gantt = projectQuery(
   { project: v.id("projects") },
+  (ctx, args) => projectOfProjectId(ctx, args.project),
   async (ctx, args) => {
     const issues = await ctx.db
       .query("issues")
@@ -677,10 +707,21 @@ export const listMine = query({
     const member = await requireAuthedMember(ctx);
     if (member === null) return [];
 
-    const tasks = await ctx.db
-      .query("tasks")
-      .withIndex("by_assignee", (q) => q.eq("assignee", member._id))
+    // 参加プロジェクトのみに絞る（ADR-11 §3.1「参加のみ可視」）。by_member で
+    // 参加プロジェクトを列挙し Set 化してから、by_assignee の結果を後段フィルタする
+    // （設計書 §3.6: listMine は projectQuery 対象外・据え置き + membership フィルタ追加）。
+    const memberships = await ctx.db
+      .query("projectMembers")
+      .withIndex("by_member", (q) => q.eq("member", member._id))
       .collect();
+    const memberProjects = new Set(memberships.map((m) => m.project));
+
+    const tasks = (
+      await ctx.db
+        .query("tasks")
+        .withIndex("by_assignee", (q) => q.eq("assignee", member._id))
+        .collect()
+    ).filter((t) => memberProjects.has(t.project));
 
     // project/issue は参照された分だけ解決する（board と同じ N+1 回避方針。
     // projects/issues 全件の .collect() は避ける）。互いに独立な解決のため
