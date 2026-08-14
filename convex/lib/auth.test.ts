@@ -6,6 +6,7 @@ import {
   authSubject,
   seedAgentMember,
   seedAuthedMember,
+  seedIssueWithTask,
   seedMember,
   seedProject,
   seedProjectMember,
@@ -220,5 +221,38 @@ describe("requireActor / requireAgentToken（MCP 経路）", () => {
     await expect(requireAgentToken(undefined)).rejects.toThrowError(
       "MCP_ACCESS_TOKEN が設定されていません",
     );
+  });
+});
+
+// --- MCP 経路の projectQuery/projectMutation 非参加拒否（ADR-11） --------------
+
+describe("projectQuery/projectMutation の MCP 経路（accessToken）非参加拒否", () => {
+  it("エージェント Member が未参加のプロジェクトへの query（tasks.board）をサイレントにせず ConvexError で拒否する", async () => {
+    const t = setup();
+    await seedAgentMember(t);
+    const project = await seedProject(t);
+
+    await expect(
+      t.query(api.tasks.board, { project, accessToken: AGENT_TOKEN }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+  });
+
+  it("エージェント Member が未参加のプロジェクトへの mutation（tasks.create）をサイレントにせず ConvexError で拒否する", async () => {
+    const t = setup();
+    await seedAgentMember(t);
+    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
+      email: "owner@example.com",
+    });
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, owner, "owner");
+    const { issue } = await seedIssueWithTask(asOwner, project);
+
+    await expect(
+      t.mutation(api.tasks.create, {
+        issue,
+        title: "エージェントの侵入",
+        accessToken: AGENT_TOKEN,
+      }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
   });
 });

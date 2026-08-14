@@ -118,6 +118,29 @@ describe("tasks.create", () => {
     ).rejects.toThrowError("指定された対象が存在しません");
   });
 
+  it("参加していない Member への assignee 指定を拒否する（設計書 §10 D2、insertTask 経由）", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
+    // outsider はどのプロジェクトにも参加していない Member（実在はする）
+    const outsider = await seedMember(t, {
+      name: "Outsider",
+      email: "outsider@example.com",
+    });
+    const { issue } = await seedIssueWithTask(as, project);
+
+    await expect(
+      as.mutation(api.tasks.create, {
+        issue,
+        title: "タスク",
+        assignee: outsider,
+      }),
+    ).rejects.toThrowError(
+      "指定されたメンバーはこのプロジェクトに参加していません",
+    );
+  });
+
   describe("startDate / dueDate（ガント用の予定期間・Issue #141）", () => {
     it("startDate/dueDate を指定すると保存される", async () => {
       const t = setup();
@@ -661,6 +684,32 @@ describe("tasks.assign", () => {
         expectedRevision: 0,
       }),
     ).rejects.toThrowError("メンバーが存在しません");
+  });
+
+  it("参加していない Member への割り当てを拒否する（設計書 §10 D2。実在するが非参加＝ghost とは別ケース）", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "owner");
+    // outsider はどのプロジェクトにも参加していない Member（実在はする）
+    const outsider = await seedMember(t, {
+      name: "Outsider",
+      email: "outsider@example.com",
+    });
+    const { task } = await seedIssueWithTask(as, project);
+
+    await expect(
+      as.mutation(api.tasks.assign, {
+        id: task,
+        assignee: outsider,
+        expectedRevision: 0,
+      }),
+    ).rejects.toThrowError(
+      "指定されたメンバーはこのプロジェクトに参加していません",
+    );
+
+    // 割り当ては行われない
+    expect((await loadTask(t, task)).assignee).toBeUndefined();
   });
 });
 
@@ -1594,6 +1643,89 @@ describe("tasks.gantt", () => {
   });
 });
 
+// --- 認可（ADR-11 §4: projectQuery/projectMutation の membership ゲート） -----
+
+describe("tasks の認可（ADR-11 §4）", () => {
+  it("非参加者は tasks.board を拒否される", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+
+    await expect(as.query(api.tasks.board, { project })).rejects.toThrowError(
+      "このプロジェクトに参加していません",
+    );
+  });
+
+  it("非参加者は tasks.getByRef を拒否される", async () => {
+    const t = setup();
+    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
+      email: "owner@example.com",
+    });
+    const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, owner, "owner");
+    await seedIssueWithTask(asOwner, project);
+    const { as: asOutsider } = await seedAuthedMember(t, {
+      email: "outsider@example.com",
+    });
+
+    await expect(
+      asOutsider.query(api.tasks.getByRef, { projectKey: "TASK", number: 1 }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+  });
+
+  it("非参加者による tasks.create は拒否され、Task は追加されない", async () => {
+    const t = setup();
+    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
+      email: "owner@example.com",
+    });
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, owner, "owner");
+    const { issue } = await seedIssueWithTask(asOwner, project);
+    const { as: asOutsider } = await seedAuthedMember(t, {
+      email: "outsider@example.com",
+    });
+
+    await expect(
+      asOutsider.mutation(api.tasks.create, { issue, title: "侵入タスク" }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+
+    expect(
+      await t.run((ctx) =>
+        ctx.db
+          .query("tasks")
+          .withIndex("by_issue", (q) => q.eq("issue", issue))
+          .collect(),
+      ),
+    ).toHaveLength(1); // seedIssueWithTask が作った最初の Task のみ（追加されない）
+  });
+
+  it("非参加者による tasks.transitionStatus は拒否され、DB は変わらない", async () => {
+    const t = setup();
+    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
+      email: "owner@example.com",
+    });
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, owner, "owner");
+    const { task } = await seedIssueWithTask(asOwner, project);
+    const { as: asOutsider } = await seedAuthedMember(t, {
+      email: "outsider@example.com",
+    });
+
+    await expect(
+      asOutsider.mutation(api.tasks.transitionStatus, {
+        id: task,
+        to: "todo",
+        expectedRevision: 0,
+      }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+
+    expect(await loadTask(t, task)).toMatchObject({
+      status: "backlog",
+      revision: 0,
+    });
+  });
+});
+
 // --- listMine（「My Page」ビュー用・全プロジェクト横断） -----------------------
 
 describe("tasks.listMine", () => {
@@ -1717,6 +1849,28 @@ describe("tasks.listMine", () => {
     const listed = await as.query(api.tasks.listMine, {});
 
     expect(listed.map((task) => task._id)).toEqual([mine]);
+  });
+
+  it("脱退したプロジェクトの Task はもう返さない（非参加プロジェクトのデータ漏れ検査・設計書 §10）", async () => {
+    const t = setup();
+    const { as, memberId: me } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, me, "owner");
+    // INVARIANT-6（最後の owner の脱退拒否）を満たすため、もう1人 owner を用意する。
+    const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
+    await seedProjectMember(t, project, bob, "owner");
+    await as.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "自分の担当", assignee: me },
+    });
+    expect(await as.query(api.tasks.listMine, {})).toHaveLength(1);
+
+    // Task.assignee は me のままだが、membership を外すと不可視になるはず
+    // （§3.1「参加のみ可視」。assignee 情報の残存だけでは漏れないことの確認）。
+    await as.mutation(api.projectMembers.leave, { project });
+
+    expect(await as.query(api.tasks.listMine, {})).toEqual([]);
   });
 
   it("認証済みだが Member 未リンクのユーザーには空配列を返す", async () => {
