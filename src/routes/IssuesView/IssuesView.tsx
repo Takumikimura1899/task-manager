@@ -41,7 +41,7 @@ export function IssuesView() {
     // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
     // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照）。
     // filteredIssues/sortedIssues の型は変えず、下記の JSX で issues 自体を
-    // 別分岐する（PR② では最低限のガードに留め、文言整備は PR③ で行う）。
+    // 別分岐する。
     if (issues === undefined || issues === null) return undefined;
     return issues.filter((issue) => {
       if (filter.status !== null && issue.status !== filter.status) {
@@ -102,7 +102,9 @@ export function IssuesView() {
         />
       </div>
       {issues === null ? (
-        <p className={s.empty}>プロジェクトが見つかりません。</p>
+        <p className={s.empty}>
+          プロジェクトが見つかりませんでした。ヘッダーの「プロジェクト」から選び直してください。
+        </p>
       ) : issues === undefined || sortedIssues === undefined ? (
         <output aria-label="Issue を読み込み中" className={s.loading}>
           <Skeleton className={s.skeletonStats} />

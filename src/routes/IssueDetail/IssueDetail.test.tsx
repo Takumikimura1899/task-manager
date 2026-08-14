@@ -12,8 +12,9 @@ import {
 /**
  * Issue 詳細のローディング表示（Issue #29）と編集フロー（Issue #32）を検証する。
  * Convex は外部依存のためモックし、購読値（issue）とミューテーション呼び出しを
- * テストごとに差し替える。getByRef は引数付き・members.list は引数なしで
- * 呼ばれる性質を使って購読値を出し分ける（TaskDetail.test.tsx と同方式）。
+ * テストごとに差し替える。担当者候補（AddTaskForm → TaskMetaFields）は
+ * projectMembers.listByProject を購読するため（ADR-11 PR③）、getByRef /
+ * members.me とは関数名で出し分ける（TaskDetail.test.tsx と同方式）。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ const mocks = vi.hoisted(() => ({
   mutate: vi.fn<(args: Record<string, unknown>) => Promise<unknown>>(),
 }));
 
-// members.list / members.me はいずれも引数なしで呼ばれ args では区別できない
+// projectMembers.listByProject / members.me はいずれも引数なしでは区別できない
 // ため、関数名で出し分ける（App.test.tsx 等と同方式）。issue（getByRef）は
 // フォールバックで受ける。
 vi.mock("convex/react", async () => {
@@ -33,7 +34,7 @@ vi.mock("convex/react", async () => {
       const name = getFunctionName(
         query as Parameters<typeof getFunctionName>[0],
       );
-      if (name === "members:list") return mocks.members;
+      if (name === "projectMembers:listByProject") return mocks.members;
       if (name === "members:me") return mocks.me;
       return mocks.issue;
     },
@@ -64,6 +65,7 @@ const createIssue = (overrides: Record<string, unknown> = {}) => ({
   _id: "issue1",
   _creationTime: 1751900000000,
   revision: 3,
+  project: "project1",
   projectKey: "TASK",
   number: 34,
   title: "ログイン機能を実装する",
@@ -241,7 +243,13 @@ describe("IssueDetail の編集フロー（Issue #32）", () => {
 describe("IssueDetail の AddTaskForm 表示", () => {
   it("Member がリンク済みの場合はタスク一覧末尾に AddTaskForm を表示し、NoMembersNotice は出さない", () => {
     mocks.issue = createIssue();
-    mocks.members = [{ _id: "member_1", name: "Alice" }];
+    mocks.members = [
+      {
+        _id: "pm_1",
+        role: "member",
+        member: { _id: "member_1", name: "Alice" },
+      },
+    ];
     mocks.me = { _id: "member_1", name: "Alice", role: "member" };
     renderIssueDetail();
 

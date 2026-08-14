@@ -12,10 +12,9 @@ import {
 /**
  * Task 詳細のローディング表示（Issue #29）と編集操作（Issue #32:
  * ステータス遷移・破壊的操作の確認・削除）を検証する。
- * Convex は外部依存のためモックする。members.list は認証ゲート対応で
- * `{}` 引数付き呼び出しになったため（Issue #1）、getDetail と args の有無では
- * 区別できない。getFunctionName による名前ベースディスパッチで出し分ける
- * （IssueDetail.test.tsx と同方式）。
+ * Convex は外部依存のためモックする。担当者候補は projectMembers.listByProject
+ * を購読するため（ADR-11 PR③）、getDetail とは getFunctionName による
+ * 名前ベースディスパッチで出し分ける（IssueDetail.test.tsx と同方式）。
  */
 
 const mocks = vi.hoisted(() => ({
@@ -31,7 +30,7 @@ vi.mock("convex/react", async () => {
       const name = getFunctionName(
         query as Parameters<typeof getFunctionName>[0],
       );
-      if (name === "members:list") return mocks.members;
+      if (name === "projectMembers:listByProject") return mocks.members;
       return mocks.task;
     },
     useMutation: () => mocks.mutate,
@@ -61,6 +60,7 @@ const createTask = (overrides: Record<string, unknown> = {}) => ({
   _id: "task1",
   _creationTime: 1751900000000,
   revision: 5,
+  project: "project1",
   projectKey: "TASK",
   number: 12,
   title: "認証APIの実装",
