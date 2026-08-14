@@ -69,6 +69,7 @@ export function NewIssueForm({ project }: { project: Id<"projects"> }) {
           onAssignee={form.setAssignee}
           onPriority={form.setPriority}
           priority={form.priority}
+          project={project}
         />
         {form.error !== null && (
           <p className={s.error} id={errorId} role="alert">

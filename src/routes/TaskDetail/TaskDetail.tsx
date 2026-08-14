@@ -91,7 +91,12 @@ export function TaskDetail() {
     api.tasks.getDetail,
     number !== null ? { projectKey, number } : "skip",
   );
-  const members = useQuery(api.members.list, {});
+  // 担当者候補は当該プロジェクトの参加者のみに絞る（ADR-11 §10 D2）。task が
+  // 未確定の間は project が無いため skip する。
+  const members = useQuery(
+    api.projectMembers.listByProject,
+    task !== undefined && task !== null ? { project: task.project } : "skip",
+  );
 
   const updateFields = useMutation(api.tasks.updateFields);
   const transitionStatus = useMutation(api.tasks.transitionStatus);
@@ -442,8 +447,8 @@ export function TaskDetail() {
             >
               <option value="">未割り当て</option>
               {members?.map((m) => (
-                <option key={m._id} value={m._id}>
-                  {m.name}
+                <option key={m.member._id} value={m.member._id}>
+                  {m.member.name}
                 </option>
               ))}
             </select>

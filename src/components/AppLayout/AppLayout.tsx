@@ -243,6 +243,19 @@ export function AppLayout() {
               </select>
             </label>
           )}
+          {/* メンバー管理（ADR-11 §7）は Task/Issue/Gantt と同じ「ビュー」では
+              なく選択中プロジェクトの設定系導線のため、タブ群（.nav）とは
+              分けてプロジェクト選択の隣に置く。表示条件はプロジェクト選択と
+              揃える（selected が無い/My Page 中は隠す）。一覧の閲覧・自分の
+              脱退は member でも行えるため、owner 限定にはしない。 */}
+          {selected !== null && !onMyPage && (
+            <NavLink
+              className={s.navLink}
+              to={`/${selected.key}/settings/members`}
+            >
+              メンバー
+            </NavLink>
+          )}
         </div>
         {/* 右＝個人スコープ（My Page＋ユーザー名＋ログアウト）。プロジェクト
             0件でも認証済みであることに変わりはないため常に表示する

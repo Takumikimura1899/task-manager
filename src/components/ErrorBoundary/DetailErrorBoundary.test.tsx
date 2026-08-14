@@ -7,7 +7,7 @@ import { ErrorBoundary } from "./ErrorBoundary";
 
 /**
  * 非参加 linked Member の deep link（projectQuery の ConvexError
- * 「このプロジェクトに参加していません」）を DetailNotFound 相当の案内に
+ * 「このプロジェクトに参加していません」）を DetailForbidden の案内に
  * 縮退させ、それ以外の例外は親の汎用 ErrorBoundary へ委譲することを検証する
  * （監査 PLAUSIBLE 指摘）。throw する子はテスト用のダミーコンポーネント。
  */
@@ -25,7 +25,7 @@ const renderBoundary = () =>
   render(
     <MemoryRouter>
       <ErrorBoundary>
-        <DetailErrorBoundary backTo="/issues" entity="Issue">
+        <DetailErrorBoundary backTo="/issues">
           <Bomb />
         </DetailErrorBoundary>
       </ErrorBoundary>
@@ -49,12 +49,14 @@ describe("DetailErrorBoundary", () => {
     expect(screen.getByText("正常なコンテンツ")).toBeInTheDocument();
   });
 
-  it("非参加拒否の ConvexError は DetailNotFound 相当の案内に縮退させる", () => {
+  it("非参加拒否の ConvexError は DetailForbidden の案内に縮退させる", () => {
     error = new ConvexError("このプロジェクトに参加していません");
     renderBoundary();
 
     expect(
-      screen.getByText("Issue が見つかりませんでした。"),
+      screen.getByText(
+        "このプロジェクトに参加していません。プロジェクトのオーナーにメンバー追加を依頼してください。",
+      ),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("heading", { name: "エラーが発生しました" }),

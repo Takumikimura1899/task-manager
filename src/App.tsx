@@ -8,6 +8,7 @@ import { IssueDetail } from "./routes/IssueDetail/IssueDetail";
 import { IssuesView } from "./routes/IssuesView/IssuesView";
 import { MyPageView } from "./routes/MyPageView/MyPageView";
 import { NotFound } from "./routes/NotFound/NotFound";
+import { ProjectMembers } from "./routes/ProjectMembers/ProjectMembers";
 import { AuthLoadingScreen, SignIn } from "./routes/SignIn/SignIn";
 import { TaskDetail } from "./routes/TaskDetail/TaskDetail";
 import { TasksView } from "./routes/TasksView/TasksView";
@@ -17,8 +18,8 @@ import { TasksView } from "./routes/TasksView/TasksView";
 // 画面遷移すれば境界ごと作り直され、エラー状態を持ち越さない。
 //
 // 認証ゲート（Issue #1）はルート個別ではなく App レベルで行う。
-// IssueDetail / TaskDetail は AppLayout 外のルートのため、AppLayout 内に
-// ゲートを置くと詳細画面が未認証のまま開けてしまう。
+// IssueDetail / TaskDetail / ProjectMembers は AppLayout 外のルートのため、
+// AppLayout 内にゲートを置くと詳細画面が未認証のまま開けてしまう。
 export function App() {
   return (
     <>
@@ -85,7 +86,7 @@ function AppRoutes() {
       <Route
         element={
           <ErrorBoundary>
-            <DetailErrorBoundary backTo="/issues" entity="Issue">
+            <DetailErrorBoundary backTo="/issues">
               <IssueDetail />
             </DetailErrorBoundary>
           </ErrorBoundary>
@@ -95,12 +96,22 @@ function AppRoutes() {
       <Route
         element={
           <ErrorBoundary>
-            <DetailErrorBoundary backTo="/" entity="Task">
+            <DetailErrorBoundary backTo="/">
               <TaskDetail />
             </DetailErrorBoundary>
           </ErrorBoundary>
         }
         path="/:projectKey/tasks/:number"
+      />
+      <Route
+        element={
+          <ErrorBoundary>
+            <DetailErrorBoundary backTo="/">
+              <ProjectMembers />
+            </DetailErrorBoundary>
+          </ErrorBoundary>
+        }
+        path="/:projectKey/settings/members"
       />
       {/* 未定義 URL のフォールバック。空白画面を防ぐ（Issue #16） */}
       <Route element={<NotFound />} path="*" />

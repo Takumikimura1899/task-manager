@@ -9,8 +9,16 @@ import s from "./AddTaskForm.module.css";
 /**
  * 既存 Issue に Task を追加するインラインフォーム（tasks.create）。
  * Issue 行から開閉する。新規 Task は backlog の末尾に入る（Core 側で決定）。
+ * project は担当者候補（TaskMetaFields → projectMembers.listByProject）を
+ * 当該プロジェクトの参加者に絞り込むために渡す（ADR-11 §10 D2）。
  */
-export function AddTaskForm({ issue }: { issue: Id<"issues"> }) {
+export function AddTaskForm({
+  issue,
+  project,
+}: {
+  issue: Id<"issues">;
+  project: Id<"projects">;
+}) {
   const createTask = useMutation(api.tasks.create);
   const errorId = useId();
   const form = useCreateForm({
@@ -52,6 +60,7 @@ export function AddTaskForm({ issue }: { issue: Id<"issues"> }) {
         onAssignee={form.setAssignee}
         onPriority={form.setPriority}
         priority={form.priority}
+        project={project}
       />
       <button className={s.submit} disabled={!form.canSubmit} type="submit">
         作成
