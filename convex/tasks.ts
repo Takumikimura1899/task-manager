@@ -2,11 +2,17 @@ import { ConvexError, v } from "convex/values";
 import { type MutationCtx, type QueryCtx, query } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { taskPriority, taskStatus } from "./schema";
-import { projectMutation, projectQuery, requireAuthedMember } from "./lib/auth";
+import {
+  membershipsOfMember,
+  projectMutation,
+  projectQuery,
+  requireAuthedMember,
+} from "./lib/auth";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
 import {
   assertAssignableMember,
   projectOfIssue,
+  projectOfKey,
   projectOfProjectId,
   projectOfTask,
 } from "./lib/projectScope";
@@ -235,10 +241,9 @@ export const create = projectMutation(
   },
   async (ctx, args, { actor }) => {
     // Task は必ず Issue に従属する（INVARIANT-5）。project は Issue から解決する。
-    const issue = await ctx.db.get(args.issue);
-    if (issue === null) {
-      throw new ConvexError("指定された Issue が存在しません");
-    }
+    // projectMutation が Issue の実在を同一トランザクション内で既に確認済み
+    // （projectOfIssue）のため、null は到達しない。
+    const issue = (await ctx.db.get(args.issue))!;
 
     return await insertTask(ctx, {
       issue: issue._id,
@@ -582,8 +587,7 @@ export const getByRef = projectQuery(
     projectKey: v.string(),
     number: v.number(),
   },
-  async (ctx, args) =>
-    (await findProjectByKey(ctx, args.projectKey))?._id ?? null,
+  (ctx, args) => projectOfKey(ctx, args.projectKey),
   async (ctx, args) => {
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
@@ -610,8 +614,7 @@ export const getDetail = projectQuery(
     projectKey: v.string(),
     number: v.number(),
   },
-  async (ctx, args) =>
-    (await findProjectByKey(ctx, args.projectKey))?._id ?? null,
+  (ctx, args) => projectOfKey(ctx, args.projectKey),
   async (ctx, args) => {
     const project = await findProjectByKey(ctx, args.projectKey);
     if (project === null) return null;
@@ -710,10 +713,7 @@ export const listMine = query({
     // 参加プロジェクトのみに絞る（ADR-11 §3.1「参加のみ可視」）。by_member で
     // 参加プロジェクトを列挙し Set 化してから、by_assignee の結果を後段フィルタする
     // （設計書 §3.6: listMine は projectQuery 対象外・据え置き + membership フィルタ追加）。
-    const memberships = await ctx.db
-      .query("projectMembers")
-      .withIndex("by_member", (q) => q.eq("member", member._id))
-      .collect();
+    const memberships = await membershipsOfMember(ctx, member._id);
     const memberProjects = new Set(memberships.map((m) => m.project));
 
     const tasks = (

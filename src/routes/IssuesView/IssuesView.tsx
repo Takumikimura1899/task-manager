@@ -37,7 +37,9 @@ export function IssuesView() {
   const [{ filter, sort }, setListParams] = useIssueListParams();
 
   const filteredIssues = useMemo(() => {
-    // null は非参加プロジェクトへのアクセス（ADR-11 projectQuery の型契約）。
+    // null は「未リンク viewer」または「project 自体が存在しない」場合
+    // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+    // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照）。
     // filteredIssues/sortedIssues の型は変えず、下記の JSX で issues 自体を
     // 別分岐する（PR② では最低限のガードに留め、文言整備は PR③ で行う）。
     if (issues === undefined || issues === null) return undefined;
@@ -99,13 +101,13 @@ export function IssuesView() {
           value={sort}
         />
       </div>
-      {issues === undefined || sortedIssues === undefined ? (
+      {issues === null ? (
+        <p className={s.empty}>プロジェクトが見つかりません。</p>
+      ) : issues === undefined || sortedIssues === undefined ? (
         <output aria-label="Issue を読み込み中" className={s.loading}>
           <Skeleton className={s.skeletonStats} />
           <Skeleton className={s.skeletonPanel} />
         </output>
-      ) : issues === null ? (
-        <p className={s.empty}>プロジェクトが見つかりません。</p>
       ) : (
         <>
           <IssueStats issues={issues} />

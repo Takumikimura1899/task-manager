@@ -17,9 +17,8 @@ import {
   getTask,
   listTaskGitLinks,
   listWebhookDeliveries,
-  seedAuthedMember,
+  seedOwnedProject,
   seedProject,
-  seedProjectMember,
   seedRepository,
   seedTaskWithRepository,
   setup,
@@ -281,9 +280,7 @@ describe("reconcile.run — 冪等性", () => {
 describe("reconcile.run — エラー処理", () => {
   it("1リポジトリの失敗は他リポジトリの補正を止めず、エラーとして伝播する", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await as.mutation(api.issues.create, {
       project,
       title: "課題",

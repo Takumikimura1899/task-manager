@@ -13,8 +13,10 @@ import {
   seedGitLink,
   seedIssueWithTask,
   seedMember,
+  seedOwnedProject,
   seedProject,
   seedProjectMember,
+  seedProjectWithOutsider,
   seedRepository,
   seedUser,
   setup,
@@ -76,9 +78,7 @@ const columnNumbers = async (
 describe("tasks.create", () => {
   it("Issue 配下に backlog 列の Task を採番して作成し、採番カウンタを進め、createdBy を actor に強制する", async () => {
     const t = setup();
-    const { as, memberId: member } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, member, "owner");
+    const { as, memberId: member, project } = await seedOwnedProject(t);
     // issues.create が number=1 の Task とカウンタ前進(→2)を消費している
     const { issue } = await seedIssueWithTask(as, project);
 
@@ -105,9 +105,7 @@ describe("tasks.create", () => {
 
   it("存在しない Issue を指定すると拒否する（参照整合性）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue } = await seedIssueWithTask(as, project);
     await t.run((ctx) => ctx.db.delete(issue)); // 参照だけ残して実体を消す
 
@@ -120,9 +118,7 @@ describe("tasks.create", () => {
 
   it("参加していない Member への assignee 指定を拒否する（設計書 §10 D2、insertTask 経由）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     // outsider はどのプロジェクトにも参加していない Member（実在はする）
     const outsider = await seedMember(t, {
       name: "Outsider",
@@ -144,9 +140,7 @@ describe("tasks.create", () => {
   describe("startDate / dueDate（ガント用の予定期間・Issue #141）", () => {
     it("startDate/dueDate を指定すると保存される", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
 
       const taskId = await as.mutation(api.tasks.create, {
@@ -167,9 +161,7 @@ describe("tasks.create", () => {
       { name: "dueDate のみ", args: { dueDate: "2026-08-10" } },
     ])("$name でも保存される", async ({ args }) => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
 
       const taskId = await as.mutation(api.tasks.create, {
@@ -187,9 +179,7 @@ describe("tasks.create", () => {
     // （ラベルどおりの項目名でエラーになる）ことだけを固定する。
     it("不正な日付（startDate/dueDate）は各項目名のエラーで拒否する", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
 
       await expect(
@@ -211,9 +201,7 @@ describe("tasks.create", () => {
 
     it("startDate が dueDate より後なら拒否する", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
 
       await expect(
@@ -233,9 +221,7 @@ describe("tasks.create", () => {
 describe("tasks.transitionStatus", () => {
   it("状態機械が許す前進遷移を適用し revision を進める", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     await as.mutation(api.tasks.transitionStatus, {
@@ -251,9 +237,7 @@ describe("tasks.transitionStatus", () => {
 
   it("状態機械が許さない遷移（backlog→done）を拒否する（INVARIANT-4）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     await expect(
@@ -267,9 +251,7 @@ describe("tasks.transitionStatus", () => {
 
   it("in_review → in_progress の差し戻しを許可する", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     // backlog → todo → in_progress → in_review まで前進させる
@@ -294,9 +276,7 @@ describe("tasks.transitionStatus", () => {
 
   it("古い revision での更新を競合として検出し拒否する（INVARIANT-2 楽観ロック）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     // 1回目で revision が 0→1 に進む
@@ -336,9 +316,7 @@ describe("tasks.transitionStatus", () => {
 describe("tasks の並べ替え（rank・D&D スコープ）", () => {
   /** backlog に Task を3件並べ、それぞれの id を作成順（rank 昇順）で返す。 */
   const seedThreeBacklogTasks = async (t: T) => {
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task: a } = await seedIssueWithTask(as, project);
     const b = await as.mutation(api.tasks.create, {
       issue,
@@ -642,9 +620,7 @@ describe("tasks の並べ替え（rank・D&D スコープ）", () => {
 describe("tasks.assign", () => {
   it("担当者を割り当て、null で解除できる", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const assignee = await seedMember(t, {
       name: "Bob",
       email: "bob@example.com",
@@ -671,9 +647,7 @@ describe("tasks.assign", () => {
 
   it("存在しないメンバーの割り当てを拒否する", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const ghost = await seedGhostMember(t);
     const { task } = await seedIssueWithTask(as, project);
 
@@ -688,9 +662,7 @@ describe("tasks.assign", () => {
 
   it("参加していない Member への割り当てを拒否する（設計書 §10 D2。実在するが非参加＝ghost とは別ケース）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     // outsider はどのプロジェクトにも参加していない Member（実在はする）
     const outsider = await seedMember(t, {
       name: "Outsider",
@@ -718,9 +690,7 @@ describe("tasks.assign", () => {
 describe("tasks.deleteTask", () => {
   it("Issue の最後の Task の削除を拒否する（INVARIANT-5 最低基数）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     await expect(
@@ -733,9 +703,7 @@ describe("tasks.deleteTask", () => {
 
   it("兄弟 Task があれば削除し、関連 GitLink も併せて削除する（参照整合性）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task: first } = await seedIssueWithTask(as, project);
     const second = await as.mutation(api.tasks.create, {
       issue,
@@ -773,9 +741,7 @@ describe("tasks.deleteTask", () => {
 
   it("古い revision での削除を競合として拒否する（楽観ロック）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task: first } = await seedIssueWithTask(as, project);
     await as.mutation(api.tasks.create, {
       issue,
@@ -800,9 +766,7 @@ describe("tasks.deleteTask", () => {
 describe("tasks.updateFields", () => {
   it("指定したフィールドのみ更新し、revision を進める", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task } = await as.mutation(api.issues.create, {
       project,
       title: "課題",
@@ -833,9 +797,7 @@ describe("tasks.updateFields", () => {
 
   it("古い revision での更新を競合として拒否し、フィールドを変更しない（楽観ロック）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     // revision を 0→1 に進めておく
@@ -858,9 +820,7 @@ describe("tasks.updateFields", () => {
 
   it("存在しないタスクを拒否する", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task } = await seedIssueWithTask(as, project);
     await as.mutation(api.issues.remove, { id: issue, expectedRevision: 0 });
 
@@ -877,9 +837,7 @@ describe("tasks.updateFields", () => {
 
   it("estimate / actual を設定でき、getDetail / board の返却に反映される", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     await as.mutation(api.tasks.updateFields, {
@@ -908,9 +866,7 @@ describe("tasks.updateFields", () => {
 
   it("estimate / actual に null を指定するとクリアされる（DB 上 undefined）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { task } = await seedIssueWithTask(as, project);
 
     await as.mutation(api.tasks.updateFields, {
@@ -946,9 +902,7 @@ describe("tasks.updateFields", () => {
     "$name を指定すると ConvexError で拒否され DB は変わらない",
     async ({ args, message }) => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { task } = await seedIssueWithTask(as, project);
 
       await expect(
@@ -969,9 +923,7 @@ describe("tasks.updateFields", () => {
   describe("startDate / dueDate（ガント用の予定期間・Issue #141）", () => {
     it("両方指定すると保存される", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { task } = await seedIssueWithTask(as, project);
 
       await as.mutation(api.tasks.updateFields, {
@@ -990,9 +942,7 @@ describe("tasks.updateFields", () => {
 
     it("null を指定するとクリアされる（DB 上 undefined）", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
       const task = await seedDatedTask(as, issue, {
         startDate: "2026-08-01",
@@ -1014,9 +964,7 @@ describe("tasks.updateFields", () => {
 
     it("dueDate のみ更新し、既存の startDate と逆転するなら ConvexError で拒否し DB を変えない", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
       const task = await seedDatedTask(as, issue, { startDate: "2026-08-10" });
 
@@ -1036,9 +984,7 @@ describe("tasks.updateFields", () => {
 
     it("startDate のみ更新し、既存の dueDate と整合するなら成功する", async () => {
       const t = setup();
-      const { as, memberId } = await seedAuthedMember(t);
-      const project = await seedProject(t);
-      await seedProjectMember(t, project, memberId, "owner");
+      const { as, project } = await seedOwnedProject(t);
       const { issue } = await seedIssueWithTask(as, project);
       const task = await seedDatedTask(as, issue, { dueDate: "2026-08-10" });
 
@@ -1087,9 +1033,7 @@ describe("tasks.updateFields", () => {
       "$name → 成功し、更新後も startDate ≤ dueDate（未定義含む）が保たれる",
       async ({ precondition, args, expected }) => {
         const t = setup();
-        const { as, memberId } = await seedAuthedMember(t);
-        const project = await seedProject(t);
-        await seedProjectMember(t, project, memberId, "owner");
+        const { as, project } = await seedOwnedProject(t);
         const { issue } = await seedIssueWithTask(as, project);
         const task = await seedDatedTask(as, issue, precondition);
 
@@ -1121,9 +1065,7 @@ describe("tasks.updateFields", () => {
       "$name → ConvexError で拒否され、DB・revision は変わらない",
       async ({ precondition, args }) => {
         const t = setup();
-        const { as, memberId } = await seedAuthedMember(t);
-        const project = await seedProject(t);
-        await seedProjectMember(t, project, memberId, "owner");
+        const { as, project } = await seedOwnedProject(t);
         const { issue } = await seedIssueWithTask(as, project);
         const task = await seedDatedTask(as, issue, precondition);
         const before = await loadTask(t, task);
@@ -1312,9 +1254,7 @@ describe("tasks.listFiltered", () => {
 describe("tasks.getByRef", () => {
   it("{key}-{number} 参照から素の Task ドキュメントを解決する（表示用 join なし）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue } = await seedIssueWithTask(as, project);
     const second = await as.mutation(api.tasks.create, {
       issue,
@@ -1342,9 +1282,7 @@ describe("tasks.getByRef", () => {
     { name: "タスク番号が未知", projectKey: "TASK", number: 999 },
   ])("$name の場合は null を返す", async ({ projectKey, number }) => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     await seedIssueWithTask(as, project);
 
     expect(
@@ -1366,9 +1304,9 @@ describe("tasks.getDetail", () => {
 
   it("親 Issue・表示名・GitLink（remoteUrl join）を付与して返す", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t, { name: "Alice" });
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t, {
+      name: "Alice",
+    });
     const assignee = await seedMember(t, {
       name: "Bob",
       email: "bob@example.com",
@@ -1409,9 +1347,7 @@ describe("tasks.getDetail", () => {
 
   it("担当者・GitLink がない Task は null / 空配列で返す", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     await seedIssueWithTask(as, project);
 
     const detail = await as.query(api.tasks.getDetail, {
@@ -1427,9 +1363,7 @@ describe("tasks.getDetail", () => {
     { name: "タスク番号が未知", projectKey: "TASK", number: 999 },
   ])("$name の場合は null を返す", async ({ projectKey, number }) => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     await seedIssueWithTask(as, project);
 
     expect(
@@ -1443,9 +1377,9 @@ describe("tasks.getDetail", () => {
 describe("tasks.board（整形出力）", () => {
   it("固定6状態の列を順序どおり返し、各 Task に issueNumber と assigneeName を付与する", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t, { name: "Alice" });
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t, {
+      name: "Alice",
+    });
     const assignee = await seedMember(t, {
       name: "Bob",
       email: "bob@example.com",
@@ -1488,9 +1422,7 @@ describe("tasks.board（整形出力）", () => {
 
   it("担当者の実体が欠落していれば assigneeName は null になる", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const ghost = await seedMember(t, {
       name: "Ghost",
       email: "ghost@example.com",
@@ -1544,9 +1476,7 @@ describe("tasks.board（整形出力）", () => {
  */
 describe("tasks.gantt", () => {
   const arrangeGanttFixture = async (t: T) => {
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task: undated } = await seedIssueWithTask(as, project);
     const withDates = await seedDatedTask(as, issue, {
       startDate: "2026-08-01",
@@ -1601,9 +1531,7 @@ describe("tasks.gantt", () => {
 
   it("表示対象 Task を1つも持たない Issue は結果に含まれない", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     // firstTask は日付なしのため、この Issue には表示対象 Task が無い
     const { issue } = await seedIssueWithTask(as, project);
 
@@ -1658,15 +1586,8 @@ describe("tasks の認可（ADR-11 §4）", () => {
 
   it("非参加者は tasks.getByRef を拒否される", async () => {
     const t = setup();
-    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
-      email: "owner@example.com",
-    });
-    const project = await seedProject(t, { key: "TASK" });
-    await seedProjectMember(t, project, owner, "owner");
+    const { asOwner, project, asOutsider } = await seedProjectWithOutsider(t);
     await seedIssueWithTask(asOwner, project);
-    const { as: asOutsider } = await seedAuthedMember(t, {
-      email: "outsider@example.com",
-    });
 
     await expect(
       asOutsider.query(api.tasks.getByRef, { projectKey: "TASK", number: 1 }),
@@ -1675,15 +1596,8 @@ describe("tasks の認可（ADR-11 §4）", () => {
 
   it("非参加者による tasks.create は拒否され、Task は追加されない", async () => {
     const t = setup();
-    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
-      email: "owner@example.com",
-    });
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { asOwner, project, asOutsider } = await seedProjectWithOutsider(t);
     const { issue } = await seedIssueWithTask(asOwner, project);
-    const { as: asOutsider } = await seedAuthedMember(t, {
-      email: "outsider@example.com",
-    });
 
     await expect(
       asOutsider.mutation(api.tasks.create, { issue, title: "侵入タスク" }),
@@ -1701,15 +1615,8 @@ describe("tasks の認可（ADR-11 §4）", () => {
 
   it("非参加者による tasks.transitionStatus は拒否され、DB は変わらない", async () => {
     const t = setup();
-    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
-      email: "owner@example.com",
-    });
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { asOwner, project, asOutsider } = await seedProjectWithOutsider(t);
     const { task } = await seedIssueWithTask(asOwner, project);
-    const { as: asOutsider } = await seedAuthedMember(t, {
-      email: "outsider@example.com",
-    });
 
     await expect(
       asOutsider.mutation(api.tasks.transitionStatus, {
@@ -1723,6 +1630,47 @@ describe("tasks の認可（ADR-11 §4）", () => {
       status: "backlog",
       revision: 0,
     });
+  });
+
+  // 全 mutation の操作主体が owner だと、permission 配線ミス（例:
+  // transitionStatus に owner 専用 permission を誤配線してしまう）があっても
+  // owner はロール横断で全許可を持つためテストが緑のまま気づけない。
+  // member ロールでの成功パスを別途固定する（監査 CONFIRMED 指摘）。
+  it("member ロールでも tasks.create に成功する（permission task.*）", async () => {
+    const t = setup();
+    const { as: asOwner, project } = await seedOwnedProject(t);
+    const { as: asMember, memberId: memberActor } = await seedAuthedMember(t, {
+      email: "member@example.com",
+    });
+    await seedProjectMember(t, project, memberActor, "member");
+    const { issue } = await seedIssueWithTask(asOwner, project);
+
+    const id = await asMember.mutation(api.tasks.create, {
+      issue,
+      title: "member が作成したタスク",
+    });
+
+    expect(await getTask(t, id)).toMatchObject({
+      title: "member が作成したタスク",
+    });
+  });
+
+  it("member ロールでも tasks.transitionStatus に成功する（permission task.*）", async () => {
+    const t = setup();
+    const { as: asOwner, project } = await seedOwnedProject(t);
+    const { as: asMember, memberId: memberActor } = await seedAuthedMember(t, {
+      email: "member@example.com",
+    });
+    await seedProjectMember(t, project, memberActor, "member");
+    const { task } = await seedIssueWithTask(asOwner, project);
+
+    await asMember.mutation(api.tasks.transitionStatus, {
+      id: task,
+      to: "todo",
+      expectedRevision: 0,
+    });
+
+    expect(await loadTask(t, task)).toMatchObject({ status: "todo" });
   });
 });
 
@@ -1853,9 +1801,7 @@ describe("tasks.listMine", () => {
 
   it("脱退したプロジェクトの Task はもう返さない（非参加プロジェクトのデータ漏れ検査・設計書 §10）", async () => {
     const t = setup();
-    const { as, memberId: me } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, me, "owner");
+    const { as, memberId: me, project } = await seedOwnedProject(t);
     // INVARIANT-6（最後の owner の脱退拒否）を満たすため、もう1人 owner を用意する。
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
     await seedProjectMember(t, project, bob, "owner");

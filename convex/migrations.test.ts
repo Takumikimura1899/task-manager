@@ -6,9 +6,9 @@ import {
   type As,
   getProjectMember,
   getTask,
-  seedAuthedMember,
   seedIssueWithTask,
   seedMember,
+  seedOwnedProject,
   seedProject,
   seedProjectMember,
   setup,
@@ -38,9 +38,7 @@ const columnIds = async (
 describe("migrations.repairDuplicateRanks", () => {
   it("重複 rank を修復して列の _id 順序を保ち、2回目の実行は冪等（tasksRepatched=0）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task: a } = await seedIssueWithTask(as, project);
     const b = await as.mutation(api.tasks.create, { issue, title: "B" });
     const c = await as.mutation(api.tasks.create, { issue, title: "C" });
@@ -89,9 +87,7 @@ describe("migrations.repairDuplicateRanks", () => {
 
   it("重複が無ければ何も変更しない（scanned のみ進む）", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, memberId, "owner");
+    const { as, project } = await seedOwnedProject(t);
     await seedIssueWithTask(as, project);
 
     const result = await t.mutation(

@@ -4,7 +4,11 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { projectMutation, projectQuery } from "./lib/auth";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
-import { projectOfIssue, projectOfProjectId } from "./lib/projectScope";
+import {
+  projectOfIssue,
+  projectOfKey,
+  projectOfProjectId,
+} from "./lib/projectScope";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { loadTasksByIssue } from "./lib/tasks";
@@ -64,12 +68,10 @@ export const create = projectMutation(
     project: (ctx, args) => projectOfProjectId(ctx, args.project),
   },
   async (ctx, args, { actor }) => {
-    // projectMutation が project の実在を既に確認済み（D1）。ここでは
-    // nextIssueNumber の採番に必要なドキュメント本体を改めて取得する。
-    const project = await ctx.db.get(args.project);
-    if (project === null) {
-      throw new ConvexError("指定されたプロジェクトが存在しません");
-    }
+    // projectMutation が project の実在を同一トランザクション内で既に確認済み
+    // （D1・projectOfProjectId）。ここでは nextIssueNumber の採番に必要な
+    // ドキュメント本体を改めて取得するだけで、null は到達しない。
+    const project = (await ctx.db.get(args.project))!;
     // createdBy は requireActor が同一トランザクション内で解決した実在
     // member（actor._id）のみが渡るため、実在確認は不要（Issue #1 PR2 で
     // クライアント引数を廃止済み。insertTask 側も同様にチェックしない）。
@@ -282,8 +284,7 @@ export const getIdByRef = projectQuery(
     projectKey: v.string(),
     number: v.number(),
   },
-  async (ctx, args) =>
-    (await findProjectByKey(ctx, args.projectKey))?._id ?? null,
+  (ctx, args) => projectOfKey(ctx, args.projectKey),
   async (ctx, args) => {
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     return found === null ? null : found.issue._id;
@@ -300,8 +301,7 @@ export const getByRef = projectQuery(
     projectKey: v.string(),
     number: v.number(),
   },
-  async (ctx, args) =>
-    (await findProjectByKey(ctx, args.projectKey))?._id ?? null,
+  (ctx, args) => projectOfKey(ctx, args.projectKey),
   async (ctx, args) => {
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     if (found === null) return null;

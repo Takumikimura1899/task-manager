@@ -28,8 +28,10 @@ export function ActiveIssueStrip({
     );
   }
 
-  // null は非参加プロジェクトへのアクセス（ADR-11 projectQuery の型契約。
-  // 詳細な案内は PR③ で整備し、PR② では最低限のガードに留める）。
+  // null は「未リンク viewer」または「project 自体が存在しない」場合
+  // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+  // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照。詳細な案内は
+  // PR③ で整備し、PR② では最低限のガードに留める）。
   if (issues === null) {
     return <p className={s.empty}>プロジェクトが見つかりません。</p>;
   }
