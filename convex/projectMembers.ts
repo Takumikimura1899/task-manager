@@ -11,6 +11,7 @@ import {
   projectMutation,
   projectQuery,
 } from "./lib/auth";
+import { findMemberByEmail } from "./lib/members";
 import { projectOfProjectId } from "./lib/projectScope";
 import { findProjectByKey } from "./lib/projects";
 import { normalizeEmail } from "./lib/validators";
@@ -149,6 +150,13 @@ export const leave = actorMutation(
   },
 );
 
+/** listByProject が返す1行分の shape（curated: email 等 PII は含めない）。 */
+type ProjectMemberRow = {
+  _id: Id<"projectMembers">;
+  role: Doc<"projectMembers">["role"];
+  member: { _id: Id<"members">; name: string };
+};
+
 /**
  * プロジェクトのメンバー一覧（UI のメンバー管理・ロール出し分け用）。
  * email 等 PII は返さない（members.list と同方針）。
@@ -159,29 +167,28 @@ export const listByProject = projectQuery(
   async (ctx, args) => {
     const memberships = await listProjectMembers(ctx, args.project);
 
-    const result: {
-      _id: Id<"projectMembers">;
-      role: Doc<"projectMembers">["role"];
-      member: { _id: Id<"members">; name: string };
-    }[] = [];
-    for (const m of memberships) {
-      const member = await ctx.db.get(m.member);
-      if (member === null) {
-        // 参照整合性の異常（member が削除されているのに membership が残る）。
-        // サイレントに握り潰さず、ログに残した上で当該行だけスキップする
-        // （convex/tasks.ts:701-719 の既存パターン踏襲）。
-        console.warn(
-          `projectMembers.listByProject: member が見つかりません (${m.member})`,
-        );
-        continue;
-      }
-      result.push({
-        _id: m._id,
-        role: m.role,
-        member: { _id: member._id, name: member.name },
-      });
-    }
-    return result;
+    // member 解決をバッチ化（convex/tasks.ts の getDetail と同じ Promise.all
+    // パターン。逐次 await ループを避ける）。
+    const resolved = await Promise.all(
+      memberships.map(async (m): Promise<ProjectMemberRow | null> => {
+        const member = await ctx.db.get(m.member);
+        if (member === null) {
+          // 参照整合性の異常（member が削除されているのに membership が残る）。
+          // サイレントに握り潰さず、ログに残した上で当該行だけスキップする
+          // （convex/tasks.ts:701-719 の既存パターン踏襲）。
+          console.warn(
+            `projectMembers.listByProject: member が見つかりません (${m.member})`,
+          );
+          return null;
+        }
+        return {
+          _id: m._id,
+          role: m.role,
+          member: { _id: member._id, name: member.name },
+        };
+      }),
+    );
+    return resolved.filter((r): r is ProjectMemberRow => r !== null);
   },
 );
 
@@ -205,10 +212,7 @@ export const grantProjectMembership = internalMutation({
     }
 
     const email = normalizeEmail(args.email);
-    const member = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", email))
-      .unique();
+    const member = await findMemberByEmail(ctx, email);
     if (member === null) {
       throw new ConvexError(
         `メールアドレス "${email}" の Member が見つかりません`,

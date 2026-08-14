@@ -39,7 +39,7 @@ export const create = actorMutation(
     });
 
     // 作成者を owner として同一トランザクション内で原子的に membership 化する
-    // （ADR-11。owner 不在プロジェクトを生まないための唯一のシード経路。
+    // （ADR-11。owner 不在プロジェクトを生まないための唯一の公開作成経路。
     // Convex の mutation は単一トランザクションのため原子性は自動で満たされる）。
     await ctx.db.insert("projectMembers", {
       project: projectId,

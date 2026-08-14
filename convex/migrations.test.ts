@@ -4,6 +4,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import {
   type As,
+  getProjectMember,
   getTask,
   seedAuthedMember,
   seedIssueWithTask,
@@ -103,20 +104,11 @@ describe("migrations.repairDuplicateRanks", () => {
 });
 
 /** projectId・memberId のペアで membership の role を引く（結果の最終状態検証用）。 */
-const membershipRole = (
+const membershipRole = async (
   t: ReturnType<typeof setup>,
   project: Id<"projects">,
   member: Id<"members">,
-) =>
-  t.run(async (ctx) => {
-    const doc = await ctx.db
-      .query("projectMembers")
-      .withIndex("by_project_and_member", (q) =>
-        q.eq("project", project).eq("member", member),
-      )
-      .unique();
-    return doc?.role ?? null;
-  });
+) => (await getProjectMember(t, project, member))?.role ?? null;
 
 describe("migrations.backfillProjectMembers（ADR-11 §6）", () => {
   afterEach(() => {

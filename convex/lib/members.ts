@@ -1,5 +1,23 @@
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { normalizeEmail } from "./validators";
+
+/**
+ * email から member を1件解決する（正規化込み）。
+ * members.by_email への問い合わせが members.ts（create / getByEmail /
+ * ensureAgent）・lib/memberLink.ts・lib/auth.ts（resolveAgentMember）・
+ * projectMembers.ts（grantProjectMembership）の6箇所で重複していたため
+ * 一元化する（正規化ロジックの二重管理も同時に解消する）。
+ */
+export async function findMemberByEmail(
+  ctx: QueryCtx,
+  email: string,
+): Promise<Doc<"members"> | null> {
+  return await ctx.db
+    .query("members")
+    .withIndex("by_email", (q) => q.eq("email", normalizeEmail(email)))
+    .unique();
+}
 
 /**
  * member の表示名を解決する（PII 配慮で name のみ返す）。

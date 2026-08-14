@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { sha256Hex, timingSafeEqual } from "./crypto";
+import { findMemberByEmail } from "./members";
 import { normalizeEmail } from "./validators";
 
 /**
@@ -60,10 +61,7 @@ export async function linkAuthUserToMember(
 
   const email = normalizeEmail(user.email);
 
-  const existing = await ctx.db
-    .query("members")
-    .withIndex("by_email", (q) => q.eq("email", email))
-    .unique();
+  const existing = await findMemberByEmail(ctx, email);
 
   if (existing !== null) {
     if (existing.authUserId === undefined) {

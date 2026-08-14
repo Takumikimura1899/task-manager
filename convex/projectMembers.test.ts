@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
 import {
+  getProjectMember,
   seedAuthedMember,
   seedMember,
   seedProject,
@@ -305,14 +306,7 @@ describe("projectMembers.grantProjectMembership（運用エスケープハッチ
 
     expect(result.status).toBe("granted");
     expect(await t.run((ctx) => ctx.db.get(bob))).not.toBeNull();
-    const membership = await t.run((ctx) =>
-      ctx.db
-        .query("projectMembers")
-        .withIndex("by_project_and_member", (q) =>
-          q.eq("project", project).eq("member", bob),
-        )
-        .unique(),
-    );
+    const membership = await getProjectMember(t, project, bob);
     expect(membership).toMatchObject({ project, member: bob, role: "owner" });
   });
 

@@ -14,6 +14,7 @@ import {
 } from "../_generated/server";
 import { hasProjectPermission, type ProjectPermission } from "./authz";
 import { timingSafeTokenEqual } from "./crypto";
+import { findMemberByEmail } from "./members";
 import { isValidEmail, normalizeEmail } from "./validators";
 
 /**
@@ -142,10 +143,7 @@ async function resolveAgentMember(
   await requireAgentToken(accessToken);
 
   const agentEmail = requireAgentEmail();
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_email", (q) => q.eq("email", agentEmail))
-    .unique();
+  const member = await findMemberByEmail(ctx, agentEmail);
   if (member === null) {
     throw new ConvexError(
       "エージェント Member が未登録です。MCP サーバを再起動して ensureAgent を実行してください",

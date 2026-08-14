@@ -96,6 +96,14 @@ export const backfillProjectMembers = internalMutation({
     const projects = await ctx.db.query("projects").collect();
     const members = await ctx.db.query("members").collect();
 
+    // (project, member) の既存 membership を1回の .collect() で読み、
+    // "project|member" キーの Set で存在判定する。ペアごとに .unique() を
+    // 逐次発行する O(P×M) の点クエリを避けるための構造化（O(P×M) → O(P+M)）。
+    const existingMemberships = await ctx.db.query("projectMembers").collect();
+    const existingKeys = new Set(
+      existingMemberships.map((m) => `${m.project}|${m.member}`),
+    );
+
     const rawAgentEmail = process.env.MCP_AGENT_EMAIL;
     const agentEmail =
       rawAgentEmail === undefined || rawAgentEmail === ""
@@ -107,13 +115,7 @@ export const backfillProjectMembers = internalMutation({
 
     for (const project of projects) {
       for (const member of members) {
-        const existing = await ctx.db
-          .query("projectMembers")
-          .withIndex("by_project_and_member", (q) =>
-            q.eq("project", project._id).eq("member", member._id),
-          )
-          .unique();
-        if (existing !== null) {
+        if (existingKeys.has(`${project._id}|${member._id}`)) {
           skipped++;
           continue;
         }

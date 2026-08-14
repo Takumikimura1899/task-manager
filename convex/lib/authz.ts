@@ -1,13 +1,16 @@
+import type { Infer } from "convex/values";
+import { projectRole } from "../schema";
+
 /**
  * プロジェクト内ロールの認可判定（ADR-11 §3.1）。
  *
  * DB 非依存の純関数のみを置く（ユニットテスト対象。DB を触るゲート
  * （membership の解決）は convex/lib/auth.ts 側が担う）。
- * lib/taskStatus.ts と同じ方針で、schema.ts の projectRole validator とは
- * 独立にこのモジュール自身の型を定義する（役割分離を型の独立性で保つ）。
+ * ProjectRole は schema.ts の projectRole validator から Infer で派生させる
+ * （手書きの二重定義を避け、ロール追加時の drift をコンパイル時に検出する）。
  */
 
-export type ProjectRole = "owner" | "member";
+export type ProjectRole = Infer<typeof projectRole>;
 
 // §3.1 の permission 表と1対1。名称は設計書の表記をそのまま使う。
 export type ProjectPermission =

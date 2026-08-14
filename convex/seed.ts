@@ -80,6 +80,14 @@ export const demo = internalMutation({
       nextTaskNumber: 1,
       nextIssueNumber: 1,
     });
+    // INVARIANT-6（owner の存在）: projects.create を経由しない直接 insert
+    // のため、ここで明示的に owner membership を挿入する（owner 不在
+    // プロジェクトを生まない・ADR-11）。
+    await ctx.db.insert("projectMembers", {
+      project,
+      member,
+      role: "owner",
+    });
 
     // Issue とその配下 Task をまとめて作る小さなヘルパー。
     let issueNo = 1;

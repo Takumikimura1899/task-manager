@@ -1,7 +1,12 @@
 // @vitest-environment edge-runtime
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
-import { seedAuthedMember, seedProject, setup } from "../test/convexSupport";
+import {
+  getProjectMember,
+  seedAuthedMember,
+  seedProject,
+  setup,
+} from "../test/convexSupport";
 
 /**
  * Project Core API の結合テスト（基本設計書 §3 / Issue #22）。
@@ -87,14 +92,7 @@ describe("projects.create — 作成者の owner membership（ADR-11）", () => 
       name: "タスク管理",
     });
 
-    const membership = await t.run((ctx) =>
-      ctx.db
-        .query("projectMembers")
-        .withIndex("by_project_and_member", (q) =>
-          q.eq("project", projectId).eq("member", memberId),
-        )
-        .unique(),
-    );
+    const membership = await getProjectMember(t, projectId, memberId);
     expect(membership).toMatchObject({
       project: projectId,
       member: memberId,
