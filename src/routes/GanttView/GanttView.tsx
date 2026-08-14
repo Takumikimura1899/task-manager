@@ -7,6 +7,7 @@ import { GanttChart } from "../../components/GanttChart/GanttChart";
 import { Skeleton } from "../../components/Skeleton/Skeleton";
 import { useTodayIso } from "../../hooks/useTodayIso";
 import { buildGanttModel } from "../../lib/gantt";
+import { PROJECT_NOT_FOUND_MESSAGE } from "../../lib/projectNotFoundMessage";
 import s from "./GanttView.module.css";
 
 /**
@@ -23,8 +24,7 @@ export function GanttView() {
     if (issues === undefined) return undefined;
     // null は「未リンク viewer」または「project 自体が存在しない」場合
     // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
-    // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照。詳細な案内は
-    // PR③ で整備し、PR② では最低限のガードに留める）。
+    // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照）。
     if (issues === null) return null;
     return buildGanttModel(issues, today);
   }, [issues, today]);
@@ -36,7 +36,7 @@ export function GanttView() {
           <Skeleton className={s.skeletonPanel} />
         </output>
       ) : model === null ? (
-        <p className={s.empty}>プロジェクトが見つかりません。</p>
+        <p className={s.empty}>{PROJECT_NOT_FOUND_MESSAGE}</p>
       ) : model.rows.length === 0 ? (
         <p className={s.empty}>
           開始日・期限日が設定された Task がありません。Issue 一覧から Issue

@@ -1,15 +1,30 @@
 // @vitest-environment edge-runtime
 import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import {
   getProjectMember,
+  getTask,
   seedAuthedMember,
   seedMember,
   seedOwnedProject,
   seedProject,
   seedProjectMember,
   setup,
+  type T,
 } from "../test/convexSupport";
+
+/**
+ * Task を取得し、存在（非 null）を表明してから素のドキュメントを返す。
+ * `?.` でフィールド検証すると Task 消失時も undefined 経由で通り抜ける
+ * 偽陽性が起きうるため、null チェックを先に済ませる（tasks.test.ts の
+ * loadTask と同じ意図）。
+ */
+const loadTask = async (t: T, id: Id<"tasks">) => {
+  const task = await getTask(t, id);
+  expect(task).not.toBeNull();
+  return task!;
+};
 
 /**
  * ProjectMember 管理 mutation 群（ADR-11 §5）の結合テスト（convex-test）。
@@ -192,6 +207,43 @@ describe("projectMembers.remove", () => {
       as.mutation(api.projectMembers.remove, { project, member: bob }),
     ).rejects.toThrowError("この操作を行う権限がありません");
   });
+
+  it("除名すると、当該プロジェクトで担当していた Task の担当が解除される（監査指摘: 除名済み member が担当のまま残ると assignee select が空表示になる）", async () => {
+    const t = setup();
+    const { as, project } = await seedOwnedProject(t);
+    const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
+    await seedProjectMember(t, project, bob, "member");
+    const { task } = await as.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "タスク", assignee: bob },
+    });
+    expect((await loadTask(t, task)).assignee).toBe(bob);
+
+    await as.mutation(api.projectMembers.remove, { project, member: bob });
+
+    expect((await loadTask(t, task)).assignee).toBeUndefined();
+  });
+
+  it("除名しても他プロジェクトでの担当には影響しない", async () => {
+    const t = setup();
+    const { as, memberId: owner, project } = await seedOwnedProject(t);
+    const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
+    await seedProjectMember(t, project, bob, "member");
+
+    const otherProject = await seedProject(t, { key: "OTHER" });
+    await seedProjectMember(t, otherProject, owner, "owner");
+    await seedProjectMember(t, otherProject, bob, "member");
+    const { task: otherTask } = await as.mutation(api.issues.create, {
+      project: otherProject,
+      title: "他プロジェクトの課題",
+      firstTask: { title: "他プロジェクトのタスク", assignee: bob },
+    });
+
+    await as.mutation(api.projectMembers.remove, { project, member: bob });
+
+    expect((await loadTask(t, otherTask)).assignee).toBe(bob);
+  });
 });
 
 describe("projectMembers.leave", () => {
@@ -244,6 +296,27 @@ describe("projectMembers.leave", () => {
     await expect(
       as.mutation(api.projectMembers.leave, { project }),
     ).rejects.toThrowError("このプロジェクトに参加していません");
+  });
+
+  it("脱退すると、当該プロジェクトで担当していた Task の担当が解除される", async () => {
+    const t = setup();
+    const { memberId: owner } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, owner, "owner");
+    const { as: asBob, memberId: bob } = await seedAuthedMember(t, {
+      email: "bob@example.com",
+    });
+    await seedProjectMember(t, project, bob, "member");
+    const { task } = await asBob.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "タスク", assignee: bob },
+    });
+    expect((await loadTask(t, task)).assignee).toBe(bob);
+
+    await asBob.mutation(api.projectMembers.leave, { project });
+
+    expect((await loadTask(t, task)).assignee).toBeUndefined();
   });
 });
 

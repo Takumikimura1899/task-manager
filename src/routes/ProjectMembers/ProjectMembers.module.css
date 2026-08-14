@@ -1,0 +1,222 @@
+/* ProjectMembers 専用のスタイル語彙（フロントエンドCSS規約.md §3）。
+   Issue/Task 詳細（DetailPage.module.css）とは別ファミリのため、ページ枠
+   （back リンク）だけを DetailPage から共有し、他は独自に持つ。 */
+@layer components {
+  .header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
+  .title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--font-size-lg);
+  }
+
+  .subtitle {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  .section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+  }
+
+  .sectionHeader {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .sectionTitle {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    color: var(--color-text-muted);
+  }
+
+  .addToggle {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-subtle);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition:
+      color var(--duration-fast) var(--ease-out),
+      border-color var(--duration-fast) var(--ease-out);
+  }
+
+  .addToggle:hover {
+    color: var(--color-accent);
+    border-color: color-mix(
+      in srgb,
+      var(--color-accent) 45%,
+      var(--color-border)
+    );
+  }
+
+  .addForm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    background: var(--color-subtle);
+    border-radius: var(--radius-sm);
+  }
+
+  .addField {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+  }
+
+  .addActions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .select {
+    padding: var(--space-1) var(--space-2);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    transition:
+      border-color var(--duration-fast) var(--ease-out),
+      box-shadow var(--duration-fast) var(--ease-out);
+  }
+
+  .select:focus {
+    border-color: var(--color-accent);
+    box-shadow: var(--glow-accent-sm);
+  }
+
+  .submit {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-inverse);
+    background: var(--gradient-accent);
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .submit:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .cancel {
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+  }
+
+  .empty {
+    margin: 0;
+    padding: var(--space-4);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-muted);
+    background: var(--color-subtle);
+    border-radius: var(--radius-sm);
+  }
+
+  .wrapper {
+    overflow-x: auto;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-sm);
+  }
+
+  .th {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    letter-spacing: var(--tracking-wide);
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .td {
+    padding: var(--space-2) var(--space-3);
+    color: var(--color-text);
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  tbody tr:last-child .td {
+    border-bottom: none;
+  }
+
+  .roleBadge {
+    /* トークンに 2px 相当が無いため、直書きせず --space-1 から派生させる
+       （フロントエンドCSS規約.md §2「値の直書きを禁止」）。 */
+    padding: calc(var(--space-1) / 2) var(--space-2);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    border-radius: var(--radius-pill);
+    border: 1px solid color-mix(in srgb, currentcolor 30%, transparent);
+  }
+
+  .owner {
+    color: var(--color-accent-alt);
+    background: color-mix(in srgb, var(--color-accent-alt) 12%, transparent);
+  }
+
+  .member {
+    color: var(--color-text-muted);
+    background: var(--color-chip);
+  }
+
+  .rowActions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .skeletonHeading {
+    width: min(240px, 60%);
+    height: 24px;
+  }
+
+  .skeletonSection {
+    height: 160px;
+  }
+}

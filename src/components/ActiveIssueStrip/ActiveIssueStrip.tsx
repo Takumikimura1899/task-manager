@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { formatIssueRef } from "../../lib/formatIssueRef";
+import { PROJECT_NOT_FOUND_MESSAGE } from "../../lib/projectNotFoundMessage";
 import { Skeleton } from "../Skeleton/Skeleton";
 import s from "./ActiveIssueStrip.module.css";
 
@@ -30,10 +31,10 @@ export function ActiveIssueStrip({
 
   // null は「未リンク viewer」または「project 自体が存在しない」場合
   // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
-  // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照。詳細な案内は
-  // PR③ で整備し、PR② では最低限のガードに留める）。
+  // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照）。ヘッダーの
+  // プロジェクト選択という実在する導線で案内する（PR③ で文言整備）。
   if (issues === null) {
-    return <p className={s.empty}>プロジェクトが見つかりません。</p>;
+    return <p className={s.empty}>{PROJECT_NOT_FOUND_MESSAGE}</p>;
   }
 
   // 0 件を黙って隠さず、進行中の Issue が無いことを明示する（Issue #16 方針）。

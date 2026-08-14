@@ -151,10 +151,13 @@ describe("AppLayout のタブ表示可否（レビュー指摘#1の回帰防止�
     expect(
       screen.queryByRole("combobox", { name: "プロジェクト" }),
     ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "メンバー" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "My Page" })).toBeInTheDocument();
   });
 
-  it("プロジェクトが1件以上なら Task/Issue/Gantt タブを表示する", () => {
+  it("プロジェクトが1件以上なら Task/Issue/Gantt タブとメンバー導線を表示する", () => {
     useQueryMock.mockImplementation(
       createQueryDispatcher({
         "projects:list": [createProject()],
@@ -166,6 +169,7 @@ describe("AppLayout のタブ表示可否（レビュー指摘#1の回帰防止�
     expect(screen.getByRole("link", { name: "Task" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Issue" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Gantt" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "メンバー" })).toBeInTheDocument();
   });
 });
 
@@ -404,5 +408,36 @@ describe("AppLayout のプロジェクト select", () => {
     expect(
       screen.getByRole("combobox", { name: "プロジェクト" }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("AppLayout のメンバー導線（ADR-11 §7）", () => {
+  it("選択中プロジェクトの settings/members へのリンクを表示する", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout(["/"]);
+
+    expect(screen.getByRole("link", { name: "メンバー" })).toHaveAttribute(
+      "href",
+      "/TASK/settings/members",
+    );
+  });
+
+  it("/mypage（個人スコープビュー）ではメンバー導線を表示しない（プロジェクト選択と同条件）", () => {
+    useQueryMock.mockImplementation(
+      createQueryDispatcher({
+        "projects:list": [createProject()],
+        "members:list": [createMember()],
+      }),
+    );
+    renderAppLayout(["/mypage"]);
+
+    expect(
+      screen.queryByRole("link", { name: "メンバー" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -13,7 +13,11 @@ import { NewIssueForm } from "./NewIssueForm";
 
 const { createIssue, members } = vi.hoisted(() => ({
   createIssue: vi.fn<(args: unknown) => Promise<unknown>>(),
-  members: [{ _id: "member_1", name: "Alice" }],
+  // projectMembers.listByProject の戻り値の形（{_id, role, member: {_id, name}}）
+  // に合わせる（ADR-11 PR③: 担当者候補を全社名簿から参加者一覧へ差し替え）。
+  members: [
+    { _id: "pm_1", role: "member", member: { _id: "member_1", name: "Alice" } },
+  ],
 }));
 
 vi.mock("convex/react", () => ({

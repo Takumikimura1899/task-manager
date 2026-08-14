@@ -13,7 +13,11 @@ import { AddTaskForm } from "./AddTaskForm";
 
 const { createTask, members } = vi.hoisted(() => ({
   createTask: vi.fn<(args: unknown) => Promise<unknown>>(),
-  members: [{ _id: "member_1", name: "Alice" }],
+  // projectMembers.listByProject の戻り値の形（{_id, role, member: {_id, name}}）
+  // に合わせる（ADR-11 PR③: 担当者候補を全社名簿から参加者一覧へ差し替え）。
+  members: [
+    { _id: "pm_1", role: "member", member: { _id: "member_1", name: "Alice" } },
+  ],
 }));
 
 vi.mock("convex/react", () => ({
@@ -25,6 +29,7 @@ const createProps = (
   overrides: Partial<Parameters<typeof AddTaskForm>[0]> = {},
 ) => ({
   issue: "issue_1" as Id<"issues">,
+  project: "project_1" as Id<"projects">,
   createdBy: "member_1" as Id<"members">,
   ...overrides,
 });
