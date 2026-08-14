@@ -222,6 +222,21 @@ export async function findMembership(
 }
 
 /**
+ * member が参加している membership を全件列挙する（projects.list /
+ * tasks.listMine が同一の by_member クエリを個別に複製していたため集約する。
+ * 「参加のみ可視」・「参加プロジェクトのみに絞る」の共通の第一段）。
+ */
+export async function membershipsOfMember(
+  ctx: QueryCtx,
+  member: Id<"members">,
+): Promise<Doc<"projectMembers">[]> {
+  return await ctx.db
+    .query("projectMembers")
+    .withIndex("by_member", (q) => q.eq("member", member))
+    .collect();
+}
+
+/**
  * 認証ゲートのビルダー（監査 H1）。
  *
  * 公開 query/mutation はこれまで各関数が `accessToken: v.optional(v.string())`

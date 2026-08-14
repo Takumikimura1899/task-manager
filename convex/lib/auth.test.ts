@@ -6,7 +6,9 @@ import {
   authSubject,
   seedAgentMember,
   seedAuthedMember,
+  seedIssueWithTask,
   seedMember,
+  seedOwnedProject,
   seedProject,
   seedUser,
   setup,
@@ -43,7 +45,7 @@ describe("requireActor（ブラウザ経路）", () => {
     ).rejects.toThrowError("認証が必要です");
   });
 
-  it("認証済みだが Member 未リンクでも query は閲覧できる（requireAuthed。全画面クラッシュにせず NoMembersNotice の案内へ落とすため）", async () => {
+  it("認証済みだが Member 未リンクでも query は ConvexError を投げず null を返す（requireViewer。全画面クラッシュにせず NoMembersNotice の案内へ落とすため。ADR-11: 未リンクは membership を持ち得ないため null=不可視）", async () => {
     const t = setup();
     const project = await seedProject(t);
     const userId = await seedUser(t, { email: "nobody@example.com" });
@@ -51,7 +53,7 @@ describe("requireActor（ブラウザ経路）", () => {
 
     await expect(
       asUnlinked.query(api.tasks.listFiltered, { project }),
-    ).resolves.toEqual([]);
+    ).resolves.toBeNull();
   });
 
   it("認証済みでも Member 未リンクなら mutation（actor が必要）は ConvexError で拒否する", async () => {
@@ -83,8 +85,7 @@ describe("requireActor（ブラウザ経路）", () => {
 describe("createdBy の actor 強制（tasks.create / issues.create）", () => {
   it("createdBy を引数で指定する手段がない（スキーマにない余分な引数はバリデータが拒否する）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t);
+    const { as, project } = await seedOwnedProject(t);
     const impostor = await seedMember(t, {
       name: "Impostor",
       email: "impostor@example.com",
@@ -107,8 +108,7 @@ describe("createdBy の actor 強制（tasks.create / issues.create）", () => {
 
   it("作成された Issue/Task の createdBy は常に呼び出し元の actor になる", async () => {
     const t = setup();
-    const { as, memberId } = await seedAuthedMember(t);
-    const project = await seedProject(t);
+    const { as, memberId, project } = await seedOwnedProject(t);
 
     const { issue, task } = await as.mutation(api.issues.create, {
       project,
@@ -217,5 +217,36 @@ describe("requireActor / requireAgentToken（MCP 経路）", () => {
     await expect(requireAgentToken(undefined)).rejects.toThrowError(
       "MCP_ACCESS_TOKEN が設定されていません",
     );
+  });
+});
+
+// --- MCP 経路の projectQuery/projectMutation 非参加拒否（ADR-11） --------------
+
+describe("projectQuery/projectMutation の MCP 経路（accessToken）非参加拒否", () => {
+  it("エージェント Member が未参加のプロジェクトへの query（tasks.board）をサイレントにせず ConvexError で拒否する", async () => {
+    const t = setup();
+    await seedAgentMember(t);
+    const project = await seedProject(t);
+
+    await expect(
+      t.query(api.tasks.board, { project, accessToken: AGENT_TOKEN }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+  });
+
+  it("エージェント Member が未参加のプロジェクトへの mutation（tasks.create）をサイレントにせず ConvexError で拒否する", async () => {
+    const t = setup();
+    await seedAgentMember(t);
+    const { as: asOwner, project } = await seedOwnedProject(t, {
+      email: "owner@example.com",
+    });
+    const { issue } = await seedIssueWithTask(asOwner, project);
+
+    await expect(
+      t.mutation(api.tasks.create, {
+        issue,
+        title: "エージェントの侵入",
+        accessToken: AGENT_TOKEN,
+      }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
   });
 });

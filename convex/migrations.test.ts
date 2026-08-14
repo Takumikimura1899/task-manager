@@ -6,9 +6,9 @@ import {
   type As,
   getProjectMember,
   getTask,
-  seedAuthedMember,
   seedIssueWithTask,
   seedMember,
+  seedOwnedProject,
   seedProject,
   seedProjectMember,
   setup,
@@ -30,7 +30,7 @@ const columnIds = async (
   as: As,
   project: Id<"projects">,
 ): Promise<Id<"tasks">[]> => {
-  const board = await as.query(api.tasks.board, { project });
+  const board = (await as.query(api.tasks.board, { project }))!;
   const column = board.find((c) => c.status === "backlog");
   return (column?.tasks ?? []).map((task) => task._id);
 };
@@ -38,8 +38,7 @@ const columnIds = async (
 describe("migrations.repairDuplicateRanks", () => {
   it("重複 rank を修復して列の _id 順序を保ち、2回目の実行は冪等（tasksRepatched=0）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t);
+    const { as, project } = await seedOwnedProject(t);
     const { issue, task: a } = await seedIssueWithTask(as, project);
     const b = await as.mutation(api.tasks.create, { issue, title: "B" });
     const c = await as.mutation(api.tasks.create, { issue, title: "C" });
@@ -88,8 +87,7 @@ describe("migrations.repairDuplicateRanks", () => {
 
   it("重複が無ければ何も変更しない（scanned のみ進む）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t);
+    const { as, project } = await seedOwnedProject(t);
     await seedIssueWithTask(as, project);
 
     const result = await t.mutation(

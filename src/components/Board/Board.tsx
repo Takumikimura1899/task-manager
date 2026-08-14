@@ -82,7 +82,16 @@ export function Board({
     mutationInFlight,
     runExclusive,
     resyncFromServer,
-  } = useBoardSnapshot({ columns, filter, dragging: activeTask !== null });
+  } = useBoardSnapshot({
+    // null（「未リンク viewer」または「project 自体が存在しない」場合。
+    // ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+    // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照）は下記の
+    // early return で別扱いするため、hook へは undefined として渡し通常の
+    // ロード中と同じ「同期しない」状態に留める。
+    columns: columns ?? undefined,
+    filter,
+    dragging: activeTask !== null,
+  });
 
   // dragLocked（state）が useSortable の disabled に反映されるのは再レンダー後の
   // ため、反映前のごく短い競合ウィンドウでは dnd-kit がドラッグを開始できて
@@ -143,6 +152,14 @@ export function Board({
     },
     [boardRef],
   );
+
+  // null は「未リンク viewer」または「project 自体が存在しない」場合
+  // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+  // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照。詳細な案内は
+  // PR③ で整備し、PR② では最低限のガードに留める）。
+  if (columns === null) {
+    return <p className={s.empty}>プロジェクトが見つかりません。</p>;
+  }
 
   // 初期ロード中も全画面差し替えにせず、カンバンの列枠を維持したまま
   // カード部分だけをスケルトンで示す（Issue #29）。

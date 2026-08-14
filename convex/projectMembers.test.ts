@@ -5,6 +5,7 @@ import {
   getProjectMember,
   seedAuthedMember,
   seedMember,
+  seedOwnedProject,
   seedProject,
   seedProjectMember,
   setup,
@@ -22,9 +23,7 @@ import {
 describe("projectMembers.add", () => {
   it("owner はメンバーを追加できる", async () => {
     const t = setup();
-    const { as, memberId: owner } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
 
     const id = await as.mutation(api.projectMembers.add, {
@@ -42,9 +41,7 @@ describe("projectMembers.add", () => {
 
   it("既に参加済みのメンバーへの重複追加を拒否する", async () => {
     const t = setup();
-    const { as, memberId: owner } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
     await seedProjectMember(t, project, bob, "member");
 
@@ -92,9 +89,7 @@ describe("projectMembers.add", () => {
 describe("projectMembers.changeRole", () => {
   it("owner はメンバーのロールを変更できる（member→owner の昇格）", async () => {
     const t = setup();
-    const { as, memberId: owner } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
     const bobMembership = await seedProjectMember(t, project, bob, "member");
 
@@ -111,9 +106,7 @@ describe("projectMembers.changeRole", () => {
 
   it("owner が2名いる場合は片方を member へ降格できる", async () => {
     const t = setup();
-    const { as, memberId: owner } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
     const bobMembership = await seedProjectMember(t, project, bob, "owner");
 
@@ -152,9 +145,7 @@ describe("projectMembers.changeRole", () => {
 describe("projectMembers.remove", () => {
   it("owner は他メンバーを除名できる", async () => {
     const t = setup();
-    const { as, memberId: owner } = await seedAuthedMember(t);
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
+    const { as, project } = await seedOwnedProject(t);
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
     const bobMembership = await seedProjectMember(t, project, bob, "member");
 
@@ -259,11 +250,13 @@ describe("projectMembers.leave", () => {
 describe("projectMembers.listByProject", () => {
   it("参加メンバーは所属プロジェクトのメンバー一覧（role・member 情報）を取得できる", async () => {
     const t = setup();
-    const { as, memberId: owner } = await seedAuthedMember(t, {
+    const {
+      as,
+
+      project,
+    } = await seedOwnedProject(t, {
       name: "Alice",
     });
-    const project = await seedProject(t);
-    await seedProjectMember(t, project, owner, "owner");
     const bob = await seedMember(t, { name: "Bob", email: "bob@example.com" });
     await seedProjectMember(t, project, bob, "member");
 

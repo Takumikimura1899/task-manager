@@ -28,6 +28,14 @@ export function ActiveIssueStrip({
     );
   }
 
+  // null は「未リンク viewer」または「project 自体が存在しない」場合
+  // （ADR-11 projectQuery の型契約。非参加 linked Member は throw されるため
+  // ここでは扱わない・convex/lib/auth.ts の projectQuery 参照。詳細な案内は
+  // PR③ で整備し、PR② では最低限のガードに留める）。
+  if (issues === null) {
+    return <p className={s.empty}>プロジェクトが見つかりません。</p>;
+  }
+
   // 0 件を黙って隠さず、進行中の Issue が無いことを明示する（Issue #16 方針）。
   // in_progress への絞り込みはサーバー側（listInProgress）で完結している。
   if (issues.length === 0) {

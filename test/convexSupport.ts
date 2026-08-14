@@ -208,6 +208,48 @@ export const seedProjectMember = (
   role: Doc<"projectMembers">["role"] = "owner",
 ) => t.run((ctx) => ctx.db.insert("projectMembers", { project, member, role }));
 
+/**
+ * 「owner 1名が参加する project」の最小フィクスチャ。
+ * `seedAuthedMember` → `seedProject` → `seedProjectMember(..., "owner")` の
+ * 3行が結合テスト全体で機械的に反復していたため一元化する
+ * （認可ゲート＝projectQuery/projectMutation を通すための前提セットアップ）。
+ */
+export const seedOwnedProject = async (
+  t: T,
+  overrides: Parameters<typeof seedAuthedMember>[1] = {},
+) => {
+  const { as, memberId } = await seedAuthedMember(t, overrides);
+  const project = await seedProject(t);
+  await seedProjectMember(t, project, memberId, "owner");
+  return { as, memberId, project };
+};
+
+/**
+ * 「owner が参加する project」+「どのプロジェクトにも参加していない
+ * outsider（実在する Member）」の複合フィクスチャ。非参加拒否
+ * （projectQuery/projectMutation の membership ゲート）テストの
+ * owner/outsider arrange が個別に反復していたため一元化する。
+ */
+export const seedProjectWithOutsider = async (
+  t: T,
+  overrides: {
+    ownerEmail?: string;
+    outsiderEmail?: string;
+  } = {},
+) => {
+  const {
+    as: asOwner,
+    memberId: owner,
+    project,
+  } = await seedOwnedProject(t, {
+    email: overrides.ownerEmail ?? "owner@example.com",
+  });
+  const { as: asOutsider, memberId: outsider } = await seedAuthedMember(t, {
+    email: overrides.outsiderEmail ?? "outsider@example.com",
+  });
+  return { asOwner, owner, project, asOutsider, outsider };
+};
+
 /** (project, member) の membership を取得する（最終状態の検証用）。 */
 export const getProjectMember = (
   t: T,
@@ -283,6 +325,7 @@ export const seedRepository = async (
 export const seedTaskWithRepository = async (t: T) => {
   const { as, memberId: member } = await seedAuthedMember(t);
   const project = await seedProject(t);
+  await seedProjectMember(t, project, member, "owner");
   const { issue, task } = await seedIssueWithTask(as, project);
   const repository = await seedRepository(t, project);
   return { as, project, member, issue, task, repository };

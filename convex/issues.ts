@@ -1,9 +1,14 @@
 import { ConvexError, v } from "convex/values";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { actorMutation, authedQuery } from "./lib/auth";
+import { projectMutation, projectQuery } from "./lib/auth";
 import { deriveIssueStatus } from "./lib/issueStatus";
 import { resolveMemberName, resolveMemberNames } from "./lib/members";
+import {
+  projectOfIssue,
+  projectOfKey,
+  projectOfProjectId,
+} from "./lib/projectScope";
 import { findProjectByKey } from "./lib/projects";
 import { assertRevision, nextMeta } from "./lib/revision";
 import { loadTasksByIssue } from "./lib/tasks";
@@ -45,7 +50,7 @@ async function tasksOfIssue(
 /**
  * Issue を作成する。INVARIANT-5 を満たすため、最初の Task を必ず同時に作成する。
  */
-export const create = actorMutation(
+export const create = projectMutation(
   {
     project: v.id("projects"),
     title: v.string(),
@@ -58,11 +63,15 @@ export const create = actorMutation(
       assignee: v.optional(v.id("members")),
     }),
   },
-  async (ctx, args, actor) => {
-    const project = await ctx.db.get(args.project);
-    if (project === null) {
-      throw new ConvexError("指定されたプロジェクトが存在しません");
-    }
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfProjectId(ctx, args.project),
+  },
+  async (ctx, args, { actor }) => {
+    // projectMutation が project の実在を同一トランザクション内で既に確認済み
+    // （D1・projectOfProjectId）。ここでは nextIssueNumber の採番に必要な
+    // ドキュメント本体を改めて取得するだけで、null は到達しない。
+    const project = (await ctx.db.get(args.project))!;
     // createdBy は requireActor が同一トランザクション内で解決した実在
     // member（actor._id）のみが渡るため、実在確認は不要（Issue #1 PR2 で
     // クライアント引数を廃止済み。insertTask 側も同様にチェックしない）。
@@ -101,13 +110,17 @@ export const create = actorMutation(
  * タイトル・説明の更新（revision 楽観ロック・INVARIANT-2）。
  * status は子 Task 群からの派生（§5.1）のためここでは扱わない。
  */
-export const update = actorMutation(
+export const update = projectMutation(
   {
     id: v.id("issues"),
     expectedRevision: v.number(),
     title: v.optional(v.string()),
     description: v.optional(v.string()),
     priority: v.optional(taskPriority),
+  },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfIssue(ctx, args.id),
   },
   async (ctx, args) => {
     const issue = await getIssueOrThrow(ctx, args.id);
@@ -126,10 +139,14 @@ export const update = actorMutation(
  * Issue 削除（破壊的・§6 で Human-in-the-Loop 承認必須）。
  * 配下 Task と、その GitLink も併せて削除する（参照整合性の維持）。
  */
-export const remove = actorMutation(
+export const remove = projectMutation(
   {
     id: v.id("issues"),
     expectedRevision: v.number(),
+  },
+  {
+    permission: "task.*",
+    project: (ctx, args) => projectOfIssue(ctx, args.id),
   },
   async (ctx, args) => {
     const issue = await getIssueOrThrow(ctx, args.id);
@@ -152,8 +169,9 @@ export const remove = actorMutation(
 // --- Queries ----------------------------------------------------------------
 
 /** プロジェクトの Issue 一覧。各 Issue に派生ステータスと Task 数を付与する。 */
-export const list = authedQuery(
+export const list = projectQuery(
   { project: v.id("projects") },
+  (ctx, args) => projectOfProjectId(ctx, args.project),
   async (ctx, args) => {
     const issues = await ctx.db
       .query("issues")
@@ -196,8 +214,9 @@ export const list = authedQuery(
  * list と異なり estimateTotal/actualTotal の reduce や Issue ドキュメント全体の
  * スプレッドは行わず、in_progress の Issue のみを最小フィールドで返す。
  */
-export const listInProgress = authedQuery(
+export const listInProgress = projectQuery(
   { project: v.id("projects") },
+  (ctx, args) => projectOfProjectId(ctx, args.project),
   async (ctx, args) => {
     const issues = await ctx.db
       .query("issues")
@@ -260,11 +279,12 @@ async function findIssueByRef(
  * getByRef は配下 Task と担当者名まで join するため、_id しか要らない
  * 更新系（MCP の update_issue 等）はこちらを使う。
  */
-export const getIdByRef = authedQuery(
+export const getIdByRef = projectQuery(
   {
     projectKey: v.string(),
     number: v.number(),
   },
+  (ctx, args) => projectOfKey(ctx, args.projectKey),
   async (ctx, args) => {
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     return found === null ? null : found.issue._id;
@@ -276,11 +296,12 @@ export const getIdByRef = authedQuery(
  * 詳細画面の表示用に作成者名と各 Task の担当者名を付与する
  * （member の PII は返さず name のみ）。
  */
-export const getByRef = authedQuery(
+export const getByRef = projectQuery(
   {
     projectKey: v.string(),
     number: v.number(),
   },
+  (ctx, args) => projectOfKey(ctx, args.projectKey),
   async (ctx, args) => {
     const found = await findIssueByRef(ctx, args.projectKey, args.number);
     if (found === null) return null;

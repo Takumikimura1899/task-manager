@@ -6,6 +6,7 @@ import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   listTaskGitLinks,
   seedGitLink,
+  seedProject,
   seedRepository,
   seedTaskWithRepository,
   setup,
@@ -167,9 +168,11 @@ describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
     // Issue ごと削除して task の実体を消す（参照だけ残す）
     await as.mutation(api.issues.remove, { id: issue, expectedRevision: 0 });
 
+    // projectMutation が resolveProject（projectOfTask）の段階で拒否するため
+    // 汎用メッセージになる（ADR-11 設計書 §3.5 手順2）。
     await expect(
       as.mutation(api.gitLinks.link, createLinkArgs({ task, repository })),
-    ).rejects.toThrowError("指定されたタスクが存在しません");
+    ).rejects.toThrowError("指定された対象が存在しません");
 
     expect(await t.run((ctx) => ctx.db.query("gitLinks").collect())).toEqual(
       [],
@@ -189,6 +192,32 @@ describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
   });
 });
 
+describe("gitLinks.link のクロスプロジェクト拒否（設計書 §4 の厳格化）", () => {
+  it("task と repository が別プロジェクトに属する場合は拒否し、リンクを作らない", async () => {
+    const t = setup();
+    const { as, project, task } = await seedTaskWithRepository(t);
+    const otherProject = await seedProject(t, { key: "OTHER" });
+    const crossProjectRepo = await seedRepository(t, otherProject, {
+      remoteUrl: "https://github.com/acme/other",
+    });
+    // 呼び出し元は task 側（project）の owner のまま。membership 判定自体は
+    // 通過し、handler 内の repository.project === task.project 検証で拒否される
+    // ことを確認する（projectMutation のゲート拒否とは異なる不変条件）。
+
+    await expect(
+      as.mutation(
+        api.gitLinks.link,
+        createLinkArgs({ task, repository: crossProjectRepo }),
+      ),
+    ).rejects.toThrowError(
+      "指定されたリポジトリは対象タスクのプロジェクトに属していません",
+    );
+
+    expect(await listTaskGitLinks(t, task)).toEqual([]);
+    expect(project).not.toBe(otherProject); // 前提の確認（別プロジェクトである）
+  });
+});
+
 describe("gitLinks.listByTask", () => {
   it("指定タスクのリンクのみ返す（他タスクのリンクは含まない）", async () => {
     const t = setup();
@@ -204,7 +233,7 @@ describe("gitLinks.listByTask", () => {
       { externalRef: "feature/TASK-2" },
     );
 
-    const listed = await as.query(api.gitLinks.listByTask, { task });
+    const listed = (await as.query(api.gitLinks.listByTask, { task }))!;
 
     expect(listed.map((l) => l._id)).toEqual([mine]);
   });

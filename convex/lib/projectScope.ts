@@ -1,5 +1,8 @@
+import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
+import { findMembership } from "./auth";
+import { findProjectByKey } from "./projects";
 
 /**
  * projectId を直接持たない公開関数（taskId / issueId / repositoryId しか
@@ -49,4 +52,38 @@ export async function projectOfProjectId(
 ): Promise<Id<"projects"> | null> {
   const project = await ctx.db.get(id);
   return project === null ? null : id;
+}
+
+/**
+ * projectKey（{key}#{number} / {key}-{number} 形式の参照）を受ける関数向けの
+ * resolveProject。issues.getIdByRef / issues.getByRef / tasks.getByRef /
+ * tasks.getDetail / projects.getByKey が同一のラムダを個別に複製していたため
+ * ここへ集約する。
+ */
+export async function projectOfKey(
+  ctx: QueryCtx,
+  key: string,
+): Promise<Id<"projects"> | null> {
+  return (await findProjectByKey(ctx, key))?._id ?? null;
+}
+
+/**
+ * assignee 制約(設計書 §10 D2): 対象 Member が実在し、かつ project の参加者で
+ * あることを確認する。裁定(1): assignee は参加 Member のみ。insertTask
+ * （tasks.create / issues.create.firstTask.assignee 経由）と tasks.assign の
+ * 両方から呼び、割り当て経路を一本化する。
+ */
+export async function assertAssignableMember(
+  ctx: QueryCtx,
+  project: Id<"projects">,
+  member: Id<"members">,
+): Promise<void> {
+  if ((await ctx.db.get(member)) === null) {
+    throw new ConvexError("指定されたメンバーが存在しません");
+  }
+  if ((await findMembership(ctx, project, member)) === null) {
+    throw new ConvexError(
+      "指定されたメンバーはこのプロジェクトに参加していません",
+    );
+  }
 }

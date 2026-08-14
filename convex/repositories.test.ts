@@ -5,7 +5,9 @@ import { decryptSecret } from "./lib/crypto";
 import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   seedAuthedMember,
+  seedOwnedProject,
   seedProject,
+  seedProjectMember,
   seedRepository,
   setup,
   type T,
@@ -31,11 +33,29 @@ afterEach(() => {
 const listRepositories = (t: T) =>
   t.run((ctx) => ctx.db.query("repositories").collect());
 
-describe("repositories.create", () => {
-  it("webhookSecret を暗号化して保存する（平文は残らず、鍵で復号すると元に戻る）", async () => {
+describe("repositories.create の認可（ADR-11 §4: project.settings.edit は owner 専用）", () => {
+  it("member ロールは権限を持たず拒否される（owner が成功する下の暗号化テストと対）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
+    const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "member");
+
+    await expect(
+      as.mutation(api.repositories.create, {
+        project,
+        remoteUrl: "https://github.com/acme/repo",
+        webhookSecret: "s",
+      }),
+    ).rejects.toThrowError("この操作を行う権限がありません");
+
+    expect(await listRepositories(t)).toHaveLength(0);
+  });
+});
+
+describe("repositories.create", () => {
+  it("webhookSecret を暗号化して保存する（平文は残らず、鍵で復号すると元に戻る。owner は project.settings.edit を持つ）", async () => {
+    const t = setup();
+    const { as, project } = await seedOwnedProject(t);
     const plaintext = "ghs_supersecret_webhook_token";
 
     const id = await as.mutation(api.repositories.create, {
@@ -61,17 +81,18 @@ describe("repositories.create", () => {
 
   it("存在しないプロジェクトを指定すると拒否する（参照整合性）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t);
+    const { as, project } = await seedOwnedProject(t);
     await t.run((ctx) => ctx.db.delete(project));
 
+    // projectMutation が resolveProject の段階で拒否するため汎用メッセージになる
+    // （ADR-11 設計書 §3.5 手順2。個別メッセージより前段の判定）。
     await expect(
       as.mutation(api.repositories.create, {
         project,
         remoteUrl: "https://github.com/acme/repo",
         webhookSecret: "s",
       }),
-    ).rejects.toThrowError("指定されたプロジェクトが存在しません");
+    ).rejects.toThrowError("指定された対象が存在しません");
   });
 
   it.each([
@@ -81,8 +102,7 @@ describe("repositories.create", () => {
     "WEBHOOK_ENCRYPTION_KEY が $name の場合はエラーになり、保存しない",
     async ({ value }) => {
       const t = setup();
-      const { as } = await seedAuthedMember(t);
-      const project = await seedProject(t);
+      const { as, project } = await seedOwnedProject(t);
       vi.stubEnv("WEBHOOK_ENCRYPTION_KEY", value);
 
       await expect(
@@ -102,13 +122,12 @@ describe("repositories.create", () => {
 describe("repositories.listByProject", () => {
   it("webhookSecret を除外して返す（PII/機密のクライアント露出防止）", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t);
+    const { as, project } = await seedOwnedProject(t);
     const id = await seedRepository(t, project);
 
-    const listed = await as.query(api.repositories.listByProject, {
+    const listed = (await as.query(api.repositories.listByProject, {
       project,
-    });
+    }))!;
 
     expect(listed).toHaveLength(1);
     expect(listed[0]).toMatchObject({
@@ -121,17 +140,16 @@ describe("repositories.listByProject", () => {
 
   it("指定プロジェクトのリポジトリのみ返す", async () => {
     const t = setup();
-    const { as } = await seedAuthedMember(t);
-    const project = await seedProject(t, { key: "TASK" });
+    const { as, project } = await seedOwnedProject(t);
     const other = await seedProject(t, { key: "OTHER" });
     const mine = await seedRepository(t, project);
     await seedRepository(t, other, {
       remoteUrl: "https://github.com/acme/other",
     });
 
-    const listed = await as.query(api.repositories.listByProject, {
+    const listed = (await as.query(api.repositories.listByProject, {
       project,
-    });
+    }))!;
 
     expect(listed.map((r) => r._id)).toEqual([mine]);
   });
