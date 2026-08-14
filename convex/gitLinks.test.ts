@@ -6,6 +6,7 @@ import {
   TEST_WEBHOOK_ENCRYPTION_KEY,
   listTaskGitLinks,
   seedGitLink,
+  seedProject,
   seedRepository,
   seedTaskWithRepository,
   setup,
@@ -188,6 +189,32 @@ describe("gitLinks.link（参照整合性 INVARIANT-3）", () => {
     ).rejects.toThrowError("指定されたリポジトリが存在しません");
 
     expect(await listTaskGitLinks(t, task)).toEqual([]);
+  });
+});
+
+describe("gitLinks.link のクロスプロジェクト拒否（設計書 §4 の厳格化）", () => {
+  it("task と repository が別プロジェクトに属する場合は拒否し、リンクを作らない", async () => {
+    const t = setup();
+    const { as, project, task } = await seedTaskWithRepository(t);
+    const otherProject = await seedProject(t, { key: "OTHER" });
+    const crossProjectRepo = await seedRepository(t, otherProject, {
+      remoteUrl: "https://github.com/acme/other",
+    });
+    // 呼び出し元は task 側（project）の owner のまま。membership 判定自体は
+    // 通過し、handler 内の repository.project === task.project 検証で拒否される
+    // ことを確認する（projectMutation のゲート拒否とは異なる不変条件）。
+
+    await expect(
+      as.mutation(
+        api.gitLinks.link,
+        createLinkArgs({ task, repository: crossProjectRepo }),
+      ),
+    ).rejects.toThrowError(
+      "指定されたリポジトリは対象タスクのプロジェクトに属していません",
+    );
+
+    expect(await listTaskGitLinks(t, task)).toEqual([]);
+    expect(project).not.toBe(otherProject); // 前提の確認（別プロジェクトである）
   });
 });
 

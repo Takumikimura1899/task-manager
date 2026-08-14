@@ -32,8 +32,27 @@ afterEach(() => {
 const listRepositories = (t: T) =>
   t.run((ctx) => ctx.db.query("repositories").collect());
 
+describe("repositories.create の認可（ADR-11 §4: project.settings.edit は owner 専用）", () => {
+  it("member ロールは権限を持たず拒否される（owner が成功する下の暗号化テストと対）", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, memberId, "member");
+
+    await expect(
+      as.mutation(api.repositories.create, {
+        project,
+        remoteUrl: "https://github.com/acme/repo",
+        webhookSecret: "s",
+      }),
+    ).rejects.toThrowError("この操作を行う権限がありません");
+
+    expect(await listRepositories(t)).toHaveLength(0);
+  });
+});
+
 describe("repositories.create", () => {
-  it("webhookSecret を暗号化して保存する（平文は残らず、鍵で復号すると元に戻る）", async () => {
+  it("webhookSecret を暗号化して保存する（平文は残らず、鍵で復号すると元に戻る。owner は project.settings.edit を持つ）", async () => {
     const t = setup();
     const { as, memberId } = await seedAuthedMember(t);
     const project = await seedProject(t);

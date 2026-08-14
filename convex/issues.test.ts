@@ -664,3 +664,110 @@ describe("issues.getByRef", () => {
     },
   );
 });
+
+// --- 認可（ADR-11 §4: projectQuery/projectMutation の membership ゲート） -----
+
+describe("issues の認可（ADR-11 §4）", () => {
+  it("非参加者は issues.list を拒否される", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+
+    await expect(as.query(api.issues.list, { project })).rejects.toThrowError(
+      "このプロジェクトに参加していません",
+    );
+  });
+
+  it("非参加者は issues.getByRef を拒否される", async () => {
+    const t = setup();
+    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
+      email: "owner@example.com",
+    });
+    const project = await seedProject(t, { key: "TASK" });
+    await seedProjectMember(t, project, owner, "owner");
+    await asOwner.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "タスク" },
+    });
+    const { as: asOutsider } = await seedAuthedMember(t, {
+      email: "outsider@example.com",
+    });
+
+    await expect(
+      asOutsider.query(api.issues.getByRef, { projectKey: "TASK", number: 1 }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+  });
+
+  it("非参加者による issues.create は拒否され、Issue も Task も作られない", async () => {
+    const t = setup();
+    const { as } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+
+    await expect(
+      as.mutation(api.issues.create, {
+        project,
+        title: "侵入課題",
+        firstTask: { title: "タスク" },
+      }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+
+    expect(await t.run((ctx) => ctx.db.query("issues").collect())).toEqual([]);
+    expect(await t.run((ctx) => ctx.db.query("tasks").collect())).toEqual([]);
+  });
+
+  it("非参加者による issues.update は拒否され、DB は変わらない", async () => {
+    const t = setup();
+    const { as: asOwner, memberId: owner } = await seedAuthedMember(t, {
+      email: "owner@example.com",
+    });
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, owner, "owner");
+    const { issue } = await asOwner.mutation(api.issues.create, {
+      project,
+      title: "課題",
+      firstTask: { title: "タスク" },
+    });
+    const { as: asOutsider } = await seedAuthedMember(t, {
+      email: "outsider@example.com",
+    });
+
+    await expect(
+      asOutsider.mutation(api.issues.update, {
+        id: issue,
+        expectedRevision: 0,
+        title: "改題を試みる",
+      }),
+    ).rejects.toThrowError("このプロジェクトに参加していません");
+
+    expect(await t.run((ctx) => ctx.db.get(issue))).toMatchObject({
+      title: "課題",
+      revision: 0,
+    });
+  });
+
+  it("非参加 Member を firstTask.assignee に指定した issues.create を拒否する（設計書 §10 D2）", async () => {
+    const t = setup();
+    const { as, memberId: owner } = await seedAuthedMember(t);
+    const project = await seedProject(t);
+    await seedProjectMember(t, project, owner, "owner");
+    // outsider はどのプロジェクトにも参加していない Member（実在はする）
+    const outsider = await seedMember(t, {
+      name: "Outsider",
+      email: "outsider@example.com",
+    });
+
+    await expect(
+      as.mutation(api.issues.create, {
+        project,
+        title: "課題",
+        firstTask: { title: "タスク", assignee: outsider },
+      }),
+    ).rejects.toThrowError(
+      "指定されたメンバーはこのプロジェクトに参加していません",
+    );
+
+    // Issue も Task も作られない（同一トランザクション）
+    expect(await t.run((ctx) => ctx.db.query("issues").collect())).toEqual([]);
+  });
+});
