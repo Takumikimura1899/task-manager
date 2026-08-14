@@ -1,6 +1,10 @@
-import { internalMutation } from "./_generated/server";
+import { createAccount } from "@convex-dev/auth/server";
+import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { internalAction, internalMutation } from "./_generated/server";
 import { generateInviteToken, sha256Hex } from "./lib/crypto";
+import { findMemberByEmail } from "./lib/members";
 import { rankBetween } from "./lib/rank";
 
 /**
@@ -17,6 +21,16 @@ const TABLES = [
   "webhookDeliveries",
   "projects",
   "members",
+  // Convex Auth のテーブル群。members と users のリンク（authUserId）を消す以上、
+  // 認証側も残すと孤児アカウント・孤児セッションになるため、reset は認証状態ごと
+  // 作り直す（ローカル開発専用の前提。seed:demoAuth でログイン可能な状態に戻せる）。
+  "authRefreshTokens",
+  "authSessions",
+  "authVerificationCodes",
+  "authVerifiers",
+  "authRateLimits",
+  "authAccounts",
+  "users",
 ] as const;
 
 /** 全テーブルを空にする（ローカル開発の作り直し用）。 */
@@ -34,6 +48,9 @@ export const reset = internalMutation({
 
 /** seed:demo が投入するデモプロジェクトのキー。 */
 const DEMO_PROJECT_KEY = "TASK";
+
+/** seed:demo が作成するデモ member のメールアドレス（seed:demoAuth と共有）。 */
+const DEMO_MEMBER_EMAIL = "taro@example.com";
 
 /**
  * 新モデル（Project→Issue→Task）でデモデータを投入する。
@@ -70,7 +87,7 @@ export const demo = internalMutation({
     const inviteToken = generateInviteToken();
     const member = await ctx.db.insert("members", {
       name: "テスト太郎",
-      email: "taro@example.com",
+      email: DEMO_MEMBER_EMAIL,
       role: "admin",
       inviteTokenHash: await sha256Hex(inviteToken),
     });
@@ -146,6 +163,78 @@ export const demo = internalMutation({
       status: "created",
       message: `プロジェクト "${DEMO_PROJECT_KEY}" とデモデータ（Issue ${issueNo - 1}件 / Task ${taskNo - 1}件）を投入しました`,
       inviteToken, // taro@example.com のサインアップ用招待コード（dev 専用）
+    };
+  },
+});
+
+/**
+ * seed:demoAuth の準備（mutation 部）: デモ member の招待トークンを（再）発行する。
+ * demoAuth（action）から呼ばれる。既にリンク済みなら発行しない。
+ */
+export const prepareDemoAuth = internalMutation({
+  args: {},
+  handler: async (
+    ctx,
+  ): Promise<
+    { status: "ready"; inviteToken: string } | { status: "linked" }
+  > => {
+    const member = await findMemberByEmail(ctx, DEMO_MEMBER_EMAIL);
+    if (member === null) {
+      throw new ConvexError(
+        `デモ member（${DEMO_MEMBER_EMAIL}）が存在しません。先に seed:demo を実行してください`,
+      );
+    }
+    if (member.authUserId !== undefined) {
+      return { status: "linked" };
+    }
+    const inviteToken = generateInviteToken();
+    await ctx.db.patch(member._id, {
+      inviteTokenHash: await sha256Hex(inviteToken),
+    });
+    return { status: "ready", inviteToken };
+  },
+});
+
+/**
+ * デモ member（taro@example.com）のログイン用アカウントを seed で用意する（dev 専用）。
+ * `bunx convex run seed:demoAuth '{"password":"<8文字以上>"}'` で実行し、以後 UI の
+ * サインアップ操作なしで taro@example.com + 指定パスワードでログインできる。
+ *
+ * 招待ゲート（convex/lib/memberLink.ts）はバイパスしない: prepareDemoAuth が発行した
+ * 招待トークンを profile.inviteCode として渡し、createAccount →
+ * afterUserCreatedOrUpdated → linkAuthUserToMember という本番と同一の経路で
+ * 照合・リンクさせる（seed 専用の抜け道を作らないため）。
+ *
+ * 冪等性: 既にリンク済みなら何もしない（パスワードを変えたい場合は seed:reset から
+ * 作り直す）。
+ */
+export const demoAuth = internalAction({
+  args: { password: v.string() },
+  handler: async (
+    ctx,
+    { password },
+  ): Promise<{ status: "created" | "skipped"; message: string }> => {
+    // UI（SignIn.tsx の minLength=8）と同じ要件をここでも強制する
+    if (password.length < 8) {
+      throw new ConvexError("パスワードは8文字以上にしてください");
+    }
+    const prepared = await ctx.runMutation(internal.seed.prepareDemoAuth, {});
+    if (prepared.status === "linked") {
+      const message = `${DEMO_MEMBER_EMAIL} は既に認証アカウントとリンク済みのためスキップしました（パスワードを変える場合は seed:reset から作り直してください）`;
+      console.warn(message);
+      return { status: "skipped", message };
+    }
+    await createAccount(ctx, {
+      provider: "password",
+      account: { id: DEMO_MEMBER_EMAIL, secret: password },
+      profile: {
+        email: DEMO_MEMBER_EMAIL,
+        inviteCode: prepared.inviteToken,
+      },
+    });
+    return {
+      status: "created",
+      message: `${DEMO_MEMBER_EMAIL} のログイン用アカウントを作成しました`,
     };
   },
 });

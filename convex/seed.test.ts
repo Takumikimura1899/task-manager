@@ -72,3 +72,65 @@ describe("seed.demo", () => {
     }
   });
 });
+
+describe("seed.demoAuth", () => {
+  it("デモ member のログイン用アカウントを作成し、招待ゲート経由でリンクする", async () => {
+    const t = setup();
+    await t.mutation(internal.seed.demo, {});
+
+    const result = await t.action(internal.seed.demoAuth, {
+      password: "password123",
+    });
+    expect(result.status).toBe("created");
+
+    const { member, account } = await t.run(async (ctx) => {
+      const members = await ctx.db.query("members").collect();
+      const accounts = await ctx.db.query("authAccounts").collect();
+      return { member: members[0], account: accounts[0] };
+    });
+    // member が authUser にリンクされ、招待トークンは使い捨てで消えている
+    expect(member?.authUserId).toBeDefined();
+    expect(member?.inviteTokenHash).toBeUndefined();
+    // password provider のアカウントがデモ email で作成されている
+    expect(account?.provider).toBe("password");
+    expect(account?.providerAccountId).toBe("taro@example.com");
+    expect(account?.userId).toBe(member?.authUserId);
+  });
+
+  it("既にリンク済みなら skipped を返し、何も変更しない（冪等性）", async () => {
+    const t = setup();
+    await t.mutation(internal.seed.demo, {});
+    await t.action(internal.seed.demoAuth, { password: "password123" });
+
+    const before = await t.run(async (ctx) => ({
+      accounts: await ctx.db.query("authAccounts").collect(),
+      members: await ctx.db.query("members").collect(),
+    }));
+
+    const second = await t.action(internal.seed.demoAuth, {
+      password: "different-password",
+    });
+    expect(second.status).toBe("skipped");
+
+    const after = await t.run(async (ctx) => ({
+      accounts: await ctx.db.query("authAccounts").collect(),
+      members: await ctx.db.query("members").collect(),
+    }));
+    expect(after).toEqual(before);
+  });
+
+  it("seed:demo 未実行なら明示的に拒否する", async () => {
+    const t = setup();
+    await expect(
+      t.action(internal.seed.demoAuth, { password: "password123" }),
+    ).rejects.toThrow(/seed:demo/);
+  });
+
+  it("8文字未満のパスワードを拒否する（UI の minLength と同一要件）", async () => {
+    const t = setup();
+    await t.mutation(internal.seed.demo, {});
+    await expect(
+      t.action(internal.seed.demoAuth, { password: "short" }),
+    ).rejects.toThrow(/8文字以上/);
+  });
+});
