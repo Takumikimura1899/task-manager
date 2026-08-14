@@ -77,6 +77,50 @@ describe("projects.create", () => {
   });
 });
 
+describe("projects.create — 作成者の owner membership（ADR-11）", () => {
+  it("作成者を owner とする ProjectMember を同一 mutation 内で挿入する", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+
+    const projectId = await as.mutation(api.projects.create, {
+      key: "TASK",
+      name: "タスク管理",
+    });
+
+    const membership = await t.run((ctx) =>
+      ctx.db
+        .query("projectMembers")
+        .withIndex("by_project_and_member", (q) =>
+          q.eq("project", projectId).eq("member", memberId),
+        )
+        .unique(),
+    );
+    expect(membership).toMatchObject({
+      project: projectId,
+      member: memberId,
+      role: "owner",
+    });
+  });
+
+  it("重複キーで作成が失敗した場合、owner membership も作られない（同一トランザクション）", async () => {
+    const t = setup();
+    const { as, memberId } = await seedAuthedMember(t);
+    await seedProject(t, { key: "TASK" });
+
+    await expect(
+      as.mutation(api.projects.create, { key: "TASK", name: "重複" }),
+    ).rejects.toThrow();
+
+    const memberships = await t.run((ctx) =>
+      ctx.db
+        .query("projectMembers")
+        .withIndex("by_member", (q) => q.eq("member", memberId))
+        .collect(),
+    );
+    expect(memberships).toHaveLength(0);
+  });
+});
+
 describe("projects.getByKey", () => {
   it("キーに一致する Project を返す", async () => {
     const t = setup();
